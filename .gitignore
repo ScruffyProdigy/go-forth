@@ -52,3 +52,11 @@ test-results/
 
 # Agent worktrees (one per task; never committed)
 .claude/worktrees/
+
+# Real k8s secrets. Only the *.example.yaml templates are committed, and
+# environment-config-test.yml fails the build if that ever stops being true.
+k8s/secrets/*.yaml
+!k8s/secrets/*.example.yaml
+
+# The stub Lobby's cached RS256 signing key (scripts/stub-lobby.sh).
+.stub-lobby/

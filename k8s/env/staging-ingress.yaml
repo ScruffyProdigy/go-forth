@@ -1,0 +1,47 @@
+# STAGING ingress — https://go-forth.staging.joinquest.cc
+# Applied after k8s/base/ingress.yaml by scripts/_deploy.sh.
+#
+# This overlay REPLACES the base rules wholesale, so it has to carry every path
+# the base routes. A path added only to the base would silently fall through to
+# the client here. environment-config-test.yml checks the two stay in step.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: go-forth
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - go-forth.staging.joinquest.cc
+      secretName: go-forth-staging-tls
+  rules:
+    - host: go-forth.staging.joinquest.cc
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: go-forth-api
+                port:
+                  number: 3002
+          - path: /healthz
+            pathType: Prefix
+            backend:
+              service:
+                name: go-forth-api
+                port:
+                  number: 3002
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: go-forth-client
+                port:
+                  number: 80

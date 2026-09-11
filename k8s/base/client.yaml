@@ -1,0 +1,64 @@
+# The client Deployment carries no hardcoded env. `go-forth-client-config` comes
+# from the env overlay in k8s/env/<env>.yaml, and the nginx entrypoint turns
+# those vars into /env.js at container start — which is what lets one built
+# image serve every environment.
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-forth-client
+  labels:
+    app: go-forth-client
+    joinquest.io/game-id: go-forth
+spec:
+  selector:
+    app: go-forth-client
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-forth-client
+  labels:
+    app: go-forth-client
+    joinquest.io/game-id: go-forth
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: go-forth-client
+  template:
+    metadata:
+      labels:
+        app: go-forth-client
+        joinquest.io/game-id: go-forth
+    spec:
+      containers:
+        - name: client
+          image: docker.io/scruffyprodigy/go-forth-client:go-forth
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: go-forth-client-config
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 96Mi
