@@ -1,0 +1,546 @@
+/*
+ * Plan-phase styling (JQ-293).
+ *
+ * Sized against the JQ-243 plates: a 375 px portrait floor, ~106 px zone bands,
+ * mages 26-28 px and summons 18-22 px. Art direction is still open (§10 #9), so
+ * this is silhouettes and state, not a visual language.
+ */
+
+.plan {
+  min-height: 100dvh;
+  max-width: 430px;
+  margin: 0 auto;
+  padding: 0.75rem 0.75rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.hub,
+.step,
+.waiting,
+.troop-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.hub-header h1,
+.step-title h2,
+.detail-heading {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+}
+
+/* ------------------------------------------------------------- resonance -- */
+
+.resonance {
+  background: var(--surface-2);
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.resonance-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.resonance-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
+}
+
+.resonance-value {
+  font-size: 1.35rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.resonance-empty {
+  font-size: 0.9rem;
+  color: var(--ink-2);
+}
+
+.resonance-tier {
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  background: #2b2436;
+}
+
+.tier-par,
+.tier-strong {
+  color: var(--ember);
+}
+
+.tier-weak,
+.tier-below-par {
+  color: var(--ink-2);
+}
+
+.resonance-others {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 0.6rem;
+  font-size: 0.7rem;
+  color: var(--ink-2);
+}
+
+.capacity {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--ink-2);
+}
+
+.capacity-bar {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.pip {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.pip-filled {
+  background: var(--ember);
+}
+
+.pip-empty {
+  background: transparent;
+  border: 1px solid #4a4157;
+}
+
+.capacity-unsupported {
+  color: var(--ember);
+}
+
+/* ------------------------------------------------------------------- map -- */
+
+.plan-map {
+  width: 100%;
+  height: auto;
+  border-radius: 0.6rem;
+  display: block;
+}
+
+.map-ground {
+  fill: #0e0b14;
+}
+
+.map-band rect {
+  fill: #171322;
+  stroke: #241d31;
+  stroke-width: 1;
+}
+
+.map-band-label {
+  fill: var(--ink-2);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.map-sighting {
+  fill: #5d5470;
+  font-size: 10px;
+  text-anchor: end;
+}
+
+.map-strip rect {
+  fill: #1b1626;
+}
+
+.map-base rect {
+  fill: #221a2c;
+}
+
+.map-base text {
+  fill: var(--ink-2);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-anchor: middle;
+}
+
+.map-lane {
+  stroke: #3a3149;
+  stroke-width: 2;
+  stroke-dasharray: 4 5;
+}
+
+.map-order {
+  fill: var(--ink-2);
+  font-size: 10px;
+  text-anchor: middle;
+}
+
+.map-summon {
+  fill: #7a5330;
+}
+
+.map-mage {
+  fill: var(--ember);
+}
+
+.map-mage-halo {
+  fill: none;
+  stroke: var(--ember);
+  stroke-opacity: 0.35;
+  stroke-width: 2;
+}
+
+.map-troop-highlighted .map-mage-halo {
+  stroke-opacity: 1;
+}
+
+/* ------------------------------------------------------------------ hub -- */
+
+.hub-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.hub-step {
+  width: 100%;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  color: inherit;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  cursor: pointer;
+}
+
+.hub-step.needs-attention {
+  border-color: var(--ember);
+}
+
+.hub-step-title {
+  font-size: 0.9rem;
+}
+
+.hub-step-line {
+  font-size: 0.75rem;
+  color: var(--ink-2);
+}
+
+/* ----------------------------------------------------------------- steps -- */
+
+.step-header,
+.troop-detail .step-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.step-title {
+  text-align: center;
+  flex: 1;
+}
+
+.step-count {
+  margin: 0.15rem 0 0;
+  font-size: 0.7rem;
+  color: var(--ink-2);
+}
+
+.step-header-spacer {
+  width: 3rem;
+}
+
+.step-body,
+.step-board {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow-y: auto;
+}
+
+.step-board-note {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.step-lede {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+
+.step-footer {
+  padding-top: 0.25rem;
+}
+
+/* ----------------------------------------------------------------- lists -- */
+
+.mage-list,
+.spell-menu,
+.spell-slots,
+.order-list,
+.summon-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.mage-card {
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+
+.mage-card.is-fielded {
+  border-color: var(--ember);
+}
+
+.mage-card-main {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  cursor: pointer;
+}
+
+.mage-card-main:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mage-name {
+  font-size: 0.95rem;
+}
+
+.mage-tags,
+.summon-meta {
+  font-size: 0.68rem;
+  color: var(--ink-2);
+}
+
+.entourage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.15rem;
+}
+
+.summon-pip {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
+  background: #2b2436;
+  color: var(--ink-2);
+}
+
+.entourage-edit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.35rem 0.75rem 0.6rem;
+}
+
+.summon-list li,
+.spell-slot,
+.order-row {
+  background: var(--surface-2);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.summon-list li span {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-empty {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+
+/* ---------------------------------------------------------------- spells -- */
+
+.spell-slot .slot-index {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-2);
+}
+
+.spell-slot .slot-name {
+  flex: 1;
+  text-align: left;
+  padding-left: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.spell-slot.needs-replacement {
+  outline: 1px solid var(--ember);
+}
+
+.spell-slot.needs-replacement .slot-name {
+  color: var(--ember);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.spell {
+  background: var(--surface-2);
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.spell.is-ineligible {
+  opacity: 0.55;
+}
+
+.spell-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.spell-name {
+  font-size: 0.9rem;
+}
+
+.spell-cost {
+  font-size: 0.75rem;
+  color: var(--ember);
+}
+
+.spell-cost.is-unaffordable {
+  color: #8a6b6b;
+}
+
+.spell-text,
+.spell-reason {
+  margin: 0.2rem 0 0;
+  font-size: 0.7rem;
+  color: var(--ink-2);
+}
+
+.spell-reason {
+  color: var(--ember);
+}
+
+.spell-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+}
+
+/* ---------------------------------------------------------------- orders -- */
+
+.order-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
+.order-troop {
+  font-size: 0.85rem;
+}
+
+.order-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.order-choice {
+  background: #2b2436;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+}
+
+.order-choice.is-chosen {
+  border-color: var(--ember);
+  color: var(--ink-1);
+}
+
+/* --------------------------------------------------------------- buttons -- */
+
+.primary-button {
+  width: 100%;
+  background: var(--ember);
+  color: #1a1410;
+  border: 0;
+  border-radius: 0.6rem;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+}
+
+.link-button {
+  background: none;
+  border: 0;
+  color: var(--ember);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.1rem;
+  cursor: pointer;
+}
+
+.link-button:disabled {
+  color: var(--ink-2);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.link-button.is-active {
+  text-decoration: underline;
+}
+
+.waiting-note {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}

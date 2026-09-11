@@ -60,6 +60,18 @@ wizard.
 * **Steps** — entered by tapping a row, each full-screen with Back/Next; Next off
   the last returns to the hub. The wizard is for deciding, not for confirming.
 
+## The wizard gets out of the way
+
+A step can show the board without leaving the step. **Board** swaps the step's
+body for the live map — the current, *uncommitted* plan — while the step header
+and Back/Next stay put; **Done** swaps back with every edit intact, because
+nothing unmounts but the body. Looking at the board is a look, not a navigation.
+
+**Resonance is not behind that toggle.** It sits above the body on every step,
+always. It is the phase's headline number and it moves as mages are fielded, so
+putting it one tap away would separate the decision from its consequence —
+the one thing JQ-293 asks this screen not to do.
+
 ## Fold depth (three-valued, not two)
 
 Per §3.2, a control appears when the decision it serves first exists:
@@ -110,6 +122,13 @@ rendering anything, and it is the seam the server work plugs into later.
 One SVG at the plate geometry: 375×667 floor, three zone bands, two bases,
 a deployment strip per side. Troops are placed by their order, and read as a
 mage (larger, haloed) with summon pips — the JQ-243 sizes, ~1.8× ratio.
+Formation follows the order too (§3.2): Hold and Defend draw summons in front of
+the mage, Push draws the mage close behind the line.
+
+Lanes are distributed evenly across the strip rather than fixed per order. Fixed
+lanes stack two troops on top of each other the moment a plan sends one to B and
+one home, and an unreadable board defeats the point of showing the plan as a
+board position at all.
 
 This is deliberately **not** shared with JQ-294's battle renderer. The two draw
 the same map in different states, and abstracting across them before JQ-294
