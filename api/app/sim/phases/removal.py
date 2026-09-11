@@ -30,9 +30,7 @@ class RemovalPhase:
 
         for troop in world.troops:
             troop.mage_ids = [uid for uid in troop.mage_ids if uid not in fallen_ids]
-            troop.summon_ids = [
-                uid for uid in troop.summon_ids if uid not in fallen_ids
-            ]
+            troop.summon_ids = [uid for uid in troop.summon_ids if uid not in fallen_ids]
 
 
 removal_phase = RemovalPhase()

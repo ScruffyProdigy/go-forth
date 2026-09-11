@@ -89,13 +89,9 @@ def run_battle(
     rng = create_rng(seed)
     multipliers = resolve_school_multipliers(list(school_configs))
     world = create_world(map_config, battle_state, rng)
-    ctx = create_tick_context(
-        config=config, map_config=map_config, multipliers=multipliers, rng=rng
-    )
+    ctx = create_tick_context(config=config, map_config=map_config, multipliers=multipliers, rng=rng)
 
-    ticks: list[BattleTick] = [
-        BattleTick(tick=0, state=copy.deepcopy(world), events=())
-    ]
+    ticks: list[BattleTick] = [BattleTick(tick=0, state=copy.deepcopy(world), events=())]
     events: list[BattleEvent] = []
     limit = max_ticks(config)
     outcome: BattleOutcome = "timeUp"
@@ -103,11 +99,7 @@ def run_battle(
     while world.tick < limit:
         tick_events = step_battle(world, ctx)
         events.extend(tick_events)
-        ticks.append(
-            BattleTick(
-                tick=world.tick, state=copy.deepcopy(world), events=tuple(tick_events)
-            )
-        )
+        ticks.append(BattleTick(tick=world.tick, state=copy.deepcopy(world), events=tuple(tick_events)))
 
         if _side_is_wiped_out(world):
             outcome = "annihilation"

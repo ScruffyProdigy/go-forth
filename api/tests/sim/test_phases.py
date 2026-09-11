@@ -19,7 +19,7 @@ from app.sim.world import (
     World,
     create_world,
 )
-from tests.fixtures_units import ADEPT, HOUND
+from tests.sim.fixtures_units import ADEPT, HOUND
 
 DUEL = BattleSetup(
     unit_types=[ADEPT, HOUND],
@@ -92,9 +92,7 @@ def test_movement_advances_by_speed_times_the_tick_length() -> None:
 
     phase("movement").run(world, ctx)
 
-    travelled = (
-        (hunter.position.x - before.x) ** 2 + (hunter.position.y - before.y) ** 2
-    ) ** 0.5
+    travelled = ((hunter.position.x - before.x) ** 2 + (hunter.position.y - before.y) ** 2) ** 0.5
     assert abs(travelled - hunter.speed / DEFAULT_SIM_CONFIG.tick_rate) < 1e-9
 
 

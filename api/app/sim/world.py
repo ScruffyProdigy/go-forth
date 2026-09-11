@@ -1,6 +1,6 @@
 """The world model, and how a battle's opening state is built from roster data.
 
-The roster is a **multiset** (design doc §4.1): "3× Ember Adept, 4× Cinder Hound"
+The roster is a **multiset** (design doc §4.1): "3x Ember Adept, 4x Cinder Hound"
 is the normal shape, and nothing in the sim assumes an army size. Round 1 fields
 three mages and round 4 fields most of the roster, so any code here that
 hard-coded a count would be wrong by round 2.
@@ -107,31 +107,23 @@ def unit_ref(unit: Unit) -> UnitRef:
     return UnitRef(unit.id, unit.troop_id, unit.side, unit.type_id)
 
 
-#: Spacing between deployed units, in map units. Sprites are 18–28 px (JQ-243).
+#: Spacing between deployed units, in map units. Sprites are 18-28 px (JQ-243).
 DEPLOY_SPACING = 24
 #: A unit of jitter, so placement reads as an army rather than a spreadsheet.
 DEPLOY_JITTER = 1
 
 
-def _expand(
-    entries: Sequence[RosterEntry], catalog: UnitTypeCatalog, kind: UnitKind
-) -> list[UnitType]:
+def _expand(entries: Sequence[RosterEntry], catalog: UnitTypeCatalog, kind: UnitKind) -> list[UnitType]:
     expanded: list[UnitType] = []
 
     for entry in entries:
         unit_type = catalog.get(entry.type_id)
         if unit_type is None:
-            raise ValueError(
-                f"roster names {entry.type_id}, which is not in the unit type catalog"
-            )
+            raise ValueError(f"roster names {entry.type_id}, which is not in the unit type catalog")
         if unit_type.kind != kind:
-            raise ValueError(
-                f"{entry.type_id} is a {unit_type.kind}, but the roster lists it as a {kind}"
-            )
+            raise ValueError(f"{entry.type_id} is a {unit_type.kind}, but the roster lists it as a {kind}")
         if not isinstance(entry.count, int) or entry.count < 1:
-            raise ValueError(
-                f"roster entry {entry.type_id} has a count of {entry.count!r}"
-            )
+            raise ValueError(f"roster entry {entry.type_id} has a count of {entry.count!r}")
         expanded.extend([unit_type] * entry.count)
 
     return expanded
@@ -148,13 +140,9 @@ def _assert_one_army_per_side(armies: Sequence[ArmySetup]) -> None:
             raise ValueError(f"no army was given for {side}")
 
 
-def _assert_supported(
-    mages: Sequence[UnitType], summons: Sequence[UnitType], troop_id: TroopId
-) -> None:
+def _assert_supported(mages: Sequence[UnitType], summons: Sequence[UnitType], troop_id: TroopId) -> None:
     if not mages:
-        raise ValueError(
-            f"troop {troop_id} has no mage, so it could hold nothing on the field"
-        )
+        raise ValueError(f"troop {troop_id} has no mage, so it could hold nothing on the field")
 
     # Membership only — never iterated. See the note in `rng.py`.
     supported: set[School] = {school for mage in mages for school in mage.schools}
@@ -219,9 +207,7 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
             for member_index, unit_type in enumerate([*mage_types, *summon_types]):
                 unit_id = f"{troop_id}-u{member_index}"
                 if unit_id in seen_ids:
-                    raise ValueError(
-                        f"two units share the id {unit_id}; troop ids must be unique"
-                    )
+                    raise ValueError(f"two units share the id {unit_id}; troop ids must be unique")
                 seen_ids.add(unit_id)
 
                 units.append(

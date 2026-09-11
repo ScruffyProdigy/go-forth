@@ -99,9 +99,7 @@ def create_event_emitter() -> EventEmitter:
     return EventEmitter()
 
 
-def unit_defeated(
-    *, tick: int, position: Vec2, unit: UnitRef, killer: UnitRef | None
-) -> dict[str, Any]:
+def unit_defeated(*, tick: int, position: Vec2, unit: UnitRef, killer: UnitRef | None) -> dict[str, Any]:
     """The first event type: a unit reached 0 HP and left the field.
 
     Returns the keyword arguments for `EventEmitter.emit`, so a caller writes

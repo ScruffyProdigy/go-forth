@@ -70,9 +70,7 @@ def test_hands_the_buffer_over_on_drain_and_starts_empty_again() -> None:
 def test_unit_defeated_records_the_unit_as_removed_by_the_swing() -> None:
     emitter = create_event_emitter()
 
-    emitter.emit(
-        **unit_defeated(tick=12, position=Vec2(5, 6), unit=HOUND, killer=ADEPT)
-    )
+    emitter.emit(**unit_defeated(tick=12, position=Vec2(5, 6), unit=HOUND, killer=ADEPT))
 
     event = emitter.events[0]
     assert event.type == "unitDefeated"
@@ -82,9 +80,7 @@ def test_unit_defeated_records_the_unit_as_removed_by_the_swing() -> None:
 def test_unit_defeated_names_the_killer_as_source_and_the_unit_as_target() -> None:
     emitter = create_event_emitter()
 
-    emitter.emit(
-        **unit_defeated(tick=12, position=Vec2(5, 6), unit=HOUND, killer=ADEPT)
-    )
+    emitter.emit(**unit_defeated(tick=12, position=Vec2(5, 6), unit=HOUND, killer=ADEPT))
 
     assert emitter.events[0].actors.source == ADEPT
     assert emitter.events[0].actors.targets == (HOUND,)
@@ -101,9 +97,7 @@ def test_unit_defeated_leaves_the_source_none_when_nothing_killed_it() -> None:
 def test_a_defeat_moves_neither_zone_score_nor_base_hp_on_its_own() -> None:
     emitter = create_event_emitter()
 
-    emitter.emit(
-        **unit_defeated(tick=12, position=Vec2(5, 6), unit=HOUND, killer=ADEPT)
-    )
+    emitter.emit(**unit_defeated(tick=12, position=Vec2(5, 6), unit=HOUND, killer=ADEPT))
 
     assert emitter.events[0].swing.zone_score == {"north": 0, "south": 0}
     assert emitter.events[0].swing.base_hp == {"north": 0, "south": 0}

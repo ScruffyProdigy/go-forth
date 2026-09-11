@@ -15,7 +15,7 @@ from dataclasses import dataclass
 class SimConfig:
     #: Ticks per second. A whole number, so a second is a whole number of ticks.
     tick_rate: int = 20
-    #: Backstop length. The design doc's battle phase is 60–90 s (§3.2).
+    #: Backstop length. The design doc's battle phase is 60-90 s (§3.2).
     max_battle_seconds: float = 90
 
 
@@ -23,18 +23,10 @@ DEFAULT_SIM_CONFIG = SimConfig()
 
 
 def validate_sim_config(config: SimConfig) -> None:
-    if (
-        not isinstance(config.tick_rate, int)
-        or isinstance(config.tick_rate, bool)
-        or config.tick_rate <= 0
-    ):
-        raise ValueError(
-            f"tick rate must be a positive whole number, got {config.tick_rate!r}"
-        )
+    if not isinstance(config.tick_rate, int) or isinstance(config.tick_rate, bool) or config.tick_rate <= 0:
+        raise ValueError(f"tick rate must be a positive whole number, got {config.tick_rate!r}")
     if not config.max_battle_seconds > 0:
-        raise ValueError(
-            f"battle length must be positive, got {config.max_battle_seconds!r}"
-        )
+        raise ValueError(f"battle length must be positive, got {config.max_battle_seconds!r}")
 
 
 def seconds_per_tick(config: SimConfig) -> float:

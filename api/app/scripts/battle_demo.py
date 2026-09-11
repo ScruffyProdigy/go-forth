@@ -39,8 +39,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     defeats = sum(1 for event in result.events if event.type == "unitDefeated")
     survivors = {
-        side: sum(1 for unit in result.final_state.units if unit.side == side)
-        for side in ("north", "south")
+        side: sum(1 for unit in result.final_state.units if unit.side == side) for side in ("north", "south")
     }
     seconds = result.final_state.tick / result.config.tick_rate
 

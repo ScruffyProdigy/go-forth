@@ -98,9 +98,7 @@ def test_names_the_zone_a_position_sits_in() -> None:
 
 def test_the_deployment_strip_is_no_zone() -> None:
     strip = THREE_ZONE_MAP.deployment["north"]
-    in_strip = Vec2(
-        x=THREE_ZONE_MAP.size_width / 2, y=(strip.lane.start + strip.lane.end) / 2
-    )
+    in_strip = Vec2(x=THREE_ZONE_MAP.size_width / 2, y=(strip.lane.start + strip.lane.end) / 2)
 
     assert zone_containing(THREE_ZONE_MAP, in_strip) is None
 

@@ -28,9 +28,7 @@ def acquire_target(world: World, unit: Unit) -> Unit | None:
         if gap > unit.range:
             continue
 
-        if gap < best_gap or (
-            gap == best_gap and best is not None and candidate.id < best.id
-        ):
+        if gap < best_gap or (gap == best_gap and best is not None and candidate.id < best.id):
             best = candidate
             best_gap = gap
 

@@ -44,15 +44,11 @@ def test_hash_randomisation_is_not_pinned() -> None:
 
 
 def test_two_runs_in_one_process_produce_identical_event_output() -> None:
-    assert [str(event) for event in run().events] == [
-        str(event) for event in run().events
-    ]
+    assert [str(event) for event in run().events] == [str(event) for event in run().events]
 
 
 def test_two_runs_in_one_process_produce_identical_state_tick_by_tick() -> None:
-    assert [str(tick.state) for tick in run().ticks] == [
-        str(tick.state) for tick in run().ticks
-    ]
+    assert [str(tick.state) for tick in run().ticks] == [str(tick.state) for tick in run().ticks]
 
 
 def test_two_runs_in_one_process_produce_the_same_digest() -> None:

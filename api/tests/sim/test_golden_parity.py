@@ -71,7 +71,9 @@ def test_every_defeat_happens_in_the_same_place(seed: int) -> None:
     result = python_battle(seed)
     expected = GOLDEN[str(seed)]["events"]
 
-    for event, want in zip(result.events, expected):
+    assert len(result.events) == len(expected)
+    for index, want in enumerate(expected):
+        event = result.events[index]
         assert event.position.x == pytest.approx(want["x"], abs=1e-9)
         assert event.position.y == pytest.approx(want["y"], abs=1e-9)
 
@@ -84,7 +86,8 @@ def test_the_same_units_survive_on_the_same_hp_in_the_same_place(seed: int) -> N
     survivors = sorted(result.final_state.units, key=lambda unit: unit.id)
     assert [unit.id for unit in survivors] == [want["id"] for want in expected]
 
-    for unit, want in zip(survivors, expected):
+    for index, want in enumerate(expected):
+        unit = survivors[index]
         assert unit.hp == pytest.approx(want["hp"])
         assert unit.position.x == pytest.approx(want["x"], abs=1e-9)
         assert unit.position.y == pytest.approx(want["y"], abs=1e-9)

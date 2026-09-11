@@ -28,35 +28,27 @@ def test_carries_the_three_levers_slices_c_and_d_trade_through() -> None:
 
 
 def test_honours_an_override_a_school_config_supplies() -> None:
-    table = resolve_school_multipliers(
-        [SchoolConfig(id="fire", multipliers={"energy_gain_multiplier": 1.5})]
-    )
+    table = resolve_school_multipliers([SchoolConfig(id="fire", multipliers={"energy_gain_multiplier": 1.5})])
 
     assert table["fire"].energy_gain_multiplier == 1.5
 
 
 def test_leaves_unmentioned_levers_at_identity() -> None:
-    table = resolve_school_multipliers(
-        [SchoolConfig(id="fire", multipliers={"energy_gain_multiplier": 1.5})]
-    )
+    table = resolve_school_multipliers([SchoolConfig(id="fire", multipliers={"energy_gain_multiplier": 1.5})])
 
     assert table["fire"].resummon_pace_multiplier == 1.0
     assert table["fire"].stat_axis_multiplier == 1.0
 
 
 def test_leaves_unmentioned_schools_at_identity() -> None:
-    table = resolve_school_multipliers(
-        [SchoolConfig(id="fire", multipliers={"stat_axis_multiplier": 2})]
-    )
+    table = resolve_school_multipliers([SchoolConfig(id="fire", multipliers={"stat_axis_multiplier": 2})])
 
     assert table["stone"] == IDENTITY_MULTIPLIERS
 
 
 def test_rejects_a_multiplier_that_is_not_positive() -> None:
     with pytest.raises(ValueError, match="positive"):
-        resolve_school_multipliers(
-            [SchoolConfig(id="stone", multipliers={"stat_axis_multiplier": 0})]
-        )
+        resolve_school_multipliers([SchoolConfig(id="stone", multipliers={"stat_axis_multiplier": 0})])
 
 
 def test_rejects_an_unknown_lever_name() -> None:

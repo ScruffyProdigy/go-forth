@@ -49,9 +49,7 @@ def _validate(unit_type: UnitType) -> None:
         if school not in SCHOOLS:
             raise ValueError(f"{school!r} is not a school; unit type {unit_type.id}")
     if not unit_type.max_hp > 0:
-        raise ValueError(
-            f"unit type {unit_type.id} has max_hp {unit_type.max_hp}; must be positive"
-        )
+        raise ValueError(f"unit type {unit_type.id} has max_hp {unit_type.max_hp}; must be positive")
     if unit_type.damage < 0:
         raise ValueError(f"unit type {unit_type.id} has negative damage")
     if unit_type.range < 0:
@@ -64,9 +62,7 @@ def _validate(unit_type: UnitType) -> None:
             f"{unit_type.attack_cooldown_seconds}; a cooldown of zero would fire every tick"
         )
     if unit_type.kind == "mage" and not (unit_type.support_capacity or 0) > 0:
-        raise ValueError(
-            f"mage type {unit_type.id} has no support capacity, so it could hold no summons"
-        )
+        raise ValueError(f"mage type {unit_type.id} has no support capacity, so it could hold no summons")
 
 
 def build_unit_type_catalog(unit_types: Sequence[UnitType]) -> UnitTypeCatalog:

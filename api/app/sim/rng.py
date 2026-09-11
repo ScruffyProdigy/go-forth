@@ -59,9 +59,7 @@ class Rng:
         if not isinstance(max_exclusive, int):
             raise TypeError(f"next_int bound must be an integer, got {max_exclusive!r}")
         if max_exclusive < 1:
-            raise ValueError(
-                f"next_int bound must be a positive integer, got {max_exclusive}"
-            )
+            raise ValueError(f"next_int bound must be a positive integer, got {max_exclusive}")
         return int(self.next_uint32() / TWO_POW_32 * max_exclusive)
 
 

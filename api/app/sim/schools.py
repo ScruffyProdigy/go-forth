@@ -60,13 +60,9 @@ def _merge(school: School, overrides: Mapping[str, float]) -> SchoolMultipliers:
 
     for lever, value in overrides.items():
         if lever not in resolved:
-            raise ValueError(
-                f"{lever!r} is not a multiplier; expected one of {_LEVERS}"
-            )
+            raise ValueError(f"{lever!r} is not a multiplier; expected one of {_LEVERS}")
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
-            raise ValueError(
-                f"{school} {lever} must be a positive number, got {value!r}"
-            )
+            raise ValueError(f"{school} {lever} must be a positive number, got {value!r}")
         resolved[lever] = float(value)
 
     return SchoolMultipliers(**resolved)
@@ -86,6 +82,4 @@ def resolve_school_multipliers(
     # Built by walking SCHOOLS, never by iterating the dict above: insertion
     # order would be fine, but "never iterate an unordered collection" is the
     # rule that keeps this sim deterministic across processes.
-    return MappingProxyType(
-        {school: _merge(school, overrides.get(school, {})) for school in SCHOOLS}
-    )
+    return MappingProxyType({school: _merge(school, overrides.get(school, {})) for school in SCHOOLS})

@@ -23,25 +23,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: api/package-lock.json
+          # Matches `requires-python` in api/pyproject.toml and the Dockerfile.
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/pyproject.toml
 
       - name: Install dependencies
-        run: npm ci
+        run: pip install -e ".[dev]"
 
       - name: Lint
-        run: npm run lint
+        run: ruff check .
 
-      # Covers the *tests*, which nothing else does: `tsconfig.json` excludes
-      # them, so the build step below checks `src` and stops there.
+      - name: Format
+        run: ruff format --check .
+
+      # Covers the tests as well as the package. The TypeScript scaffold needed
+      # a second tsconfig to manage that; mypy just takes both paths.
       - name: Typecheck
-        run: npm run typecheck
+        run: mypy app tests
 
       - name: Unit tests
-        run: npm test
+        run: pytest
 
-      - name: Type-check build
-        run: npm run build
+      # The sim's determinism rests on this being off (see api/CONVENTIONS.md).
+      # A pinned PYTHONHASHSEED makes every cross-process determinism test pass
+      # unconditionally, so the one place it must not be set is CI.
+      - name: PYTHONHASHSEED is not pinned
+        run: |
+          if [ -n "${PYTHONHASHSEED:-}" ]; then
+            echo "::error::PYTHONHASHSEED is set to '${PYTHONHASHSEED}' — this disarms every cross-process determinism test"
+            exit 1
+          fi
+          echo "ok: hash randomization is on"

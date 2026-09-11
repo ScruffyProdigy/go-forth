@@ -19,7 +19,7 @@ from app.sim.types import SIDES, Side, Span, Vec2
 
 @dataclass
 class ZoneConfig:
-    #: Short label, as the design doc's A–B–C. Data, not an enum.
+    #: Short label, as the design doc's A-B-C. Data, not an enum.
     id: str
     #: The zone's band down the lane, north edge to south edge.
     lane: Span
@@ -55,7 +55,7 @@ class MapConfig:
 
 
 #: v1 ships one map. Dimensions follow the JQ-243 readability plates: a 375 px
-#: portrait width, three 123 px zones — the measured ceiling, since four zones
+#: portrait width, three 123 px zones - the measured ceiling, since four zones
 #: need ~150 px each and do not fit.
 THREE_ZONE_MAP = MapConfig(
     id="three-zone-lane",
@@ -106,16 +106,12 @@ def validate_map_config(config: MapConfig) -> None:
         if index > 0:
             previous = config.zones[index - 1]
             if zone.lane.start < previous.lane.end:
-                raise ValueError(
-                    f"zones {previous.id} and {zone.id} overlap along the lane"
-                )
+                raise ValueError(f"zones {previous.id} and {zone.id} overlap along the lane")
 
     for side in SIDES:
         strip = config.deployment[side]
         _assert_span_within(strip.lane, config.size_height, f"{side} deployment strip")
-        _assert_span_within(
-            strip.extent, config.size_width, f"{side} deployment strip extent"
-        )
+        _assert_span_within(strip.extent, config.size_width, f"{side} deployment strip extent")
 
         for zone in config.zones:
             if strip.lane.start < zone.lane.end and zone.lane.start < strip.lane.end:
@@ -139,8 +135,6 @@ def zone_containing(config: MapConfig, position: Vec2) -> ZoneConfig | None:
     than being re-derived per system.
     """
     for zone in config.zones:
-        if _span_contains(zone.lane, position.y) and _span_contains(
-            zone.extent, position.x
-        ):
+        if _span_contains(zone.lane, position.y) and _span_contains(zone.extent, position.x):
             return zone
     return None

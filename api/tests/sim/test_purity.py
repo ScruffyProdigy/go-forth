@@ -10,7 +10,11 @@ comments — a source scan would flag this very package's prose about not using
 import ast
 import pathlib
 
-SIM_DIR = pathlib.Path(__file__).resolve().parent.parent / "app" / "sim"
+import app.sim
+
+# Located from the imported package rather than by walking up from this file, so
+# moving the tests cannot silently point the walk at nothing.
+SIM_DIR = pathlib.Path(app.sim.__file__).resolve().parent
 ENTRY = SIM_DIR / "__init__.py"
 
 #: Anything that reaches the outside world, or that is not reproducible.
@@ -46,11 +50,7 @@ FORBIDDEN_CALLS = {"print", "open", "input", "eval", "exec", "compile", "__impor
 def _module_path(name: str) -> pathlib.Path:
     relative = name.split(".")
     candidate = SIM_DIR.parent.parent / pathlib.Path(*relative)
-    return (
-        candidate / "__init__.py"
-        if candidate.is_dir()
-        else candidate.with_suffix(".py")
-    )
+    return candidate / "__init__.py" if candidate.is_dir() else candidate.with_suffix(".py")
 
 
 def _import_graph() -> dict[pathlib.Path, ast.Module]:
@@ -129,9 +129,7 @@ def test_never_calls_a_builtin_that_does_io() -> None:
         f"{_relative(path)} calls {node.func.id}"
         for path, tree in GRAPH.items()
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id in FORBIDDEN_CALLS
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in FORBIDDEN_CALLS
     ]
 
     assert offenders == []

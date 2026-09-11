@@ -12,7 +12,7 @@ from app.sim.run_battle import run_battle
 from app.sim.schools import IDENTITY_MULTIPLIERS, SchoolConfig
 from app.sim.types import Side, Span
 from app.sim.world import ArmySetup, BattleSetup, RosterEntry, TroopSetup
-from tests.fixtures_units import ADEPT, WISP
+from tests.sim.fixtures_units import ADEPT, WISP
 
 
 def narrow_map() -> MapConfig:
@@ -34,18 +34,14 @@ NARROW_MAP = narrow_map()
 
 
 def army(side: Side, type_id: str) -> ArmySetup:
-    return ArmySetup(
-        side=side, troops=[TroopSetup(mages=[RosterEntry(type_id)], summons=[])]
-    )
+    return ArmySetup(side=side, troops=[TroopSetup(mages=[RosterEntry(type_id)], summons=[])])
 
 
 HUNTER_VS_WISP = BattleSetup(
     unit_types=[ADEPT, WISP],
     armies=[army("north", "ember-adept"), army("south", "dying-wisp")],
 )
-STANDOFF = BattleSetup(
-    unit_types=[WISP], armies=[army("north", "dying-wisp"), army("south", "dying-wisp")]
-)
+STANDOFF = BattleSetup(unit_types=[WISP], armies=[army("north", "dying-wisp"), army("south", "dying-wisp")])
 ONE_SECOND = SimConfig(tick_rate=20, max_battle_seconds=1)
 
 
@@ -66,9 +62,7 @@ def test_reports_state_tick_by_tick_numbered_in_order() -> None:
 def test_snapshots_each_tick_so_a_later_tick_cannot_rewrite_an_earlier_one() -> None:
     result = run_battle(NARROW_MAP, [], HUNTER_VS_WISP, 1)
 
-    assert (
-        result.final_state.units[0].position != result.ticks[0].state.units[0].position
-    )
+    assert result.final_state.units[0].position != result.ticks[0].state.units[0].position
 
 
 def test_stops_once_a_side_has_been_wiped_out() -> None:
@@ -86,9 +80,7 @@ def test_stops_at_the_configured_battle_length_when_both_sides_survive() -> None
 
 
 def test_reads_the_tick_rate_from_config() -> None:
-    slow = run_battle(
-        THREE_ZONE_MAP, [], STANDOFF, 1, SimConfig(tick_rate=10, max_battle_seconds=1)
-    )
+    slow = run_battle(THREE_ZONE_MAP, [], STANDOFF, 1, SimConfig(tick_rate=10, max_battle_seconds=1))
 
     assert slow.final_state.tick == 10
 
