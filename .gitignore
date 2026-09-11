@@ -35,5 +35,14 @@ coverage/
 **/coverage/
 test-results/
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
 # Agent worktrees (one per task; never committed)
 .claude/worktrees/

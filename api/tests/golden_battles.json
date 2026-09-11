@@ -1,0 +1,350 @@
+{
+ "7": {
+  "outcome": "annihilation",
+  "finalTick": 363,
+  "events": [
+   {
+    "type": "unitDefeated",
+    "tick": 118,
+    "x": 113.472570376,
+    "y": 279.322608078,
+    "source": "south-t0-u2",
+    "removed": [
+     "north-t0-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 119,
+    "x": 112.463459726,
+    "y": 289.852226404,
+    "source": "north-t1-u0",
+    "removed": [
+     "south-t0-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 145,
+    "x": 98.361563965,
+    "y": 279.319758376,
+    "source": "south-t1-u0",
+    "removed": [
+     "north-t0-u1"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 147,
+    "x": 99.577300104,
+    "y": 286.687718949,
+    "source": "north-t1-u0",
+    "removed": [
+     "south-t0-u1"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 165,
+    "x": 140.311402633,
+    "y": 293.761247725,
+    "source": "north-t1-u1",
+    "removed": [
+     "south-t1-u1"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 170,
+    "x": 198.300843172,
+    "y": 320.503636053,
+    "source": "north-t2-u2",
+    "removed": [
+     "south-t2-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 170,
+    "x": 142.251419569,
+    "y": 286.47351597,
+    "source": "south-t2-u1",
+    "removed": [
+     "north-t1-u1"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 194,
+    "x": 182.342940982,
+    "y": 320.423656774,
+    "source": "north-t2-u1",
+    "removed": [
+     "south-t2-u1"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 209,
+    "x": 197.295497685,
+    "y": 277.077360326,
+    "source": "south-t1-u2",
+    "removed": [
+     "north-t2-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 218,
+    "x": 149.999467949,
+    "y": 328.128005254,
+    "source": "north-t2-u1",
+    "removed": [
+     "south-t1-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 243,
+    "x": 155.029194699,
+    "y": 280.20269886,
+    "source": "south-t1-u0",
+    "removed": [
+     "north-t1-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 293,
+    "x": 164.940147777,
+    "y": 347.416722082,
+    "source": "north-t2-u0",
+    "removed": [
+     "south-t2-u0"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 327,
+    "x": 183.57455228,
+    "y": 323.364384341,
+    "source": "south-t1-u0",
+    "removed": [
+     "north-t2-u1"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 349,
+    "x": 115.984751304,
+    "y": 340.170407557,
+    "source": "north-t2-u0",
+    "removed": [
+     "south-t1-u0"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 363,
+    "x": 69.219393824,
+    "y": 331.513074751,
+    "source": "north-t1-u0",
+    "removed": [
+     "south-t0-u0"
+    ]
+   }
+  ],
+  "survivors": [
+   {
+    "id": "north-t0-u0",
+    "hp": 13,
+    "x": 70.048629399,
+    "y": 242.188305058
+   },
+   {
+    "id": "north-t1-u0",
+    "hp": 55,
+    "x": 122.702093679,
+    "y": 259.26894291
+   },
+   {
+    "id": "north-t2-u0",
+    "hp": 55,
+    "x": 169.431753174,
+    "y": 285.13835047
+   }
+  ]
+ },
+ "20260911": {
+  "outcome": "annihilation",
+  "finalTick": 362,
+  "events": [
+   {
+    "type": "unitDefeated",
+    "tick": 118,
+    "x": 112.944985275,
+    "y": 279.231384582,
+    "source": "south-t0-u2",
+    "removed": [
+     "north-t0-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 119,
+    "x": 112.830416348,
+    "y": 289.788478602,
+    "source": "north-t1-u0",
+    "removed": [
+     "south-t0-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 145,
+    "x": 97.972887379,
+    "y": 276.488816924,
+    "source": "south-t1-u0",
+    "removed": [
+     "north-t0-u1"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 147,
+    "x": 100.365997964,
+    "y": 286.5285827,
+    "source": "north-t1-u0",
+    "removed": [
+     "south-t0-u1"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 165,
+    "x": 140.426305193,
+    "y": 293.748360165,
+    "source": "north-t1-u1",
+    "removed": [
+     "south-t1-u1"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 170,
+    "x": 198.371328598,
+    "y": 320.504990832,
+    "source": "north-t2-u2",
+    "removed": [
+     "south-t2-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 170,
+    "x": 142.482538348,
+    "y": 286.502077813,
+    "source": "south-t2-u1",
+    "removed": [
+     "north-t1-u1"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 194,
+    "x": 182.361642031,
+    "y": 320.423485576,
+    "source": "north-t2-u1",
+    "removed": [
+     "south-t2-u1"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 209,
+    "x": 197.024814022,
+    "y": 277.084032768,
+    "source": "south-t1-u2",
+    "removed": [
+     "north-t2-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 218,
+    "x": 150.432004189,
+    "y": 328.10259124,
+    "source": "north-t2-u1",
+    "removed": [
+     "south-t1-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 243,
+    "x": 155.420534063,
+    "y": 280.23549412,
+    "source": "south-t1-u0",
+    "removed": [
+     "north-t1-u2"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 293,
+    "x": 165.696259236,
+    "y": 347.395954037,
+    "source": "north-t2-u0",
+    "removed": [
+     "south-t2-u0"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 338,
+    "x": 115.38088468,
+    "y": 338.984439628,
+    "source": "north-t2-u1",
+    "removed": [
+     "south-t1-u0"
+    ]
+   },
+   {
+    "type": "unitDefeated",
+    "tick": 362,
+    "x": 68.86170212,
+    "y": 330.422335297,
+    "source": "north-t1-u0",
+    "removed": [
+     "south-t0-u0"
+    ]
+   }
+  ],
+  "survivors": [
+   {
+    "id": "north-t0-u0",
+    "hp": 13,
+    "x": 70.248795959,
+    "y": 241.077772153
+   },
+   {
+    "id": "north-t1-u0",
+    "hp": 48,
+    "x": 121.646203988,
+    "y": 257.906386501
+   },
+   {
+    "id": "north-t2-u0",
+    "hp": 55,
+    "x": 170.379686283,
+    "y": 298.111374234
+   },
+   {
+    "id": "north-t2-u1",
+    "hp": 3,
+    "x": 184.755665168,
+    "y": 378.362450223
+   }
+  ]
+ }
+}

@@ -91,10 +91,12 @@ cd client && npm run lint && npm run typecheck && npm test
 │   ├── src/
 │   │   ├── app.ts            # express app (no listen) — what tests exercise
 │   │   ├── server.ts         # binds the port
-│   │   ├── app.test.ts
+│   │   └── app.test.ts
+│   ├── app/                  # Python game server (JQ-285 replaces the TS above)
 │   │   ├── sim/              # the battle sim — pure, deterministic, headless
 │   │   └── scripts/
-│   │       └── battleDemo.ts # runs a battle, prints the event stream
+│   │       └── battle_demo.py  # runs a battle, prints the event stream
+│   └── tests/                # pytest lives outside the package
 │   ├── tsconfig.json         # build config: src only, emits to dist/
 │   └── tsconfig.typecheck.json  # noEmit, and covers the tests too
 ├── client/                   # Vite + React 18 game UI
@@ -122,35 +124,57 @@ are JQ-188.
 
 The battle phase is auto-resolved and server-authoritative, so the sim runs
 headless and deterministically at a fixed tick rate (design doc §6). It lives in
-[`api/src/sim/`](api/src/sim) and is a **pure module**: no I/O, no wall clock, no
-rendering imports, no `Math.random`.
+[`api/app/sim/`](api/app/sim) and is a **pure module**: no I/O, no wall clock, no
+rendering imports, no randomness that is not seeded.
 
-```ts
-import { THREE_ZONE_MAP, placeholderBattle, runBattle } from './sim/index.js';
+```python
+from app.sim import THREE_ZONE_MAP, placeholder_battle, run_battle
 
-const result = runBattle(THREE_ZONE_MAP, [], placeholderBattle(), seed);
-//    result.ticks    — tick-by-tick state, starting with the opening state
-//    result.events   — the event stream, every event carrying the swing it caused
-//    result.outcome  — why the battle stopped
+result = run_battle(THREE_ZONE_MAP, [], placeholder_battle(), seed)
+#   result.ticks    - tick-by-tick state, starting with the opening state
+#   result.events   - the event stream, every event carrying the swing it caused
+#   result.outcome  - why the battle stopped
 ```
 
 Same inputs and seed, byte-identical state and events — in this process and in a
-fresh one. Two tests hold that seam shut, and both are worth knowing about before
-adding to the sim:
+fresh one. Three tests hold that seam shut, and all three are worth knowing about
+before adding to the sim:
 
 | Guard | What it enforces |
 |---|---|
-| `sim/purity.test.ts` | Walks the import graph from `sim/index.ts`: nothing from `node:`, nothing outside `sim/`, no clock, no `console`, no `Math.random` |
-| `sim/determinism.test.ts` | Two runs in one process and one in a fresh process all serialise identically |
+| `tests/test_purity.py` | Parses the import graph from `app/sim/__init__.py` with `ast`: nothing that reaches the outside world, nothing under `app.` outside `app.sim`, no `print`/`open`/`eval` |
+| `tests/test_determinism.py` | Two runs in one process, plus **five fresh interpreters** that must all agree |
+| `tests/test_golden_parity.py` | Replays two battles captured from the original TypeScript sim and checks every defeat, tick, position and survivor |
 
-The per-tick **phase order** is declared in one place, [`sim/phases.ts`](api/src/sim/phases.ts).
-Adding behaviour to the battle means adding a phase to that list, not threading
-logic through the loop.
+### Two Python rules this sim lives by
+
+Both are specific to Python and neither existed as a hazard in the TypeScript
+this was ported from, where object key order is specified and `Set` iterates in
+insertion order.
+
+1. **Never iterate an unordered collection.** Python randomises string hashing per
+   process (`PYTHONHASHSEED`), so `set` iteration order differs between
+   interpreters. A sim that iterates a set passes every in-process test and
+   diverges between two servers running identical code. Sets are used for
+   membership only.
+2. **Never use module-level `random`.** It is process-global shared state.
+   Randomness comes from an explicit `Rng` threaded through the tick context.
+
+`test_determinism.py` is what keeps rule 1 honest, and it only works because it
+shells out to real child processes — pytest runs a whole suite in one
+interpreter, so an in-process check samples a single hash seed and always agrees.
+It also asserts `PYTHONHASHSEED` is unpinned, because pinning it in CI would make
+the check pass while disarming it everywhere.
+
+The per-tick **phase order** is declared in one place,
+[`app/sim/phases/__init__.py`](api/app/sim/phases/__init__.py). Adding behaviour
+to the battle means adding a phase to that list, not threading logic through the
+loop.
 
 Watch a battle resolve:
 
 ```bash
-cd api && npm run sim:demo -- --seed 7
+cd api && python -m app.scripts.battle_demo --seed 7
 ```
 
 stdout is the canonical event stream (so two runs can be diffed); the summary on
