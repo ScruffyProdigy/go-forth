@@ -40,11 +40,11 @@ as a mirror match, one map. Not balance, not depth.
 └───────────────────────────┘         │                       ┌───────▼────────┐ │
                                       │                       │ Game Postgres  │ │
         future: JWT verify  ◀─────────┼───────────────────────│  :5434         │ │
-        via Lobby JWKS                │                       │  (JQ-285)      │ │
+        via Lobby JWKS                │                       │  (docker)      │ │
                                       └──────────────────────────────────────────┘
 ```
 
-The game owns its client, API, and (soon) database. The Lobby owns auth, the game
+The game owns its client, API, and database. The Lobby owns auth, the game
 catalog, and matchmaking. The battle sim is **server-authoritative** — the client
 renders server state and never simulates ahead of it.
 
@@ -55,8 +55,8 @@ renders server state and never simulates ahead of it.
 | Service  | Go Forth! | rpslr | Lobby | Notes                          |
 |----------|-----------|-------|-------|--------------------------------|
 | Client   | **5175**  | 5174  | 5173  | Vite dev server                |
-| API      | **3002**  | 3001  | 8080  | FastAPI + Python 3.12          |
-| Postgres | **5434**  | 5433  | 5432  | game's own DB — arrives JQ-285 |
+| API      | **3002**  | 3001  | 8080  | FastAPI + Python 3.12             |
+| Postgres | **5434**  | 5433  | 5432  | game's own DB, via docker compose |
 
 All ports are documented in [`.env.example`](.env.example). The offsets are
 deliberate: all three services can run at once on one machine.
@@ -69,15 +69,18 @@ Requires **Python 3.12** for the api and **Node 20 LTS** for the client. The
 two are independent packages, each with its own dependency file, installed
 separately.
 
+Also requires **Docker** for Postgres.
+
 ```bash
-cp .env.example .env
+./scripts/setup.sh    # .env, the api's venv, and both packages' deps
+./scripts/dev.sh      # Postgres + migrations + API (:3002) + Vite (:5175)
+```
 
-cd api
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-python -m app.server                      # API on :3002
+`setup.sh` creates `api/.venv` and installs into it, so there is no virtualenv
+to activate by hand before `dev.sh`. To run the api directly instead:
 
-cd client && npm install && npm run dev   # Client on :5175
+```bash
+cd api && source .venv/bin/activate && python -m app.server
 ```
 
 [uv](https://docs.astral.sh/uv/) reads the same `pyproject.toml` and is faster
@@ -86,9 +89,50 @@ if you have it, but nothing requires it.
 Then open **http://localhost:5175**. Today that is a placeholder screen — the
 real client lands with JQ-190.
 
+`dev.sh` leaves Postgres running when you Ctrl+C, so the next start is fast;
+`./scripts/db.sh down` stops it.
+
+### Database
+
+```bash
+./scripts/db.sh up        # start Postgres (docker compose)
+./scripts/db.sh migrate   # apply api/migrations/*.sql
+./scripts/db.sh reset     # drop the volume, recreate, migrate
+./scripts/db.sh psql      # a psql shell
+./scripts/db.sh url       # print the DATABASE_URL
+```
+
+Migrations are forward-only, applied in filename order, one transaction each,
+and recorded in `schema_migrations` — so re-running is a no-op. That is what
+lets the same command serve local dev and the `migrate` initContainer that runs
+before every Kubernetes rollout.
+
+Add one as `api/migrations/NNNN_name.sql`. **Check the highest existing number
+immediately before you pick one** — parallel agents reliably choose the same
+next number.
+
+### Running with no Lobby
+
+The game is playable standalone, with a stub in place of JoinQuest:
+
+```bash
+./scripts/stub-lobby.sh serve      # JWKS on :4002 + a seat-token minter
+./scripts/stub-lobby.sh token alice match-1 a
+```
+
+The JWKS half is real — an RS256 keypair, a well-formed
+`/.well-known/jwks.json`, and tokens that verify against it. The signing key is
+cached in `.stub-lobby/` (gitignored) so tokens keep verifying across restarts.
+`stub-lobby.sh provision` pushes a match assignment at `POST /api/v1/matches`,
+which JQ-188 builds — until then it reports the 404 and prints the payload it
+would have sent.
+
 ### Run the tests
 
 ```bash
+./scripts/test.sh    # api + client
+
+# or per package
 cd api    && ruff check . && ruff format --check . && mypy app tests && pytest
 cd client && npm run lint && npm run typecheck && npm test
 ```
@@ -101,12 +145,16 @@ cd client && npm run lint && npm run typecheck && npm test
 .
 ├── README.md
 ├── .env.example              # all ports + config documented here
+├── docker-compose.yml        # the game's Postgres, host port 5434
 ├── api/                      # Python 3.12 game server (FastAPI)
 │   ├── pyproject.toml        # deps, ruff, mypy and pytest config in one file
 │   ├── CONVENTIONS.md        # determinism + porting rules — read before the sim
+│   ├── Dockerfile            # builds from the REPO ROOT as context
+│   ├── migrations/           # forward-only *.sql, applied in filename order
 │   ├── app/
 │   │   ├── main.py           # FastAPI factory (no bind) — what tests exercise
 │   │   ├── server.py         # binds the port
+│   │   ├── migrate.py        # the migration runner
 │   │   ├── config.py
 │   │   ├── sim/              # the battle sim — pure, deterministic, headless
 │   │   └── scripts/
@@ -114,11 +162,17 @@ cd client && npm run lint && npm run typecheck && npm test
 │   └── tests/                # outside the package, per Python convention
 │       └── sim/              # the sim's own suite, mirroring app/sim/
 ├── client/                   # Vite + React 18 game UI
+│   ├── Dockerfile            # static build served by nginx
+│   ├── nginx.conf            # SPA routing + the cache policy a deploy needs
+│   ├── docker-entrypoint.d/  # writes /env.js from container env at startup
+│   ├── public/env.js         # the same config, with local dev defaults
 │   └── src/
-│       ├── App.tsx
-│       ├── App.test.tsx
-│       └── test/setup.ts
-└── .github/workflows/        # api-tests, client-tests (each path-filtered)
+├── k8s/
+│   ├── base/                 # namespace, api, client, postgres, ingress
+│   ├── env/                  # per-environment ConfigMaps, ingress, TLS certs
+│   └── secrets/              # *.example.yaml only; real ones are gitignored
+├── scripts/                  # setup, dev, db, test, stub-lobby, build, deploy
+└── .github/workflows/        # api-tests, client-tests, environment-config-test
 ```
 
 ---
@@ -200,7 +254,57 @@ JQ-287; energy and abilities JQ-288; resummoning and resonance JQ-289.
 
 ---
 
-## Out of scope for this scaffold
+## Containers and deploy
 
-Postgres, migrations, docker-compose, Dockerfiles, k8s, and deploy scripts all
-belong to the runtime and deploy ticket (JQ-285).
+Both images build with the **repo root** as their Docker context, so the root
+`.dockerignore` is the single authority on what reaches the daemon — including
+keeping sibling agent worktrees under `.claude/` out of it.
+
+```bash
+./scripts/build-and-push.sh           # build both images
+./scripts/build-and-push.sh --push    # and push (needs a registry login)
+```
+
+The build refuses a dirty tree by default: the context is the working tree, so
+an uncommitted edit would ship in the image with nothing in git recording it.
+
+The client image is **environment-agnostic**. It serves the static build through
+nginx, and `docker-entrypoint.d/40-env-js.sh` rewrites `/env.js` from the
+container's environment at startup. The app reads `window.env`, never
+`import.meta.env` — a build-time value would pin one image to whichever
+environment built it. One image therefore runs in local, staging and production.
+
+```bash
+./scripts/deploy-local.sh        # kind / minikube / docker-desktop
+./scripts/deploy-staging.sh
+./scripts/deploy-production.sh   # prompts for confirmation
+```
+
+Each applies, in order: namespace → secrets → ConfigMap overlay → TLS
+certificate → base workloads → ingress overlay → digest-pinned images → wait for
+rollout → check `/healthz`. Images are pinned by digest because a mutable tag
+alone lets a cluster reuse a cached layer from an earlier push of the same name.
+
+Before a first deploy, fill in the secrets:
+
+```bash
+cp k8s/secrets/pg-dsn.example.yaml     k8s/secrets/pg-dsn.yaml
+cp k8s/secrets/joinquest.example.yaml  k8s/secrets/joinquest.yaml
+```
+
+Both are gitignored, and `environment-config-test.yml` fails the build if a
+non-example secret is ever committed.
+
+> **Hostnames are placeholders.** `go-forth.staging.joinquest.cc` and
+> `go-forth.example` are not registered and do not resolve. Pick real names,
+> point A records at the ingress controller, and change each in three files
+> together — `k8s/env/<env>.yaml`, `<env>-ingress.yaml`, and
+> `<env>-certificate.yaml` — or cert-manager will issue for a name nothing
+> routes to. CI checks the last two agree.
+
+---
+
+## Still out of scope
+
+No game logic beyond `/healthz`. The sim is JQ-286, the session layer and
+JoinQuest integration endpoints are JQ-188, the client is JQ-190/JQ-293.

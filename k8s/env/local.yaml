@@ -1,0 +1,24 @@
+# LOCAL cluster ConfigMap overlay (kind / minikube / docker-desktop).
+# DATABASE_URL is NOT here — it comes from the go-forth-pg-dsn Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: go-forth-api-config
+data:
+  GAME_APP_ENV: "local"
+  API_PORT: "3002"
+  CORS_ALLOWED_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5175,http://go-forth.local"
+  # Seat JWT `aud` is the API's own origin — the host, not the /api ingress path.
+  GAME_API_AUDIENCE: "http://go-forth.local"
+  GAME_PLAY_URL: "http://go-forth.local"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: go-forth-client-config
+data:
+  GAME_APP_ENV: "local"
+  GAME_API_BASE_URL: "http://go-forth.local/api"
+  # Blank — the client derives ws:// from the API base URL.
+  GAME_WS_BASE_URL: ""
+  GAME_LOBBY_URL: ""

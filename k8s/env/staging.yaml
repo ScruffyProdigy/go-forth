@@ -1,0 +1,29 @@
+# STAGING ConfigMap overlay.
+#
+# HOST: go-forth.staging.joinquest.cc is a placeholder until the real staging
+# hostname is chosen and an A record points it at the ingress controller
+# (34.24.82.147 on the joinquest GKE cluster). Change it in three places
+# together — here, staging-ingress.yaml, and staging-certificate.yaml — or
+# cert-manager issues a certificate for a name nothing routes to.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: go-forth-api-config
+data:
+  GAME_APP_ENV: "staging"
+  API_PORT: "3002"
+  CORS_ALLOWED_ORIGINS: "https://joinquest.cc"
+  GAME_API_AUDIENCE: "https://go-forth.staging.joinquest.cc"
+  GAME_PLAY_URL: "https://go-forth.staging.joinquest.cc"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: go-forth-client-config
+data:
+  GAME_APP_ENV: "staging"
+  # The browser reaches the API through the ingress /api prefix; the JWT `aud`
+  # is the bare origin above.
+  GAME_API_BASE_URL: "https://go-forth.staging.joinquest.cc/api"
+  GAME_WS_BASE_URL: ""
+  GAME_LOBBY_URL: ""

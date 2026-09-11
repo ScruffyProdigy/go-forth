@@ -1,0 +1,29 @@
+# PRODUCTION ConfigMap overlay.
+#
+# HOST: go-forth.example is a placeholder. Go Forth! has no production domain
+# registered yet — rpslr has rpsls-duel.win, this game has nothing equivalent.
+# Pick one, register it, point an A record at the ingress controller, and change
+# it here, in production-ingress.yaml, and in production-certificate.yaml
+# together. Until then `deploy-production.sh` will issue a certificate for a
+# name that does not resolve, and the Let's Encrypt HTTP-01 challenge will fail.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: go-forth-api-config
+data:
+  GAME_APP_ENV: "production"
+  API_PORT: "3002"
+  # Extra browser origins only. GAME_API_AUDIENCE is always allowed.
+  CORS_ALLOWED_ORIGINS: ""
+  GAME_API_AUDIENCE: "https://go-forth.example"
+  GAME_PLAY_URL: "https://go-forth.example"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: go-forth-client-config
+data:
+  GAME_APP_ENV: "production"
+  GAME_API_BASE_URL: "https://go-forth.example/api"
+  GAME_WS_BASE_URL: ""
+  GAME_LOBBY_URL: "https://joinquest.cc/games/go-forth"
