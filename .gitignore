@@ -1,0 +1,39 @@
+# Dependencies. No trailing slash: a worktree may symlink node_modules to the
+# primary clone's, and `node_modules/` matches only directories — a symlink
+# slipped past it once in rpslr and got committed.
+node_modules
+**/node_modules
+
+# Build output
+dist/
+build/
+**/dist/
+**/build/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Env files (never commit real secrets)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+.dev-pids
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Test / coverage
+coverage/
+**/coverage/
+test-results/
+
+# Agent worktrees (one per task; never committed)
+.claude/worktrees/
