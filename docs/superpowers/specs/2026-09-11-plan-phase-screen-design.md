@@ -156,8 +156,10 @@ vitest + RTL, already in the repo.
 
 Battle rendering and the in-battle HUD (JQ-190, JQ-294); designing the spells
 themselves (JQ-292); the server contract (JQ-287, JQ-297); anything reading
-runtime config (JQ-285 — when session endpoints land they should read that
-ticket's `window.__CONFIG__` global, not `import.meta.env`).
+runtime config (JQ-285 — when session endpoints land they should read
+`window.env.GAME_API_BASE_URL` from that ticket's `client/public/env.js`, not
+`import.meta.env`, which freezes the value to whichever environment built the
+image).
 
 ## Open, carried forward
 
