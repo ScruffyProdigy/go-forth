@@ -1,0 +1,16 @@
+# The client image builds with the repo root as its context so the Dockerfile
+# can reach anything outside client/, so everything the root holds and the
+# image does not need is excluded here — sibling agent worktrees above all,
+# which would otherwise drag whole extra checkouts into the context.
+.git
+.claude
+**/node_modules
+**/dist
+**/coverage
+*.log
+.env
+.env.*
+!.env.example
+
+# Never let a real secret into a build context, even one that is gitignored.
+k8s/secrets

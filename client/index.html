@@ -14,6 +14,18 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      Runtime config, as `window.env`. The nginx image rewrites this file at
+      container start from its environment (client/docker-entrypoint.d/), so
+      one built image runs in local, staging and production. Read config from
+      `window.env`, never from import.meta.env — a build-time value would pin
+      the image to whichever environment built it.
+
+      Not a module, and before the bundle, so it has run by the time app code
+      looks at it. In `vite dev` the file served here is client/public/env.js,
+      which carries the local defaults.
+    -->
+    <script src="/env.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

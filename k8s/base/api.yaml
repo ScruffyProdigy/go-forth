@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-forth-api
+  labels:
+    app: go-forth-api
+    joinquest.io/game-id: go-forth
+spec:
+  selector:
+    app: go-forth-api
+  ports:
+    - name: http
+      port: 3002
+      targetPort: 3002
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-forth-api
+  labels:
+    app: go-forth-api
+    joinquest.io/game-id: go-forth
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: go-forth-api
+  template:
+    metadata:
+      labels:
+        app: go-forth-api
+        joinquest.io/game-id: go-forth
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      # Migrations run to completion before the API container starts, so a
+      # rollout can never serve a build against a schema older than it expects.
+      initContainers:
+        - name: migrate
+          image: docker.io/scruffyprodigy/go-forth-api:go-forth
+          imagePullPolicy: Always
+          command: ["python", "-m", "app.migrate"]
+          envFrom:
+            - configMapRef:
+                name: go-forth-api-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: go-forth-pg-dsn
+                  key: DATABASE_URL
+      containers:
+        - name: api
+          image: docker.io/scruffyprodigy/go-forth-api:go-forth
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3002
+          # No hardcoded env in base — everything comes from the env overlay's
+          # ConfigMap, so one set of base manifests serves every environment.
+          envFrom:
+            - configMapRef:
+                name: go-forth-api-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: go-forth-pg-dsn
+                  key: DATABASE_URL
+            # JoinQuest credentials. Optional until JQ-188 wires the session
+            # layer: the secret is created by scripts/deploy-*.sh from
+            # k8s/secrets/joinquest.yaml, and `optional: true` keeps the pod
+            # schedulable before it exists.
+            - name: JOINQUEST_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: go-forth-joinquest
+                  key: JOINQUEST_SERVICE_TOKEN
+                  optional: true
+            - name: JOINQUEST_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: go-forth-joinquest
+                  key: JOINQUEST_WEBHOOK_SECRET
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3002
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi

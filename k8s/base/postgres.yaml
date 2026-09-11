@@ -1,0 +1,85 @@
+# In-cluster Postgres for a self-contained game deploy.
+#
+# For staging and production you may instead point DATABASE_URL at a managed
+# database via the pg-dsn secret and skip this manifest — a StatefulSet with a
+# 1Gi PVC is right for a playtest, not for anything with real players' history
+# in it. This game NEVER uses the Lobby's database.
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-forth-postgres
+  labels:
+    app: go-forth-postgres
+spec:
+  selector:
+    app: go-forth-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: go-forth-postgres
+spec:
+  serviceName: go-forth-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-forth-postgres
+  template:
+    metadata:
+      labels:
+        app: go-forth-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: go-forth-pg-dsn
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: go-forth-pg-dsn
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: go-forth-pg-dsn
+                  key: POSTGRES_DB
+            # A GKE PVC mount contains lost+found, which Postgres refuses to
+            # initialise over; a subdirectory for PGDATA sidesteps it.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "goforth", "-d", "go_forth"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          # Autopilot bills on requests and gives a container with no resources
+          # block a 500m CPU / 2Gi default. Set them explicitly.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

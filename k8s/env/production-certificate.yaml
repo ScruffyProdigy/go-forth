@@ -1,0 +1,18 @@
+# TLS certificate for go-forth.example (cert-manager). The Secret named here is the one
+# production-ingress.yaml references; the two names must match.
+#
+# HTTP-01 validation means the hostname must already resolve to the ingress
+# controller before this will issue — a Certificate for a name with no A record
+# sits in a retry loop rather than failing loudly.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: go-forth-production
+  namespace: go-forth
+spec:
+  secretName: go-forth-production-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - go-forth.example

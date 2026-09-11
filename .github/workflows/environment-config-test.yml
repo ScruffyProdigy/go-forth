@@ -1,0 +1,251 @@
+name: environment-config-test
+
+# Path-filtered like the other two workflows: this job builds Docker images, so
+# it has no business running on a change that touches neither deploy config nor
+# the container build.
+# GitHub Actions' workflow parser does not resolve YAML anchors, so the two
+# path lists are spelled out and have to be edited together.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "k8s/**"
+      - "scripts/**"
+      - "api/Dockerfile"
+      - "client/Dockerfile"
+      - "client/nginx.conf"
+      - "client/docker-entrypoint.d/**"
+      - "client/public/env.js"
+      - "docker-compose.yml"
+      - ".dockerignore"
+      - ".github/workflows/environment-config-test.yml"
+  pull_request:
+    paths:
+      - "k8s/**"
+      - "scripts/**"
+      - "api/Dockerfile"
+      - "client/Dockerfile"
+      - "client/nginx.conf"
+      - "client/docker-entrypoint.d/**"
+      - "client/public/env.js"
+      - "docker-compose.yml"
+      - ".dockerignore"
+      - ".github/workflows/environment-config-test.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. Every script must be syntactically valid bash. These run at deploy
+      #    time, where a typo surfaces halfway through a rollout.
+      - name: bash -n on all scripts
+        run: |
+          set -e
+          for f in scripts/*.sh; do
+            echo "checking $f"
+            bash -n "$f"
+          done
+          python3 -m py_compile scripts/stub_lobby.py
+          echo "ok: scripts parse"
+
+      # 2. Every k8s manifest must be valid YAML.
+      - name: Validate YAML manifests
+        run: |
+          python3 - <<'PY'
+          import glob, sys, yaml
+          ok = True
+          for path in sorted(glob.glob("k8s/**/*.yaml", recursive=True)):
+              try:
+                  list(yaml.safe_load_all(open(path)))
+                  print(f"valid: {path}")
+              except Exception as e:
+                  print(f"::error::INVALID {path}: {e}")
+                  ok = False
+          sys.exit(0 if ok else 1)
+          PY
+
+      # 3. Each env overlay must define both ConfigMaps the deployments read
+      #    via envFrom. A missing one leaves the pod stuck in CreateContainerConfigError.
+      - name: ConfigMap names present in every env overlay
+        run: |
+          set -e
+          for env in local staging production; do
+            file="k8s/env/${env}.yaml"
+            grep -q "name: go-forth-api-config" "$file" \
+              || { echo "::error::missing go-forth-api-config in $file"; exit 1; }
+            grep -q "name: go-forth-client-config" "$file" \
+              || { echo "::error::missing go-forth-client-config in $file"; exit 1; }
+            echo "ok: $file"
+          done
+
+      # 4. An env ingress overlay replaces the base rules wholesale, so a path
+      #    added only to the base never reaches that environment — it falls
+      #    through to the client and returns the SPA where an API response was
+      #    expected. rpslr shipped exactly that bug (JQ-120).
+      - name: Ingress overlays route every path the base does
+        run: |
+          python3 - <<'PY'
+          import glob, sys, yaml
+
+          def paths(path):
+              doc = yaml.safe_load(open(path))
+              rules = doc["spec"]["rules"][0]["http"]["paths"]
+              return {p["path"]: p["backend"]["service"]["name"] for p in rules}
+
+          base = paths("k8s/base/ingress.yaml")
+          ok = True
+          for overlay in sorted(glob.glob("k8s/env/*-ingress.yaml")):
+              have = paths(overlay)
+              for route, service in base.items():
+                  if have.get(route) != service:
+                      print(f"::error::{overlay} routes {route} to {have.get(route)!r}, base says {service!r}")
+                      ok = False
+              print(f"checked: {overlay}")
+          sys.exit(0 if ok else 1)
+          PY
+
+      # 5. Each ingress overlay's TLS secretName must match the Certificate that
+      #    issues it — mismatched names leave the ingress serving the default
+      #    self-signed cert, which looks like a DNS problem and is not one.
+      - name: TLS secret names match their Certificates
+        run: |
+          python3 - <<'PY'
+          import glob, os, sys, yaml
+
+          ok = True
+          for overlay in sorted(glob.glob("k8s/env/*-ingress.yaml")):
+              env = os.path.basename(overlay).removesuffix("-ingress.yaml")
+              cert_path = f"k8s/env/{env}-certificate.yaml"
+              if not os.path.exists(cert_path):
+                  print(f"::error::{overlay} has no matching {cert_path}")
+                  ok = False
+                  continue
+              ingress = yaml.safe_load(open(overlay))
+              cert = yaml.safe_load(open(cert_path))
+              tls = ingress["spec"].get("tls") or []
+              want = {t.get("secretName") for t in tls}
+              got = cert["spec"]["secretName"]
+              if got not in want:
+                  print(f"::error::{cert_path} issues into {got!r}, but {overlay} expects one of {want}")
+                  ok = False
+              ingress_host = ingress["spec"]["rules"][0]["host"]
+              cert_hosts = set(cert["spec"]["dnsNames"])
+              if ingress_host not in cert_hosts:
+                  print(f"::error::{overlay} serves {ingress_host!r}, certificate covers {cert_hosts}")
+                  ok = False
+              print(f"checked: {env}")
+          sys.exit(0 if ok else 1)
+          PY
+
+      # 6. The base client must take its config from the ConfigMap, never
+      #    hardcoded — that pattern is what lets one image serve every env.
+      - name: Base client uses ConfigMap envFrom
+        run: |
+          set -e
+          grep -q "configMapRef" k8s/base/client.yaml \
+            || { echo "::error::client.yaml missing configMapRef"; exit 1; }
+          grep -q "envFrom" k8s/base/client.yaml \
+            || { echo "::error::client.yaml missing envFrom"; exit 1; }
+          echo "ok: base client uses envFrom + configMapRef"
+
+      # 7. Real secrets must never be committed — only *.example.yaml.
+      - name: No committed secrets
+        run: |
+          set -e
+          shopt -s nullglob
+          leaked=()
+          for f in k8s/secrets/*.yaml; do
+            case "$f" in
+              *.example.yaml) ;;
+              *) leaked+=("$f") ;;
+            esac
+          done
+          if [ ${#leaked[@]} -gt 0 ]; then
+            echo "::error::non-example secret files committed: ${leaked[*]}"
+            exit 1
+          fi
+          echo "ok: only example secrets present"
+
+      # 8. The runtime env injection actually works: build the client image and
+      #    confirm the entrypoint rewrites env.js from container env vars. This
+      #    is the mechanism the whole one-image-per-environment claim rests on.
+      - name: Docker env.js injection test
+        run: |
+          set -e
+          docker build -t go-forth-client-envtest -f client/Dockerfile .
+          cid=$(docker run -d \
+            -e GAME_APP_ENV=staging \
+            -e GAME_API_BASE_URL=https://go-forth.staging.example/api \
+            go-forth-client-envtest)
+          sleep 4
+          out=$(docker exec "$cid" cat /usr/share/nginx/html/env.js)
+          echo "$out"
+          docker rm -f "$cid" >/dev/null
+          echo "$out" | grep -q 'GAME_APP_ENV: "staging"' \
+            || { echo "::error::env.js missing the injected GAME_APP_ENV"; exit 1; }
+          echo "$out" | grep -q 'https://go-forth.staging.example/api' \
+            || { echo "::error::env.js missing the injected GAME_API_BASE_URL"; exit 1; }
+          echo "ok: runtime env injection works"
+
+      # 9. index.html must never be cacheable. It is the only thing naming which
+      #    hashed bundle to load, and those are immutable for a year — a stale
+      #    index.html means a browser quietly runs the previous release with
+      #    nothing visibly broken. Assets must stay immutable, or every deploy
+      #    re-downloads the whole bundle.
+      - name: Cache headers let a deploy actually reach a browser
+        run: |
+          set -e
+          cid=$(docker run -d -p 8099:80 go-forth-client-envtest)
+          sleep 4
+          html_cc=$(curl -sI http://localhost:8099/ | tr -d '\r' | grep -i '^cache-control:' || true)
+          spa_cc=$(curl -sI http://localhost:8099/some/spa/route | tr -d '\r' | grep -i '^cache-control:' || true)
+          env_cc=$(curl -sI http://localhost:8099/env.js | tr -d '\r' | grep -i '^cache-control:' || true)
+          # Counted here, not after the assertions: the container is torn down
+          # below, and a curl against a dead port returns nothing, which counts
+          # as zero and fails for the wrong reason.
+          env_cc_count=$(curl -sI http://localhost:8099/env.js | tr -d '\r' | grep -ci '^cache-control:' || true)
+          asset=$(curl -s http://localhost:8099/ | grep -o '/assets/index-[A-Za-z0-9_-]*\.js' | head -1)
+          asset_cc=$(curl -sI "http://localhost:8099$asset" | tr -d '\r' | grep -i '^cache-control:' || true)
+          docker rm -f "$cid" >/dev/null
+          echo "html:   $html_cc"
+          echo "spa:    $spa_cc"
+          echo "env.js: $env_cc"
+          echo "env.js Cache-Control headers: $env_cc_count"
+          echo "asset:  $asset_cc"
+          echo "$html_cc" | grep -q 'no-cache' \
+            || { echo "::error::index.html is cacheable — a deploy may not reach browsers"; exit 1; }
+          echo "$spa_cc" | grep -q 'no-cache' \
+            || { echo "::error::SPA fallback HTML is cacheable"; exit 1; }
+          echo "$env_cc" | grep -q 'no-store' \
+            || { echo "::error::env.js is cacheable — a browser could hold another environment's config"; exit 1; }
+          # Exactly one Cache-Control header. `expires` and `add_header` each
+          # emit their own and nginx sends both; the merged value happens to
+          # still mean no-store, but it is ambiguous on the wire.
+          [ "$env_cc_count" = "1" ] \
+            || { echo "::error::env.js sends $env_cc_count Cache-Control headers, expected 1"; exit 1; }
+          echo "$asset_cc" | grep -q 'immutable' \
+            || { echo "::error::hashed assets lost immutable caching"; exit 1; }
+          echo "ok: html revalidates, env.js is never stored, assets stay immutable"
+
+      # 10. The api image must carry the SQL the migrate initContainer applies.
+      #     Migrations are read at runtime, not compiled, so a Dockerfile that
+      #     forgets to COPY them produces an image that starts and then fails
+      #     every rollout at the init step.
+      - name: API image ships its migrations and can run the migrator
+        run: |
+          set -e
+          docker build -t go-forth-api-migratetest -f api/Dockerfile .
+          docker run --rm go-forth-api-migratetest ls migrations | tee /tmp/migrations.txt
+          grep -q '0001_init.sql' /tmp/migrations.txt \
+            || { echo "::error::api image is missing api/migrations"; exit 1; }
+          # Import the module the initContainer runs, rather than just checking
+          # the file is present: a missing dependency inside the image fails
+          # here instead of halfway through the next rollout.
+          docker run --rm go-forth-api-migratetest python -c "import app.migrate" \
+            || { echo "::error::api image cannot import app.migrate — the initContainer would fail"; exit 1; }
+          # And that the manifest's command is the one that actually exists.
+          grep -q 'command: \["python", "-m", "app.migrate"\]' k8s/base/api.yaml \
+            || { echo "::error::k8s initContainer command does not match the image entrypoint"; exit 1; }
+          echo "ok: api image ships migrations and the migrate entrypoint"

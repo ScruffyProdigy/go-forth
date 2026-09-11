@@ -1,0 +1,25 @@
+# Go Forth!'s own Postgres. Host port 5434 keeps it clear of rpslr (5433) and
+# the Lobby platform (5432) so all three stacks can run at once. This game
+# never shares the Lobby's database.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: go-forth-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-goforth}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-goforth_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-go_forth}
+    ports:
+      # host:container — host 5434 avoids rpslr's 5433 and Lobby's 5432.
+      - "${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - go_forth_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-goforth} -d ${POSTGRES_DB:-go_forth}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  go_forth_pgdata:

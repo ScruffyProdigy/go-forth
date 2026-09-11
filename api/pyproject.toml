@@ -20,6 +20,9 @@ dev = [
     "httpx>=0.27.0",
     "mypy>=1.13.0",
     "ruff>=0.7.0",
+    # scripts/stub_lobby.py mints the RS256 seat tokens that stand in for the
+    # Lobby. Dev-only: what production uses to *verify* them is JQ-188's call.
+    "cryptography>=43.0.0",
 ]
 
 [project.scripts]
