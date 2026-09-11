@@ -1,0 +1,47 @@
+name: api-tests
+
+# Path-filtered: `api/` and `client/` are independent packages, so a client-only
+# change has no business spending a runner on this job.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - ".github/workflows/api-tests.yml"
+  pull_request:
+    paths:
+      - "api/**"
+      - ".github/workflows/api-tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # Covers the *tests*, which nothing else does: `tsconfig.json` excludes
+      # them, so the build step below checks `src` and stops there.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Type-check build
+        run: npm run build
