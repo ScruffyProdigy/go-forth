@@ -91,7 +91,10 @@ cd client && npm run lint && npm run typecheck && npm test
 │   ├── src/
 │   │   ├── app.ts            # express app (no listen) — what tests exercise
 │   │   ├── server.ts         # binds the port
-│   │   └── app.test.ts
+│   │   ├── app.test.ts
+│   │   ├── sim/              # the battle sim — pure, deterministic, headless
+│   │   └── scripts/
+│   │       └── battleDemo.ts # runs a battle, prints the event stream
 │   ├── tsconfig.json         # build config: src only, emits to dist/
 │   └── tsconfig.typecheck.json  # noEmit, and covers the tests too
 ├── client/                   # Vite + React 18 game UI
@@ -111,12 +114,55 @@ cd client && npm run lint && npm run typecheck && npm test
 | GET    | `/healthz` | returns `200 ok`   |
 
 That is the whole surface for now, on purpose. Session and integration endpoints
-are JQ-188; the sim is JQ-186.
+are JQ-188.
+
+---
+
+## The battle sim
+
+The battle phase is auto-resolved and server-authoritative, so the sim runs
+headless and deterministically at a fixed tick rate (design doc §6). It lives in
+[`api/src/sim/`](api/src/sim) and is a **pure module**: no I/O, no wall clock, no
+rendering imports, no `Math.random`.
+
+```ts
+import { THREE_ZONE_MAP, placeholderBattle, runBattle } from './sim/index.js';
+
+const result = runBattle(THREE_ZONE_MAP, [], placeholderBattle(), seed);
+//    result.ticks    — tick-by-tick state, starting with the opening state
+//    result.events   — the event stream, every event carrying the swing it caused
+//    result.outcome  — why the battle stopped
+```
+
+Same inputs and seed, byte-identical state and events — in this process and in a
+fresh one. Two tests hold that seam shut, and both are worth knowing about before
+adding to the sim:
+
+| Guard | What it enforces |
+|---|---|
+| `sim/purity.test.ts` | Walks the import graph from `sim/index.ts`: nothing from `node:`, nothing outside `sim/`, no clock, no `console`, no `Math.random` |
+| `sim/determinism.test.ts` | Two runs in one process and one in a fresh process all serialise identically |
+
+The per-tick **phase order** is declared in one place, [`sim/phases.ts`](api/src/sim/phases.ts).
+Adding behaviour to the battle means adding a phase to that list, not threading
+logic through the loop.
+
+Watch a battle resolve:
+
+```bash
+cd api && npm run sim:demo -- --seed 7
+```
+
+stdout is the canonical event stream (so two runs can be diffed); the summary on
+stderr says who won.
+
+**Scope.** Slice A (JQ-286) ships the world model, the tick loop, map config, the
+event envelope, and move-and-fight. Orders, formations, and zone scoring are
+JQ-287; energy and abilities JQ-288; resummoning and resonance JQ-289.
 
 ---
 
 ## Out of scope for this scaffold
 
 Postgres, migrations, docker-compose, Dockerfiles, k8s, and deploy scripts all
-belong to the runtime and deploy ticket (JQ-285). There is no game logic here
-beyond `/healthz`.
+belong to the runtime and deploy ticket (JQ-285).
