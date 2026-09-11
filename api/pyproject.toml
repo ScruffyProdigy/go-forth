@@ -1,0 +1,61 @@
+[project]
+name = "go-forth-api"
+version = "0.1.0"
+description = "Go Forth! game server — the JoinQuest Python reference implementation"
+# Mirrors the `engines.node` ">=20 <23" bound the TypeScript scaffold set: a
+# floor recent enough to write current Python, and a ceiling so a brand-new
+# release is adopted deliberately rather than by whatever CI happens to pick.
+requires-python = ">=3.12,<3.14"
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "psycopg[binary]>=3.2.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "httpx>=0.27.0",
+    "mypy>=1.13.0",
+    "ruff>=0.7.0",
+]
+
+[project.scripts]
+go-forth-api = "app.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+# `tests/` sits outside the package, so the package directory has to be on the
+# path. This replaces the temporary `api/conftest.py` the sim port needed
+# before this file existed.
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # import sorting
+    "UP",        # pyupgrade — keeps the code in the version it claims to target
+    "B",         # bugbear
+    "SIM",       # simplify
+    "RUF",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+# The sim's determinism work depends on being told when a type is silently Any.
+warn_unreachable = true

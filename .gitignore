@@ -1,8 +1,23 @@
 # Dependencies. No trailing slash: a worktree may symlink node_modules to the
 # primary clone's, and `node_modules/` matches only directories — a symlink
 # slipped past it once in rpslr and got committed.
+# The client still builds with Vite, so Node is still here; the api is Python.
 node_modules
 **/node_modules
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+**/.venv/
+*.egg-info/
+**/*.egg-info/
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
+.ruff_cache/
+**/.ruff_cache/
 
 # Build output
 dist/

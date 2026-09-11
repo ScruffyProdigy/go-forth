@@ -9,6 +9,13 @@ regenerating energy pool.
 Phone-first, portrait, tap-only. Entry is via the [JoinQuest Lobby](https://joinquest.cc),
 using the same integration shape as [rpslr](https://github.com/ScruffyProdigy/rpslr).
 
+> **This api is JoinQuest's Python reference implementation.** rpslr and
+> [wordhunt](https://github.com/ScruffyProdigy/wordhunt) already cover
+> TypeScript, so go-forth exists partly so a Python developer has the
+> integration contract in the language they're writing. The wire contract must
+> match rpslr exactly — only the implementation differs. See
+> [`api/CONVENTIONS.md`](api/CONVENTIONS.md).
+
 > This repo is **fully independent** from the Lobby. It does **not** share the
 > Lobby's database, ports, or GraphQL schema. It runs on its own ports
 > (5175 / 3002 / 5434).
@@ -26,7 +33,7 @@ as a mirror match, one map. Not balance, not depth.
 │      (separate repo)      │         │                                          │
 │                           │         │   ┌─────────────┐     ┌───────────────┐  │
 │  React UI    :5173        │  link   │   │  Client     │ →   │  Game API     │  │
-│  Go GraphQL  :8080  ──────┼─playUrl─┼─▶ │  Vite/React │HTTP │  Express/TS   │  │
+│  Go GraphQL  :8080  ──────┼─playUrl─┼─▶ │  Vite/React │HTTP │ FastAPI/Python│  │
 │  Postgres    :5432        │  (+JWT) │   │  :5175      │     │  :3002        │  │
 │  JWKS /.well-known/...    │         │   └─────────────┘     └───────┬───────┘  │
 │                           │         │                               │          │
@@ -48,7 +55,7 @@ renders server state and never simulates ahead of it.
 | Service  | Go Forth! | rpslr | Lobby | Notes                          |
 |----------|-----------|-------|-------|--------------------------------|
 | Client   | **5175**  | 5174  | 5173  | Vite dev server                |
-| API      | **3002**  | 3001  | 8080  | Express + TypeScript           |
+| API      | **3002**  | 3001  | 8080  | FastAPI + Python 3.12          |
 | Postgres | **5434**  | 5433  | 5432  | game's own DB — arrives JQ-285 |
 
 All ports are documented in [`.env.example`](.env.example). The offsets are
@@ -58,16 +65,23 @@ deliberate: all three services can run at once on one machine.
 
 ## Quick start
 
-Requires **Node 20 LTS** and **npm**. `api/` and `client/` are independent
-packages with their own `package.json` and lockfile — there is no npm workspace,
-so install each one separately (this matches rpslr).
+Requires **Python 3.12** for the api and **Node 20 LTS** for the client. The
+two are independent packages, each with its own dependency file, installed
+separately.
 
 ```bash
 cp .env.example .env
 
-cd api && npm install && npm run dev      # API on :3002
+cd api
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+python -m app.server                      # API on :3002
+
 cd client && npm install && npm run dev   # Client on :5175
 ```
+
+[uv](https://docs.astral.sh/uv/) reads the same `pyproject.toml` and is faster
+if you have it, but nothing requires it.
 
 Then open **http://localhost:5175**. Today that is a placeholder screen — the
 real client lands with JQ-190.
@@ -75,7 +89,7 @@ real client lands with JQ-190.
 ### Run the tests
 
 ```bash
-cd api    && npm run lint && npm run typecheck && npm test
+cd api    && ruff check . && ruff format --check . && mypy app tests && pytest
 cd client && npm run lint && npm run typecheck && npm test
 ```
 
@@ -87,13 +101,14 @@ cd client && npm run lint && npm run typecheck && npm test
 .
 ├── README.md
 ├── .env.example              # all ports + config documented here
-├── api/                      # Node 20 + TypeScript game server (Express)
-│   ├── src/
-│   │   ├── app.ts            # express app (no listen) — what tests exercise
-│   │   ├── server.ts         # binds the port
-│   │   └── app.test.ts
-│   ├── tsconfig.json         # build config: src only, emits to dist/
-│   └── tsconfig.typecheck.json  # noEmit, and covers the tests too
+├── api/                      # Python 3.12 game server (FastAPI)
+│   ├── pyproject.toml        # deps, ruff, mypy and pytest config in one file
+│   ├── CONVENTIONS.md        # determinism + porting rules — read before the sim
+│   ├── app/
+│   │   ├── main.py           # FastAPI factory (no bind) — what tests exercise
+│   │   ├── server.py         # binds the port
+│   │   └── config.py
+│   └── tests/                # outside the package, per Python convention
 ├── client/                   # Vite + React 18 game UI
 │   └── src/
 │       ├── App.tsx
