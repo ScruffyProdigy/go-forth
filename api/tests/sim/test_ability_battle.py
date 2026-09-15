@@ -11,7 +11,7 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from app.sim.fixtures import ABILITY_UNIT_TYPES, PLACEHOLDER_UNIT_TYPES, ability_battle
+from app.sim.fixtures import ABILITY_UNIT_TYPES, ability_battle
 from app.sim.map import THREE_ZONE_MAP
 from app.sim.run_battle import BattleResult, run_battle
 from app.sim.serialize import digest_battle, serialize_battle
@@ -109,12 +109,6 @@ def test_an_emplacement_never_moves_over_a_whole_battle() -> None:
         for unit in tick.state.units:
             if unit.type_id == "slag-wall":
                 assert unit.position == start[unit.id]
-
-
-def test_the_slice_a_roster_still_carries_no_abilities() -> None:
-    """`golden_battles.json` was captured from it. Giving these cards gauges
-    would silently retire the port-fidelity check in `test_golden_parity.py`."""
-    assert all(unit_type.ability_id is None for unit_type in PLACEHOLDER_UNIT_TYPES)
 
 
 def test_the_result_carries_the_energy_rules_the_battle_ran_under() -> None:

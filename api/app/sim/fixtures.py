@@ -14,13 +14,23 @@ Each troop carries an order, because a troop without one cannot be built: two
 hold the near zones and one pushes, which is enough to put every derived
 formation and both endings — zone score and base damage — on screen in one run.
 
-`PLACEHOLDER_UNIT_TYPES` carries **no abilities on purpose**. It is the roster
-`tests/sim/golden_battles.json` was captured from, back when the sim was
-TypeScript and had no energy at all, and `test_golden_parity.py` still checks
-this implementation against it battle for battle. Giving these cards abilities
-would change every one of those battles and throw the port-fidelity check away.
-The ability-bearing roster is `ABILITY_UNIT_TYPES` below, and it is a separate
-army.
+`PLACEHOLDER_UNIT_TYPES` carries no abilities, and the ability-bearing roster
+below is a separate army. That split is a convenience rather than a rule: a
+plain army with nothing but movement and auto-attacks is the fixture you want
+when the thing under test is movement or auto-attacks, and it keeps the
+headless demo's default run short. Either roster may grow an ability the day
+someone needs one to.
+
+It used to be a rule. This roster is what `tests/sim/golden_battles.json` was
+captured from before the TypeScript sim was deleted, and giving these cards
+gauges would have changed every one of those battles and retired the
+port-fidelity check with them. That check had one job — catching a wrong
+transliteration, which is still perfectly deterministic and so invisible to
+every other test we have — and it did it. Slice B's derived formations moved
+these units off their captured paths, so JQ-287 retired it, correctly. The RNG
+vectors in `tests/sim/test_rng.py` are the part of that capture worth keeping:
+mulberry32's sequence is what every saved seed and every replay rests on, and
+pinning it constrains no gameplay.
 """
 
 from __future__ import annotations
