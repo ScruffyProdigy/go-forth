@@ -22,7 +22,7 @@ from app.sim.energy import DAMAGE_DEALT, DAMAGE_TAKEN
 from app.sim.events import base_hit, unit_defeated
 from app.sim.geometry import distance
 from app.sim.orders import may_attack_base
-from app.sim.phases.targeting import acquire_target
+from app.sim.phases.targeting import acquire_target, declines_target
 from app.sim.types import opposing
 from app.sim.world import Unit, World, is_alive, orders_by_troop, unit_ref
 
@@ -70,6 +70,14 @@ class CombatPhase:
 
             target = acquire_target(world, unit)
             if target is None:
+                # A retreating unit swings at nothing — including the base. Without
+                # this it would acquire no unit, fall through to the wall, and
+                # hammer it while running away, which is the one outcome a
+                # disengagement must not produce. `acquire_target` cannot express
+                # the difference: "nobody in range" and "declining to fight" reach
+                # here as the same None.
+                if declines_target(unit):
+                    continue
                 if may_attack_base(orders[unit.troop_id]) and _swing_at_the_base(world, unit, ctx):
                     unit.cooldown_remaining = to_ticks(unit.attack_cooldown_seconds, ctx.config)
                 continue

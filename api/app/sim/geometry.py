@@ -30,3 +30,27 @@ def move_toward(origin: Vec2, target: Vec2, step: float) -> Vec2:
         origin.x + (target.x - origin.x) * scale,
         origin.y + (target.y - origin.y) * scale,
     )
+
+
+def point_along(origin: Vec2, bearing: Vec2, reach: float) -> Vec2:
+    """The point `reach` away from `origin`, in the direction of `bearing`.
+
+    `move_toward` without the clamp: it will happily travel *past* `bearing`, and
+    with a negative `reach` it travels the other way. That is what positioning
+    wants and walking does not — "stand a weapon's reach back from that enemy"
+    and "stand between those two" are both this operation, and both routinely
+    name a point further off than the thing that defines the direction.
+
+    `origin` and `bearing` coincident gives no direction at all; the honest
+    answer is `origin`, and a caller that needs a direction has to notice the
+    degenerate case itself rather than be handed an arbitrary one.
+    """
+    gap = distance(origin, bearing)
+    if gap == 0:
+        return Vec2(origin.x, origin.y)
+
+    scale = reach / gap
+    return Vec2(
+        origin.x + (bearing.x - origin.x) * scale,
+        origin.y + (bearing.y - origin.y) * scale,
+    )

@@ -335,13 +335,34 @@ def test_each_unit_is_offered_only_what_its_reach_allows() -> None:
 
 
 def test_the_archer_answers_without_moving_and_the_personality_widens_the_gap() -> None:
+    """Rewritten on merge with JQ-329, and the first half got better for it.
+
+    The archer has the threat in reach. With a personality it stops and shoots
+    it; without one it presses the objective instead — the same demonstration as
+    before, and a cleaner one, since the only difference between the two worlds
+    is the mage.
+
+    The second half used to compare the attack against *advancing on the threat*.
+    That candidate no longer exists: JQ-329 declines to offer an approach to
+    something already inside the weapon, because a unit that can fight from where
+    it stands does not need to walk closer, and the version of that gate which
+    allowed it had the archer fine-tuning its spacing by four map units while
+    still firing. So the comparison died with `StopIteration` rather than with an
+    assertion — a test asking about a gap between two options where there is now
+    one.
+
+    What it was reaching for was whether the personality makes the archer *keener*
+    to take the shot, and that is the attack's own score with the tags against
+    without them. Standing still is the thing it is being preferred over, so
+    `hold` is the honest baseline.
+    """
     plain = escort(BehaviorLibrary(personalities=SAMPLE_PERSONALITIES))
     led = escort(combined_library("m"))
 
     assert decide(look(led, unit_of(led, "ranged")), behavior_of(led, "ranged")).selected.kind == "attack"
 
     def preference(world: World) -> float:
-        return scored(world, "ranged", "attack", "e").score - scored(world, "ranged", "advance", "e").score
+        return scored(world, "ranged", "attack", "e").score - scored(world, "ranged", "hold", None).score
 
     assert preference(led) > preference(plain)
 
@@ -360,24 +381,30 @@ def test_protective_lifts_an_interception_further_above_standing_still() -> None
     assert plain < protective < combined
 
 
-def test_an_interception_cannot_yet_outrank_the_troops_own_post() -> None:
-    """A boundary worth pinning, because it looks like a tuning failure and is not.
+def test_an_interception_can_now_outrank_the_troops_own_post() -> None:
+    """The successor to a test that pinned this being impossible.
 
-    `objective_progress` saturates: any advance *at* the station scores a flat
-    1.0 on it, because the station is what the factor measures progress toward.
-    An interception is an advance at something else, so the best it can score
-    there is nothing — and a unit still walking to its post therefore prefers
-    the post, at every strength a personality can reach.
+    JQ-330 wrote `test_an_interception_cannot_yet_outrank_the_troops_own_post`
+    and named the cause: `objective_progress` saturated, so an advance *at* the
+    station scored a flat 1.0 and an interception — an advance at something else
+    — could score nothing there, at every strength a personality can reach. A
+    guard walked past a mortar shooting its own mage. The docstring said plainly
+    that anyone reaching for protective's numbers would be turning the wrong
+    dial, and that the missing piece belonged to JQ-329.
 
-    That is faithful to what this ticket owns. Motivation is here; the missing
-    piece is a *position* that answers the threat without abandoning the post,
-    which is screening, which is JQ-329's. Anyone who reads a guard walking past
-    a mortar to reach its station and reaches for protective's numbers will be
-    turning the wrong dial until that candidate exists.
+    It did, and it was not a positional candidate in the end. It was the factor:
+    distance to the station is now softened near the station itself, so a post is
+    a place rather than a point and stepping aside inside it costs almost
+    nothing. `CONVENTIONS.md` records the saturation, and the oscillation that
+    removing it exposed, under "Boundaries in scoring".
+
+    Measured on this fixture at the moment of the merge: interception +0.3035
+    against station +0.2999. A small margin, and the point is the sign rather
+    than the size — before, no strength could reach it at all.
     """
     world = escort(strength_library("m", PROTECTIVE, strength=2.0))
 
-    assert scored(world, "melee", "advance", None).score > scored(world, *INTERCEPT).score
+    assert scored(world, *INTERCEPT).score > scored(world, "melee", "advance", None).score
 
 
 def test_a_mages_personality_reaches_its_summons_without_touching_their_stats() -> None:
