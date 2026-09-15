@@ -132,8 +132,16 @@ def test_the_mages_personality_reaches_its_summons_not_just_itself() -> None:
 
 
 def test_it_does_not_reach_the_other_side() -> None:
+    """A mage's personality leads its own troop and nobody else's.
+
+    The positive half is the test. On its own, "the enemy carries no tags" is
+    satisfied by a run in which nobody carries any tags — which is every way
+    this could break — so the same run has to show the tag arriving where it
+    should before its absence elsewhere means anything.
+    """
     run = run_with(PersonalityRef(RECKLESS))
 
+    assert RECKLESS in tags(run.by_unit("hound-a")[0])
     assert tags(run.by_unit("bait")[0]) == ()
 
 

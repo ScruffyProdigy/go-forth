@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 
 from app.sim.ai.decide import decide
+from app.sim.ai.factors import FACTORS
 from app.sim.ai.inspect.record import DecisionTrace, PersonalityRecord, TraceConfig
 from app.sim.ai.inspect.report import as_dicts, render_json, render_text
 from app.sim.ai.profiles import NEUTRAL_BEHAVIOR, PersonalityTag
@@ -54,8 +55,12 @@ def test_text_names_the_chosen_action_and_its_target() -> None:
 def test_text_shows_each_factor_that_moved_the_chosen_score() -> None:
     trace = traced()
     text = render_text(trace.records)
+    contributions = trace.records[0].chosen.contributions
 
-    for contribution in trace.records[0].chosen.contributions:
+    # Without this the loop below is satisfied by a record that contributed
+    # nothing, which is the failure it is here to catch.
+    assert len(contributions) == len(FACTORS)
+    for contribution in contributions:
         assert contribution.factor in text
 
 

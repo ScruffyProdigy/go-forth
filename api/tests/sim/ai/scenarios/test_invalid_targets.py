@@ -49,13 +49,25 @@ def test_the_scenario_actually_kills_the_target() -> None:
 
 
 def test_no_decision_ever_names_a_unit_that_is_not_in_the_world() -> None:
+    """A "nothing bad happened" assertion, so it has to prove it looked.
+
+    Two counters rather than a bare loop. An empty trace satisfies "no record
+    names a missing unit" perfectly, and so does a trace in which no candidate
+    ever names anyone — both are the regression this exists to catch, and
+    neither is distinguishable from success without counting.
+    """
     result = run(doomed())
     known = {unit.id for unit in result.world.units} | {"doomed"}
+    checked = 0
 
     for record in result.records:
         for candidate in (record.chosen, *record.rivals):
             if candidate.target_id is not None:
+                checked += 1
                 assert candidate.target_id in known, f"tick {record.tick}: {candidate.target_id}"
+
+    assert result.records, "nothing was traced, so nothing was checked"
+    assert checked > 0, "no candidate named a target, so the check never ran"
 
 
 def test_no_unit_attacks_a_target_that_had_already_died() -> None:
@@ -110,6 +122,19 @@ def test_an_unreachable_enemy_is_never_offered_as_an_attack_candidate() -> None:
     ]
     result = play(far, UNIT_TYPES, LIBRARY, ticks=3)
     records = result.by_unit("hunter")
+
+    # The positive control, in the same arrangement: move the enemy into reach
+    # and an attack candidate appears. Without it, "no attack candidate" is also
+    # satisfied by attack candidates having stopped being generated at all,
+    # which is a larger break than the one being hunted and would read as a pass.
+    near = [
+        make_unit("hunter", HOUND, "north", Vec2(0, 0), destination=Vec2(0, 0)),
+        make_unit("close", ADEPT, "south", Vec2(5, 0)),
+    ]
+    reachable = play(near, UNIT_TYPES, LIBRARY, ticks=3).by_unit("hunter")
+    assert any(
+        candidate.kind == "attack" for record in reachable for candidate in (record.chosen, *record.rivals)
+    ), "no attack candidate even for an enemy in reach; the filter is not what this measures"
 
     assert records, "the hunter never decided anything"
     for record in records:

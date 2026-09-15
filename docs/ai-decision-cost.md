@@ -178,8 +178,19 @@ python -m app.scripts.decision_report --json --seconds 20
 
 ## How to read these numbers, and how they were checked
 
-Two methods notes, both learned by getting something wrong first. They cost
-nothing to follow and each of them hid a real defect for a while.
+Four methods notes, every one learned by getting something wrong first. The
+umbrella over all of them:
+
+> **A check that can only return "fine" is not a check.**
+
+Each of the failures below was a step that could not express *"I did not
+actually run"* — a render read by eye, a mutation that might not have landed, an
+`all()` over a collection that might be empty, a field-by-field comparison where
+a dropped field holds its default on both sides. All four reported success while
+testing nothing, and in every case the fix was the same: make the step capable of
+failing for the right reason.
+
+They are cheap to follow and each of them hid a real defect for a while.
 
 ### A distribution without its run length is misleading
 
