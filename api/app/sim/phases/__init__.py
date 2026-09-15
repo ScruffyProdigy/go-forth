@@ -6,6 +6,18 @@ out of the same function.
 
 Where the slices slot in:
 
+===========  =====  ==================
+`orders`     B
+`decision`   JQ-328 after orders
+`movement`   A
+`energy`     C      before combat
+`abilities`  C      before combat
+`combat`     A
+`scoring`    B      after combat
+`resummon`   D      before removal
+`removal`    A      last
+===========  =====  ==================
+=======
 ============  ======  ========================
 Phase         Ticket  Sits
 ============  ======  ========================
@@ -67,6 +79,7 @@ from __future__ import annotations
 from app.sim.phase import TickPhase
 from app.sim.phases.abilities import abilities_phase
 from app.sim.phases.combat import combat_phase
+from app.sim.phases.decision import decision_phase
 from app.sim.phases.energy import energy_phase
 from app.sim.phases.movement import movement_phase
 from app.sim.phases.orders import orders_phase
@@ -78,6 +91,7 @@ from app.sim.phases.statuses import statuses_phase
 
 TICK_PHASES: tuple[TickPhase, ...] = (
     orders_phase,
+    decision_phase,
     movement_phase,
     energy_phase,
     spells_phase,

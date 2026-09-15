@@ -13,6 +13,18 @@ from out of range to on top of someone in a single tick. The standoff sits insid
 the range rather than on it so that stopping and being able to shoot are the same
 state — see `ENGAGEMENT_STANDOFF`.
 
+**An intent outranks the first rule.** A unit carrying a decision (JQ-328) does
+what it decided: attacking or holding means stand still, advancing means walk,
+even with an enemy in reach. The hold-on-contact rule was the only sensible
+behaviour while nothing could decide otherwise, and it was never meant to
+overrule a decision — left unconditional it made "press the objective past a
+weak enemy" unreachable however the weights were set. It remains the default for
+every unit with no behaviour data, which is all of them until profiles ship.
+
+The standoff is a property of *walking*, so it clamps both paths: a unit that
+decided to advance past someone still stops at weapon range rather than through
+them.
+
 Where it is walking *to* is not decided here. The orders phase writes
 `unit.destination` each tick from the troop's order; movement only ever reads it,
 which is the seam a behaviour layer (JQ-296/328) overrides for a diversion.
@@ -113,9 +125,17 @@ class MovementPhase:
         for unit in world.units:
             if not is_alive(unit) or unit.speed == 0:
                 continue
-            # Already in reach of something: hold the gap and let combat work.
-            # The unit resumes on the tick nothing is in range any more.
-            if acquire_target(world, unit) is not None:
+
+            intent = unit.ai.intent if unit.ai is not None else None
+            if intent is not None:
+                # The decision phase already weighed standing still against
+                # moving, danger included. Attacking and holding mean stay put;
+                # advancing means go, even with an enemy in reach.
+                if intent.kind != "advance":
+                    continue
+            elif acquire_target(world, unit) is not None:
+                # No decision loop: hold the gap and let combat work. The unit
+                # resumes on the tick nothing is in range any more.
                 continue
 
             step = min(unit.speed * ctx.seconds_per_tick, standoff_slack(world, unit, ctx))

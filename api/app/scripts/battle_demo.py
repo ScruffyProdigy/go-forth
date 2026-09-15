@@ -6,6 +6,12 @@ is reachable from `run_battle`.
 
     python -m app.scripts.battle_demo
     python -m app.scripts.battle_demo --seed 7
+    python -m app.scripts.battle_demo --behavior
+
+`--behavior` attaches the sample creature profiles and mage personalities
+(JQ-328), so the same armies decide what to do rather than walking to the station
+their order gave them and stopping. Without it the battle runs exactly as it does
+without any behaviour data at all.
     python -m app.scripts.battle_demo --abilities
 
 `--abilities` swaps the slice-A placeholder roster for the one carrying energy
@@ -24,12 +30,15 @@ import sys
 from collections.abc import Sequence
 
 from app.sim import (
+    DEFAULT_SIM_CONFIG,
     TWO_LANE_MAP,
+    SimConfig,
     SpellInjection,
     Vec2,
     ability_battle,
     digest_battle,
     placeholder_battle,
+    placeholder_behavior,
     run_battle,
     serialize_battle,
 )
@@ -45,14 +54,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument(
+        "--seconds",
+        type=float,
+        default=None,
+        help="shorten the battle's backstop length; the determinism tests use it",
+    )
+    parser.add_argument(
         "--abilities",
         action="store_true",
         help="run the roster with energy gauges, abilities and an injected spell",
     )
+    parser.add_argument(
+        "--behavior",
+        action="store_true",
+        help="attach the sample behavior library and run the decision loop",
+    )
     args = parser.parse_args(argv)
 
+    # The two flags compose: abilities pick the roster, behaviour decides what
+    # that roster does with it.
     battle = ability_battle([DEMO_SPELL]) if args.abilities else placeholder_battle()
-    result = run_battle(TWO_LANE_MAP, [], battle, args.seed)
+    if args.behavior:
+        battle.behavior = placeholder_behavior()
+
+    config = DEFAULT_SIM_CONFIG if args.seconds is None else SimConfig(max_battle_seconds=args.seconds)
+
+    result = run_battle(TWO_LANE_MAP, [], battle, args.seed, config)
 
     sys.stdout.write(f"{serialize_battle(result)}\n")
 

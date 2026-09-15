@@ -15,6 +15,10 @@ Slice D added resummoning and the troop bond (`phases/resummon.py`, and the
 Slices A (JQ-286) and B (JQ-287) of the sim. Energy and abilities are JQ-288,
 Slices A (JQ-286) and D (JQ-289) of the sim. Orders and zones are JQ-287, energy
 
+Shared unit behavior — creature profiles, mage personalities, and the
+deterministic decision loop that reads them — is JQ-328, in `ai/`. A battle that
+ships no behavior library runs without it and behaves exactly as slice A did.
+
 Two Python rules hold the determinism guarantee, neither of which had an
 equivalent in the TypeScript this was ported from:
 
@@ -31,6 +35,27 @@ from app.sim.abilities import (
     AbilityCatalog,
     build_ability_catalog,
 )
+from app.sim.ai.attach import attach_behavior
+from app.sim.ai.candidates import Candidate, generate_candidates
+from app.sim.ai.capabilities import Capabilities, capabilities_of, supports
+from app.sim.ai.decide import Decision, decide, intent_of
+from app.sim.ai.factors import FACTORS, FactorContribution, FactorName, FactorWeights
+from app.sim.ai.fixtures import placeholder_behavior, sample_library
+from app.sim.ai.intent import ActionKind, Intent, UnitAi
+from app.sim.ai.observe import Observation, observe
+from app.sim.ai.profiles import (
+    BehaviorLibrary,
+    CreatureProfile,
+    MagePersonality,
+    PersonalityDefinition,
+    PersonalityRef,
+    PersonalityTag,
+    ResolvedBehavior,
+    TraitDefinition,
+    TraitTag,
+    UnitBehavior,
+)
+from app.sim.ai.scoring import ScoredCandidate, score_candidates
 from app.sim.blocking import blockers_against, clamp_to_blockers
 from app.sim.casting import (
     DEFAULT_CAST_POLICY,
@@ -231,6 +256,7 @@ __all__ = [
     "EMPTY_ABILITY_CATALOG",
     "EMPTY_SPELL_CATALOG",
     "ENERGY_METERS",
+    "FACTORS",
     "FORMATION_RANK_GAP",
     "FORMATION_SPACING",
     "IDENTITY_MULTIPLIERS",
@@ -249,6 +275,7 @@ __all__ = [
     "TWO_LANE_MAP",
     "Ability",
     "AbilityCatalog",
+    "ActionKind",
     "AimedCast",
     "AreaDamage",
     "ArmySetup",
@@ -260,15 +287,20 @@ __all__ = [
     "BattleResult",
     "BattleSetup",
     "BattleTick",
+    "BehaviorLibrary",
     "Burn",
     "BurnStatus",
     "BurningGround",
+    "Candidate",
+    "Capabilities",
     "Cast",
     "CastOrigin",
     "CastPolicy",
     "ChipReserve",
+    "CreatureProfile",
     "DamageProfile",
     "DashToTarget",
+    "Decision",
     "DeploymentStrip",
     "DispelledSlot",
     "Effect",
@@ -280,13 +312,23 @@ __all__ = [
     "EventActors",
     "EventEmitter",
     "EventSwing",
+    "FactorContribution",
+    "FactorName",
+    "FactorWeights",
     "FirstUsefulMoment",
     "Formation",
     "GroundHazard",
+    "Intent",
     "Knockback",
+    "MagePersonality",
     "MapConfig",
+    "Observation",
     "Order",
     "OrderKind",
+    "PersonalityDefinition",
+    "PersonalityRef",
+    "PersonalityTag",
+    "ResolvedBehavior",
     "ResonanceCounts",
     "ResonanceCurve",
     "Rng",
@@ -296,6 +338,7 @@ __all__ = [
     "SchoolEnergyRuleTable",
     "SchoolMultiplierTable",
     "SchoolMultipliers",
+    "ScoredCandidate",
     "Side",
     "SideMultiplierTable",
     "SideResonanceCounts",
@@ -306,10 +349,14 @@ __all__ = [
     "SpellInjection",
     "TickContext",
     "TickPhase",
+    "TraitDefinition",
+    "TraitTag",
     "Troop",
     "TroopId",
     "TroopSetup",
     "Unit",
+    "UnitAi",
+    "UnitBehavior",
     "UnitId",
     "UnitKind",
     "UnitRef",
@@ -324,10 +371,12 @@ __all__ = [
     "ability_ready",
     "anchors_on_mage",
     "apply_effects",
+    "attach_behavior",
     "blockers_against",
     "build_ability_catalog",
     "build_spell_catalog",
     "build_unit_type_catalog",
+    "capabilities_of",
     "chip_box",
     "clamp_to_blockers",
     "clear_of_chip",
@@ -337,6 +386,7 @@ __all__ = [
     "create_tick_context",
     "create_world",
     "damage_unit",
+    "decide",
     "deployment_anchor",
     "deployment_band",
     "derive_formation",
@@ -344,10 +394,12 @@ __all__ = [
     "energy_gain",
     "energy_multiplier_for",
     "energy_rule_for",
+    "generate_candidates",
     "hold",
     "hotspot_box",
     "hotspot_centre",
     "hotspot_contains",
+    "intent_of",
     "is_alive",
     "is_resummonable",
     "legal_orders",
@@ -355,6 +407,7 @@ __all__ = [
     "may_attack_base",
     "new_energy_meters",
     "objective_position",
+    "observe",
     "opposing",
     "order_of",
     "orders_by_troop",
@@ -363,6 +416,7 @@ __all__ = [
     "per_damage_taken",
     "per_second",
     "placeholder_battle",
+    "placeholder_behavior",
     "resolve_school_energy_rules",
     "resolve_school_multipliers",
     "resolve_side_multipliers",
@@ -371,7 +425,9 @@ __all__ = [
     "rng_from_state",
     "rule_from_rates",
     "run_battle",
+    "sample_library",
     "schedule_injections",
+    "score_candidates",
     "seconds_per_tick",
     "serialize_battle",
     "spell_cast",
@@ -379,6 +435,7 @@ __all__ = [
     "step_battle",
     "strip_centre",
     "support_capacity_of",
+    "supports",
     "survives_round_end",
     "swing_of",
     "to_ticks",

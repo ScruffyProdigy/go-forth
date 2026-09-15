@@ -22,6 +22,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from app.sim.abilities import Ability
+from app.sim.ai.attach import attach_behavior
+from app.sim.ai.intent import UnitAi
+from app.sim.ai.profiles import EMPTY_LIBRARY, BehaviorLibrary
 from app.sim.energy import EnergyMeter, new_energy_meters
 from app.sim.formation import (
     Formation,
@@ -76,6 +79,9 @@ class BattleSetup:
 
     unit_types: list[UnitType] = field(default_factory=list)
     armies: list[ArmySetup] = field(default_factory=list)
+    #: Creature profiles, trait overrides and mage personalities (JQ-328). A
+    #: battle that ships none runs with no decision loop at all.
+    behavior: BehaviorLibrary = EMPTY_LIBRARY
     #: Base HP carried in from earlier rounds. A side left out opens at full.
     #: Damage persists across a match: nothing here ever refills a base (JQ-187).
     base_hp: dict[Side, float] = field(default_factory=dict)
@@ -115,6 +121,10 @@ class Unit:
     destination: Vec2
     #: Ticks still to wait before this unit can attack again — ticks, not seconds.
     cooldown_remaining: int = 0
+    #: Composed behaviour and this tick's committed intent (JQ-328). None on a
+    #: battle that ships no behaviour data, which then behaves as it did before
+    #: the decision phase existed.
+    ai: UnitAi | None = None
     #: Mages only: how many summons this mage sustains (§4.2).
     support_capacity: int | None = None
     #: Mages only: seconds per resummon (§4.5). None means this mage never resummons.
@@ -202,6 +212,10 @@ class World:
     zone_score: dict[Side, float]
     #: Who currently holds each zone, by zone id. None while empty or contested.
     zone_holders: dict[str, Side | None]
+    #: Carried so the decision phase can compose behaviour for units that arrive
+    #: after the battle started — a resummoned summon reaches the field with
+    #: none, and a unit with no behaviour is skipped by the loop entirely.
+    behavior: BehaviorLibrary = EMPTY_LIBRARY
     #: Burning ground and anything else an effect leaves lying on the map.
     hazards: list[GroundHazard] = field(default_factory=list)
     #: Injected spells still to fire, in resolution order. The spells phase
@@ -409,6 +423,8 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
             troop.next_unit_ordinal = len(mage_types) + len(summon_types)
             troops.append(troop)
 
+    attach_behavior(units, troops, battle_state.behavior, catalog)
+
     return World(
         tick=0,
         rng_state=rng.state,
@@ -424,6 +440,7 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
         },
         zone_score={"north": 0, "south": 0},
         zone_holders={zone.id: None for zone in config.zones},
+        behavior=battle_state.behavior,
         pending_spells=schedule_injections(
             battle_state.spell_injections, build_spell_catalog(battle_state.spells)
         ),
