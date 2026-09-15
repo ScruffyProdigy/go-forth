@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from app.sim.ai.decide import decide, intent_of
-from app.sim.ai.factors import FACTORS, freeze_weights
-from app.sim.ai.profiles import ResolvedBehavior
+from dataclasses import replace
+
+from app.sim.ai.candidates import generate_candidates
+from app.sim.ai.decide import _with_jitter, decide, intent_of
+from app.sim.ai.factors import FACTORS, NEUTRAL_WEIGHTS, freeze_weights
+from app.sim.ai.profiles import MAX_JITTER, ResolvedBehavior
+from app.sim.ai.scoring import score_candidates
 from app.sim.rng import create_rng
 from app.sim.types import Vec2
 from app.sim.world import Unit, World
@@ -164,3 +168,55 @@ def test_a_unit_with_nothing_to_do_still_produces_an_intent() -> None:
 
     assert decision.selected.kind == "hold"
     assert intent_of(decision).destination == MIDFIELD
+
+
+def test_jitter_preserves_every_field_of_the_record_it_rescores() -> None:
+    """The jitter path must carry fields it has never heard of.
+
+    It is the worst place in the package for a silent drop. No fixture sets
+    `tie_break_jitter` above zero, so the path is dead in every battle anyone
+    runs; a rebuild that forgot a field would keep every suite green and surface
+    only when some future profile enabled jitter and the field read empty for the
+    whole battle. JQ-331 found that hazard waiting in the merge with JQ-330,
+    whose `influences` field would have vanished here.
+
+    Asserted as whole-record equality with the score normalised away, so it is a
+    claim about the *next* field as much as the current ones. Verified by
+    rebuilding `_with_jitter` field-by-field on purpose, with a stand-in for
+    JQ-330's `influences` populated per record, and watching this fail.
+
+    Reaches for `_with_jitter` directly because the jittered records are not
+    observable from outside: `Decision.considered` deliberately reports the real
+    scores rather than the nudged ones, so a test that read them back through a
+    decision would compare a tuple with itself and pass no matter what.
+    """
+    world, hound = engaged()
+    observation = look(world, hound)
+    scored = score_candidates(observation, generate_candidates(observation), NEUTRAL_WEIGHTS)
+    assert scored, "the fixture produced no candidates to jitter"
+
+    jittered = _with_jitter(scored, MAX_JITTER, create_rng(3))
+
+    for before, after in zip(scored, jittered, strict=True):
+        # Whole-record equality with the score normalised away, rather than a
+        # field-by-field walk. The walk looks equivalent and is not: it compares
+        # `after.x` against `before.x`, which both hold the field's *default*
+        # when nothing populated it, so a rebuild that dropped the field would
+        # match on every name and pass. Found by breaking `_with_jitter` on
+        # purpose and watching the field-by-field version stay green — the
+        # failure this test exists to catch, missed by the test written to catch
+        # it. Comparing the records entire has no such blind spot and needs no
+        # list of field names to keep in step.
+        assert replace(after, score=before.score) == before, (
+            "jitter did not carry the record intact; rebuild it with `replace`, not field by field"
+        )
+        assert after.score != before.score, "jitter changed nothing, so this proves nothing"
+
+
+def test_jitter_left_at_zero_returns_the_very_same_records() -> None:
+    """The common case does not rebuild anything at all, nor draw."""
+    world, hound = engaged()
+    observation = look(world, hound)
+    scored = score_candidates(observation, generate_candidates(observation), NEUTRAL_WEIGHTS)
+
+    assert _with_jitter(scored, 0.0, create_rng(3)) is scored

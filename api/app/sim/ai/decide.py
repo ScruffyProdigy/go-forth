@@ -19,7 +19,7 @@ movement and combat phases act on it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.sim.ai import pursuit
 from app.sim.ai.candidates import Candidate, generate_candidates
@@ -81,14 +81,17 @@ def _with_jitter(
     if jitter <= 0 or rng is None:
         return scored
 
-    return tuple(
-        ScoredCandidate(
-            candidate=entry.candidate,
-            score=entry.score + rng.next_float() * jitter,
-            contributions=entry.contributions,
-        )
-        for entry in scored
-    )
+    # `replace` rather than rebuilding the record field by field. A rebuild has
+    # to name every field, so a field added to `ScoredCandidate` later is
+    # silently dropped on this path — and this path is the worst possible place
+    # for a silent drop: no fixture sets jitter above zero, so it is dead in
+    # every battle anyone runs, every suite stays green, and the loss surfaces
+    # only when some future profile enables jitter and the new field reads empty
+    # for the whole battle. JQ-331 found exactly that hazard waiting in the merge
+    # with JQ-330, whose `influences` field would have vanished here. `replace`
+    # carries whatever the record holds and changes only the score, so the
+    # hazard cannot recur rather than being guarded against once.
+    return tuple(replace(entry, score=entry.score + rng.next_float() * jitter) for entry in scored)
 
 
 def _select(scored: tuple[ScoredCandidate, ...]) -> ScoredCandidate:
