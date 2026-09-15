@@ -142,8 +142,23 @@ def _exposure(observation: Observation, position: Vec2) -> float:
     on the same side of the step and the factor would tell them apart never.
 
     And it is scaled by *current* HP rather than max, so the same spot reads as
-    more dangerous to something already hurt. That is the durability term: a wary
-    trait pulls a wounded creature back and leaves a fresh one where it stands.
+    more dangerous to something already hurt. That is the durability term.
+
+    **What this factor cannot do, and a reader will assume it does.** Danger
+    chooses between degrees of engagement; it cannot produce a disengagement,
+    because none of the three verbs this ticket owns expresses one. A unit
+    standing on its station under fire has exactly three options — hold, attack
+    something in reach, or advance, and the only advance on offer leads *toward*
+    an enemy, since it is already on its station. So every candidate is scored
+    and the least-bad wins, but "leave" was never among them: a wary mage at a
+    fifth of its health, surrounded, still picks a swing. See
+    `test_no_candidate_expresses_a_retreat`, which pins that.
+
+    This is faithful to the ticket — advance, attack, hold, and retreat lives
+    with positioning and bounded pursuit in JQ-329 — but it means a heavy danger
+    weight buys caution about where to *go*, not a survival instinct. Anyone
+    tuning these numbers expecting units to withdraw will be tuning the wrong
+    dial until that verb exists.
     """
     incoming = 0.0
 

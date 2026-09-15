@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from app.sim.ai.candidates import Candidate, generate_candidates
 from app.sim.ai.objective import PUSH_ENEMY_BASE, ObjectiveFixtures
+from app.sim.geometry import distance
 from app.sim.map import THREE_ZONE_MAP
 from app.sim.types import Vec2
 from tests.sim.ai.helpers import look, make_unit, make_world
@@ -146,3 +147,40 @@ def test_two_enemies_on_one_spot_do_not_produce_the_same_advance_twice() -> None
     advances = [c for c in generate_candidates(look(world, hound)) if c.kind == "advance"]
 
     assert len(advances) == len({(c.destination.x, c.destination.y) for c in advances if c.destination})
+
+
+def test_no_candidate_expresses_a_retreat() -> None:
+    """The three verbs cannot say "leave", and a reader will assume they can.
+
+    A unit standing on its station, badly hurt, with enemies in contact. Every
+    option is scored and the least-bad wins — but withdrawing was never one of
+    them: `hold` keeps it exactly where it is, and the only `advance` on offer
+    leads toward an enemy, because the station it would otherwise walk to is
+    under its feet already.
+
+    That is faithful to this ticket, which owns advance, attack and hold;
+    retreat belongs with positioning and bounded pursuit in JQ-329. It is pinned
+    here rather than left implicit because the danger factor reads like a
+    survival instinct and is not one, and because this test failing is exactly
+    the signal that JQ-329 has added the missing verb.
+    """
+    station = Vec2(180, 300)
+    cornered = make_unit("h", HOUND, "north", station, hp=HOUND.max_hp / 5)
+    world = make_world(
+        [cornered]
+        + [make_unit(f"e{i}", HOUND, "south", Vec2(station.x + 5 + i * 4, station.y)) for i in range(3)]
+    )
+    fixtures = ObjectiveFixtures(stations={"north-t0": station})
+
+    candidates = generate_candidates(look(world, cornered, fixtures))
+
+    assert {c.kind for c in candidates} == {"hold", "attack", "advance"}
+    # The one advance leads toward an enemy, never away from the danger.
+    advances = [c for c in candidates if c.kind == "advance"]
+    assert all(c.target_id is not None for c in advances)
+    assert all(
+        min(distance(c.destination, e.position) for e in world.units if e.side == "south")
+        < min(distance(station, e.position) for e in world.units if e.side == "south")
+        for c in advances
+        if c.destination is not None
+    )
