@@ -83,8 +83,33 @@ def weights_for(lib: BehaviorLibrary, unit_id: str = "north-t0-u1") -> dict[Fact
 # --- defaults, overrides, composition ---------------------------------------
 
 
-def test_a_creature_with_no_profile_is_neutral_on_every_factor() -> None:
-    assert weights_for(library()) == {factor: 1.0 for factor in FACTORS}
+def unmodified() -> dict[FactorName, float]:
+    """The hound with no profile and no traits: its own ability contour.
+
+    Composition tests measure against this rather than against fixed numbers, so
+    they go on testing composition when the contour is retuned.
+    """
+    return weights_for(library())
+
+
+def test_a_creature_with_no_profile_still_fights_like_its_stat_block() -> None:
+    """The contour is the default, which is what makes authoring optional.
+
+    Two cards from the same roster, neither with a profile, compared against
+    each other rather than against fixed numbers — so this keeps meaning the same
+    thing if the contour is retuned. None of what it asserts is written down
+    anywhere: it is read off the stat blocks.
+    """
+    hound = weights_for(library(), "north-t0-u1")
+    adept = weights_for(library(), "north-t0-u0")
+
+    assert hound != {factor: 1.0 for factor in FACTORS}
+    # The hound hits twice as hard, so a good target is worth more to it.
+    assert hound["target_suitability"] > adept["target_suitability"]
+    # And moves twice as fast, so ground is worth more to it too.
+    assert hound["objective_progress"] > adept["objective_progress"]
+    # The adept is the sturdiest card here, so it needs company least.
+    assert adept["ally_support"] < hound["ally_support"]
 
 
 def test_an_unmentioned_factor_stays_neutral_rather_than_dropping_to_zero() -> None:
@@ -92,7 +117,7 @@ def test_an_unmentioned_factor_stays_neutral_rather_than_dropping_to_zero() -> N
     weights = weights_for(library(profiles=(CreatureProfile("cinder-hound", {"danger": 0.25}),)))
 
     assert weights["danger"] == 0.25
-    assert weights["ally_support"] == 1.0
+    assert weights["ally_support"] == unmodified()["ally_support"]
 
 
 def test_an_individual_can_add_a_trait_its_type_does_not_have() -> None:
@@ -116,8 +141,8 @@ def test_an_individual_can_shed_a_trait_its_type_has() -> None:
         )
     )
 
-    assert weights_for(bold_by_default)["danger"] == 0.0
-    assert weights["danger"] == 1.0
+    assert weights_for(bold_by_default)["danger"] == unmodified()["danger"] - 1.0
+    assert weights["danger"] == unmodified()["danger"]
 
 
 # --- conflict handling ------------------------------------------------------
@@ -131,7 +156,7 @@ def test_opposing_traits_sum_rather_than_one_of_them_winning() -> None:
     """
     weights = weights_for(library(profiles=(CreatureProfile("cinder-hound", traits=(BOLD, WARY)),)))
 
-    assert weights["danger"] == 1.0
+    assert weights["danger"] == unmodified()["danger"]
 
 
 def test_composition_does_not_depend_on_the_order_traits_were_authored_in() -> None:
@@ -172,7 +197,7 @@ def test_an_omitted_strength_falls_back_to_the_definition_s_default() -> None:
     )
 
     assert implied == explicit
-    assert implied["danger"] == 1.5
+    assert implied["danger"] == unmodified()["danger"] + 0.5
 
 
 def test_strength_scales_the_contribution() -> None:
@@ -185,9 +210,11 @@ def test_strength_scales_the_contribution() -> None:
             )
         )["danger"]
 
-    assert danger_at(0.5) == 1.5
-    assert danger_at(1.0) == 2.0
-    assert danger_at(2.0) == 3.0
+    base = unmodified()["danger"]
+
+    assert danger_at(0.5) == base + 0.5
+    assert danger_at(1.0) == base + 1.0
+    assert danger_at(2.0) == base + 2.0
 
 
 def test_strength_zero_means_no_opinion_and_never_the_opposite_one() -> None:
@@ -211,7 +238,7 @@ def test_a_mage_s_personality_reaches_the_summons_of_its_own_troop() -> None:
         library(mage_personalities=(MagePersonality("north-t0-u0", (PersonalityRef(RECKLESS),)),))
     )
 
-    assert weights["danger"] == 0.0
+    assert weights["danger"] == unmodified()["danger"] - 1.0
 
 
 def test_two_mages_with_the_same_tag_sum_their_strength_and_then_clamp() -> None:

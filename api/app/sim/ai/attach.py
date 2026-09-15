@@ -31,6 +31,8 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from app.sim.ai.capabilities import capabilities_of
+from app.sim.ai.contour import RosterScale, contour_of, derived_weights, roster_scale
+from app.sim.ai.factors import FactorWeights
 from app.sim.ai.intent import UnitAi
 from app.sim.ai.profiles import (
     EMPTY_LIBRARY,
@@ -82,7 +84,7 @@ def attach_behavior(
                 f"Personalities are authored on mages and reach their troop from there"
             )
 
-    _resolve(units, troops, index)
+    _resolve(units, troops, index, roster_scale(catalog))
 
 
 def resolve_missing(
@@ -99,10 +101,15 @@ def resolve_missing(
     if is_empty(library) or all(unit.ai is not None for unit in units):
         return
 
-    _resolve(units, troops, index_library(library, catalog))
+    _resolve(units, troops, index_library(library, catalog), roster_scale(catalog))
 
 
-def _resolve(units: Sequence[Unit], troops: Sequence[Troop], index: BehaviorIndex) -> None:
+def _resolve(
+    units: Sequence[Unit],
+    troops: Sequence[Troop],
+    index: BehaviorIndex,
+    scale: RosterScale,
+) -> None:
     # Walks `troops`, a list, so the refs for each troop are gathered in a fixed
     # order regardless of how the sets above happened to hash.
     for troop in troops:
@@ -111,9 +118,16 @@ def _resolve(units: Sequence[Unit], troops: Sequence[Troop], index: BehaviorInde
             if unit.troop_id != troop.id or unit.ai is not None:
                 continue
             unit.ai = UnitAi(
-                behavior=resolve_behavior(unit, capabilities_of(unit), index, refs),
+                behavior=resolve_behavior(
+                    unit, capabilities_of(unit), index, refs, baseline=_baseline_for(unit, scale)
+                ),
                 intent=None,
             )
+
+
+def _baseline_for(unit: Unit, scale: RosterScale) -> FactorWeights:
+    """What this creature would want if nobody had authored anything for it."""
+    return derived_weights(contour_of(unit.max_hp, unit.speed, unit.range, unit.damage, scale))
 
 
 def is_empty(library: BehaviorLibrary) -> bool:

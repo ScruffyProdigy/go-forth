@@ -361,13 +361,21 @@ def resolve_behavior(
     capabilities: Capabilities,
     index: BehaviorIndex,
     troop_personality_refs: Sequence[tuple[UnitId, PersonalityRef]],
+    baseline: FactorWeights = NEUTRAL_WEIGHTS,
 ) -> ResolvedBehavior:
-    """Composes one unit's weights. Pure, and independent of call order."""
+    """Composes one unit's weights. Pure, and independent of call order.
+
+    `baseline` is what the creature would hold if nobody authored anything —
+    normally its ability contour, read off its own stat block (`contour.py`).
+    `base_weights` then overrides it factor by factor, which is the relationship
+    that makes authoring optional: a card that fights the way its numbers say it
+    should needs no profile at all, and a profile is how you say it does not.
+    """
     profile = index.profiles.get(unit.type_id)
     behavior = index.unit_behaviors.get(unit.id)
 
     weights: dict[FactorName, float] = {
-        factor: float((profile.base_weights if profile else {}).get(factor, NEUTRAL_WEIGHTS[factor]))
+        factor: float((profile.base_weights if profile else {}).get(factor, baseline[factor]))
         for factor in FACTORS
     }
 
