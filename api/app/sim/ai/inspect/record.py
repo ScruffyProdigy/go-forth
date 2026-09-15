@@ -47,6 +47,15 @@ class PersonalityRecord:
     #: True when an explicit override supplied the strength, False when it came
     #: from the definition's default, None when the behavior layer does not
     #: record which. See `UNKNOWN`.
+    #:
+    #: One flag per tag, which is the honest shape only while a troop has one
+    #: mage — as every troop in `create_world` does today. JQ-330's
+    #: `ResolvedPersonality` carries a `sources` tuple, one entry per mage that
+    #: named the tag, each with its own `overridden`; two mages in one troop can
+    #: name the same tag with only one of them overriding. Collapsing that to a
+    #: single flag would attribute one mage's choice to both. If multi-mage
+    #: troops become a thing, this field grows a `sources` tuple beside it
+    #: rather than trying to answer for all of them at once.
     overridden: bool | None = UNKNOWN
 
 
@@ -122,7 +131,18 @@ def _personalities_of(behavior: ResolvedBehavior) -> tuple[PersonalityRecord, ..
     JQ-330 replaces `ResolvedBehavior.personalities` — today a `(tag, strength)`
     pair — with a `ResolvedPersonality` carrying per-source provenance, the
     authored summary line and the contextual rules. When it lands, this function
-    is the edit; every record, report and scenario above it keeps working.
+    is the edit; every record, report and scenario above it keeps working. Per
+    that ticket, it becomes:
+
+        return tuple(
+            PersonalityRecord(tag=p.tag, strength=p.strength, overridden=not defaulted(p))
+            for p in behavior.personalities
+        )
+
+    with `defaulted` imported from `app.sim.ai.profiles`. Note that `defaulted`
+    collapses every source to "did any reference override", which is the right
+    answer for a one-mage troop and a lie for any other — see
+    `PersonalityRecord.overridden`.
     """
     return tuple(
         PersonalityRecord(tag=tag, strength=strength, overridden=UNKNOWN)

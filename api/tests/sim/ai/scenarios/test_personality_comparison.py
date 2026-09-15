@@ -118,7 +118,13 @@ def test_the_trace_names_the_personality_that_was_in_play() -> None:
 
 
 def test_the_mages_personality_reaches_its_summons_not_just_itself() -> None:
-    """A personality lives on the mage and is meant to lead the whole troop."""
+    """A personality lives on the mage and is meant to lead the whole troop.
+
+    Uses `GUARDIAN`, which JQ-330 is replacing with `PROTECTIVE`. The tag is
+    incidental here — any personality would do — so the integration pass swaps
+    the name and nothing else. Flagged because it is the one place in this
+    package that names a tag JQ-330 removes rather than renames in place.
+    """
     run = run_with(PersonalityRef(GUARDIAN))
 
     for unit_id in ("mage", "hound-a", "hound-b"):
