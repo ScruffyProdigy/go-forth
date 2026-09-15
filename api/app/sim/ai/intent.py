@@ -90,8 +90,15 @@ PRESSING_OBJECTIVE = "pressing_objective"
 HOLDING_STATION = "holding_station"
 #: Stepping to restore useful firing distance.
 MAINTAINING_RANGE = "maintaining_range"
-#: Interposing between a threat and what it threatens.
+#: Interposing between a threat and an ally a coordinator named.
 SCREENING = "screening"
+#: Interposing between a threat and the ally this unit judged most exposed,
+#: because nobody named one — or named one that has since died. The same action;
+#: the distinction is that only the first is doing what somebody asked. Worth
+#: telling apart in a trace: a guess covering the wrong ally is the shape of
+#: thing a playtester writes up as broken AI, and after the fact the only way to
+#: know which happened is to have recorded it.
+SCREENING_INFERRED = "screening_inferred"
 #: Closing on a threat it was nominated to answer.
 INTERCEPTING = "intercepting"
 #: Committed to chasing a specific target this tick.
@@ -123,6 +130,7 @@ REASONS: tuple[str, ...] = (
     HOLDING_STATION,
     MAINTAINING_RANGE,
     SCREENING,
+    SCREENING_INFERRED,
     INTERCEPTING,
     PURSUIT_STARTED,
     PURSUING,
@@ -166,6 +174,9 @@ class Intent:
     #: One of `REASONS`, or "" for an intent built before reasons existed.
     #: Diagnostics only, same as `contributions`.
     reason: str = ""
+    #: On a screen, the ally being covered — None when it is this unit's own
+    #: post. Diagnostics only; the geometry is already in `destination`.
+    protecting_id: UnitId | None = None
 
 
 @dataclass(frozen=True)

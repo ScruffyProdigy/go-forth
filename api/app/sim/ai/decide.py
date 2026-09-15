@@ -321,4 +321,5 @@ def intent_of(decision: Decision) -> Intent:
         score=decision.score,
         contributions=decision.contributions,
         reason=decision.reason,
+        protecting_id=candidate.protecting_id,
     )

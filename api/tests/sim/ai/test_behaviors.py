@@ -26,6 +26,7 @@ from app.sim.ai.intent import (
     PURSUIT_ENDED_REASONS,
     REASONS,
     SCREENING,
+    SCREENING_INFERRED,
     WITHDRAW_SPEED_SCALE,
     ActionKind,
     Commitment,
@@ -61,6 +62,11 @@ HOLD_EAST = {"north-t0": hold("E"), "south-t0": hold("E")}
 POST = Vec2(295.0, 284.5)
 
 HERE = POST
+
+#: Both ways a screen can be named. Which one fires says whether a coordinator
+#: chose the covered ally or this end inferred it; neither changes the geometry,
+#: so a test about *where* a unit screens matches both.
+SCREEN_REASONS = (SCREENING, SCREENING_INFERRED)
 
 #: Rooted, and able to fight back. `WISP` is immobile too but dies to a stiff
 #: breeze, and a fixture that is dead by tick two cannot demonstrate that it was
@@ -289,7 +295,7 @@ def test_a_guard_and_an_archer_answer_one_nominated_threat_from_their_own_distan
         world = make_world([screener, ally, threat])
 
         observation = observe(world, screener, TWO_LANE_MAP, SECONDS_PER_TICK, nominated_target_ids=["t"])
-        screening = [c for c in generate_candidates(observation) if c.reason == SCREENING]
+        screening = [c for c in generate_candidates(observation) if c.reason in SCREEN_REASONS]
 
         assert screening, f"{card.id} was nominated a threat and offered no screen"
         assert len(screening) == 1, "one threat, one screen — the set stays bounded"
@@ -498,9 +504,48 @@ def test_a_named_ally_beats_the_guess_about_who_is_being_screened() -> None:
     guessed = protected_by(screener, allies, threat, HERE)
     named = protected_by(screener, allies, threat, HERE, protecting_id="far")
 
-    assert guessed == near_the_threat.position, "the guess is the ally nearest the threat"
-    assert named == the_one_that_matters.position
+    assert guessed.position == near_the_threat.position, "the guess is the ally nearest the threat"
+    assert guessed.unit_id == "near" and not guessed.assigned
+    assert named.position == the_one_that_matters.position
+    assert named.unit_id == "far" and named.assigned
 
     # And a named ally that has since died falls back rather than refusing: the
-    # threat is still real and still worth screening.
-    assert protected_by(screener, allies, threat, HERE, protecting_id="gone") == guessed
+    # threat is still real and still worth screening. The result says it is no
+    # longer the assigned one, so a trace does not read the fallback as a bug.
+    stale = protected_by(screener, allies, threat, HERE, protecting_id="gone")
+    assert stale.position == guessed.position
+    assert not stale.assigned
+
+
+def test_a_screen_records_who_it_is_covering_and_whether_anyone_said_so() -> None:
+    """The distinction is invisible in a battle and reads as a bug in a playtest.
+
+    A screener covering the ally a coordinator named and one covering the ally it
+    guessed at look identical — same verb, same line, same walk — and only one of
+    them is doing what somebody asked. JQ-331 flagged that nothing in the trace
+    said which, so a guess that covered the wrong ally would be written up as
+    broken AI rather than as a fallback doing its job.
+
+    Nothing assigns yet, so every screen in a battle today is an inferred one.
+    That is the honest reading and it is what the candidate says.
+    """
+    threat_at = Vec2(HERE.x + 100, HERE.y)
+    screener = make_unit("s", HOUND, "north", HERE, destination=HERE)
+    ally = make_unit("f", WISP, "north", Vec2(HERE.x - 40, HERE.y + 50))
+    world = make_world([screener, ally, make_unit("t", RAM, "south", threat_at)])
+
+    observation = observe(world, screener, TWO_LANE_MAP, SECONDS_PER_TICK, nominated_target_ids=["t"])
+    screen = next(c for c in generate_candidates(observation) if c.protecting_id is not None)
+
+    assert screen.reason == SCREENING_INFERRED
+    assert screen.protecting_id == "f"
+
+    # A lone guard covers its own post, which is nobody in particular.
+    alone = make_unit("s", HOUND, "north", HERE, destination=HERE)
+    solo = make_world([alone, make_unit("t", RAM, "south", threat_at)])
+    lone_screen = [
+        c
+        for c in generate_candidates(observe(solo, alone, TWO_LANE_MAP, SECONDS_PER_TICK))
+        if c.reason in (SCREENING, SCREENING_INFERRED)
+    ]
+    assert all(c.protecting_id is None for c in lone_screen)

@@ -46,6 +46,7 @@ from app.sim.ai.intent import (
     RETREATING,
     RETURNED_TO_STATION,
     SCREENING,
+    SCREENING_INFERRED,
     ActionKind,
 )
 from app.sim.ai.objective import enemy_base_position
@@ -102,6 +103,9 @@ class Candidate:
     #: deliberately **not** part of the sort key, so that naming a candidate
     #: differently can never change which one wins.
     reason: str = ""
+    #: On a screen, the ally being covered — None when it is this unit's post.
+    #: Diagnostics, like `reason`, and out of the sort key for the same reason.
+    protecting_id: UnitId | None = None
 
 
 def _sort_key(candidate: Candidate) -> tuple[int, str, str, float, float]:
@@ -257,14 +261,17 @@ def _approach_candidates(observation: Observation, target: Unit) -> list[Candida
         candidates.append(Candidate(kind="advance", target_id=target.id, destination=approach, reason=reason))
 
     if observation.capabilities.can_attack:
-        screen = screen_position(
-            target.position,
-            protected_by(observation.unit, observation.allies, target, observation.objective.station),
-            gap,
-        )
+        covered = protected_by(observation.unit, observation.allies, target, observation.objective.station)
+        screen = screen_position(target.position, covered.position, gap)
         if distance(position, screen) > ARRIVAL_EPSILON and not _base_is_off_limits(observation, screen):
             candidates.append(
-                Candidate(kind="advance", target_id=target.id, destination=screen, reason=SCREENING)
+                Candidate(
+                    kind="advance",
+                    target_id=target.id,
+                    destination=screen,
+                    reason=SCREENING if covered.assigned else SCREENING_INFERRED,
+                    protecting_id=covered.unit_id,
+                )
             )
 
     return candidates

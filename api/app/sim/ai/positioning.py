@@ -30,6 +30,8 @@ Nothing here decides whether a position is a good idea. These are candidates;
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from app.sim.ai.capabilities import Capabilities
 from app.sim.geometry import distance, point_along
 from app.sim.types import UnitId, Vec2
@@ -101,13 +103,35 @@ def screen_position(threat: Vec2, protected: Vec2, gap: float) -> Vec2:
     return point_along(threat, protected, gap)
 
 
+@dataclass(frozen=True)
+class Screened:
+    """What a screen is covering, and whether anybody actually said so.
+
+    The `assigned` flag exists because the difference is invisible from the
+    outside and reads as a bug when it is not one. A screener covering the ally
+    a coordinator named and a screener covering the ally it guessed at look
+    identical in a battle — same verb, same line, same walk — but only one of
+    them is doing what somebody asked. In a playtest, a guess that covers the
+    *wrong* ally is exactly the kind of thing that gets written up as broken AI,
+    and the only way to tell the two apart afterwards is to have recorded which
+    path was taken. JQ-331's inspector prints it.
+    """
+
+    #: Where the screening line points. The only field the geometry uses.
+    position: Vec2
+    #: Who is being covered, or None when it is the unit's own post.
+    unit_id: UnitId | None
+    #: True when a coordinator named this ally, False when it was inferred here.
+    assigned: bool
+
+
 def protected_by(
     unit: Unit,
     allies: tuple[Unit, ...],
     threat: Unit,
     station: Vec2,
     protecting_id: UnitId | None = None,
-) -> Vec2:
+) -> Screened:
     """What this unit would be screening `threat` away from.
 
     **`protecting_id` is an answer; everything below it is a guess.** A troop
@@ -138,9 +162,10 @@ def protected_by(
     if protecting_id is not None:
         named = next((ally for ally in allies if ally.id == protecting_id), None)
         if named is not None:
-            return named.position
+            return Screened(position=named.position, unit_id=named.id, assigned=True)
         # Assigned to cover something that has since died or left. Fall through
-        # rather than refuse: the threat is still real and still worth screening.
+        # rather than refuse: the threat is still real and still worth screening,
+        # and the result records that it is no longer the assigned one.
 
     nearest: Unit | None = None
     nearest_gap = float("inf")
@@ -151,7 +176,9 @@ def protected_by(
             nearest = ally
             nearest_gap = gap
 
-    return station if nearest is None else nearest.position
+    if nearest is None:
+        return Screened(position=station, unit_id=None, assigned=False)
+    return Screened(position=nearest.position, unit_id=nearest.id, assigned=False)
 
 
 def give_ground_position(position: Vec2, threats: tuple[Vec2, ...], lookahead: float) -> Vec2 | None:
