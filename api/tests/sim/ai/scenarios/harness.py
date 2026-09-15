@@ -110,8 +110,49 @@ def play(
     return ScenarioRun(world=world, trace=trace, events=tuple(events))
 
 
+def effective_weights(record: TraceRecord, factor: str) -> tuple[float, ...]:
+    """What this factor was actually weighted at, across the candidates weighed.
+
+    Since JQ-330 a personality's deltas are contextual, so the standing weights
+    are identical whatever the mage is like and the effect is visible only here.
+    One entry per candidate the record kept; `min` is "the most this unit was
+    willing to discount the factor anywhere".
+    """
+    return tuple(
+        contribution.weight
+        for candidate in (record.chosen, *record.rivals)
+        for contribution in candidate.contributions
+        if contribution.factor == factor
+    )
+
+
+def influences_on(record: TraceRecord) -> tuple[tuple[str, str, str], ...]:
+    """Every (tag, context, factor) the record says spoke, across its candidates."""
+    return tuple(
+        sorted(
+            {
+                (i.tag, i.context, i.factor)
+                for candidate in (record.chosen, *record.rivals)
+                for i in candidate.influences
+            }
+        )
+    )
+
+
+def assignments_of(run: ScenarioRun, troop_id: str) -> tuple[str, ...]:
+    """Which units that troop's coordinator has given an assignment, by unit id."""
+    troop = next(t for t in run.world.troops if t.id == troop_id)
+    return tuple(a.unit_id for a in troop.coordination.assignments)
+
+
 def weight(record: TraceRecord, factor: str) -> float:
-    """One composed weight out of a record, by name rather than by position."""
+    """One **standing** weight out of a record, by name rather than by position.
+
+    Standing means "before this unit looked at a particular candidate". Since
+    JQ-330 a personality's interesting deltas are contextual, so a tag can be
+    entirely absent from this number and still decide the battle — use
+    `effective_weights` to see what a candidate was actually scored on.
+    """
     return next(value for name, value in record.weights if name == factor)
 
 

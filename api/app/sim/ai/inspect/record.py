@@ -23,10 +23,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.sim.ai.decide import Decision
-from app.sim.ai.factors import FACTORS, FactorContribution, FactorName
-from app.sim.ai.intent import ActionKind
+from app.sim.ai.factors import FACTORS, FactorContribution, FactorName, PersonalityInfluence
+from app.sim.ai.intent import ActionKind, Assignment
 from app.sim.ai.observe import Observation
-from app.sim.ai.profiles import PersonalityTag, ResolvedBehavior, TraitTag
+from app.sim.ai.profiles import PersonalityTag, ResolvedBehavior, TraitTag, defaulted
 from app.sim.types import Side, TroopId, UnitId, Vec2
 
 #: What a record keeps when the behavior layer has not said. JQ-330 is adding
@@ -38,15 +38,25 @@ UNKNOWN = None
 
 
 @dataclass(frozen=True)
+class PersonalitySourceRecord:
+    """One mage's reference to a tag, and where that reference's strength came from."""
+
+    mage_id: UnitId
+    strength: float
+    overridden: bool
+
+
+@dataclass(frozen=True)
 class PersonalityRecord:
     """One personality tag's say in one unit's behavior."""
 
     tag: PersonalityTag
     #: The strength that actually applied, after composition.
     strength: float
-    #: True when an explicit override supplied the strength, False when it came
-    #: from the definition's default, None when the behavior layer does not
-    #: record which. See `UNKNOWN`.
+    #: True when *any* reference supplied an explicit strength — JQ-330's
+    #: `defaulted()`, inverted. Exact for a one-mage troop, which is every troop
+    #: `create_world` builds; `sources` is the unabridged answer, since two mages
+    #: can name one tag with only one of them overriding.
     #:
     #: One flag per tag, which is the honest shape only while a troop has one
     #: mage — as every troop in `create_world` does today. JQ-330's
@@ -57,6 +67,8 @@ class PersonalityRecord:
     #: troops become a thing, this field grows a `sources` tuple beside it
     #: rather than trying to answer for all of them at once.
     overridden: bool | None = UNKNOWN
+    #: One entry per mage that named this tag, sorted by mage id.
+    sources: tuple[PersonalitySourceRecord, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -69,6 +81,11 @@ class CandidateRecord:
     destination: Vec2 | None
     score: float
     contributions: tuple[FactorContribution, ...]
+    #: Which authored tags spoke to *this* candidate, and in which situation
+    #: (JQ-330). Per candidate rather than per unit because that is the whole
+    #: point of a contextual rule: the same tag is loud on one candidate and
+    #: silent on the next. Empty when no tag had anything to say.
+    influences: tuple[PersonalityInfluence, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -96,6 +113,10 @@ class TraceRecord:
     #: Why the unit says it chose this — JQ-329 owns the vocabulary and writes
     #: it onto `Intent`. Empty until that lands, and never branched on here.
     reason: str = ""
+    #: What this unit's troop asked it to answer, if anything (JQ-330). Flattened
+    #: at record time: `Troop.coordination` is rebuilt every tick, so a reference
+    #: would show the current allocation beside an old decision.
+    assignment: Assignment | None = None
 
 
 @dataclass(frozen=True)
@@ -145,8 +166,20 @@ def _personalities_of(behavior: ResolvedBehavior) -> tuple[PersonalityRecord, ..
     `PersonalityRecord.overridden`.
     """
     return tuple(
-        PersonalityRecord(tag=tag, strength=strength, overridden=UNKNOWN)
-        for tag, strength in behavior.personalities
+        PersonalityRecord(
+            tag=personality.tag,
+            strength=personality.strength,
+            overridden=not defaulted(personality),
+            sources=tuple(
+                PersonalitySourceRecord(
+                    mage_id=source.mage_id,
+                    strength=source.strength,
+                    overridden=source.overridden,
+                )
+                for source in personality.sources
+            ),
+        )
+        for personality in behavior.personalities
     )
 
 
@@ -229,6 +262,7 @@ class DecisionTrace:
                 rivals=rivals,
                 candidate_count=len(decision.considered),
                 reason=_reason_of(decision),
+                assignment=observation.assignment,
             )
         )
 
@@ -262,6 +296,7 @@ def _split(decision: Decision, keep: int) -> tuple[CandidateRecord, tuple[Candid
             destination=entry.candidate.destination,
             score=entry.score,
             contributions=entry.contributions,
+            influences=entry.influences,
         )
         if chosen is None and entry.candidate == decision.selected:
             # Scored before jitter; the decision's own total is authoritative.
@@ -272,6 +307,7 @@ def _split(decision: Decision, keep: int) -> tuple[CandidateRecord, tuple[Candid
                 destination=record.destination,
                 score=decision.score,
                 contributions=decision.contributions,
+                influences=decision.influences,
             )
             continue
         losers.append(record)

@@ -42,9 +42,32 @@ from app.sim.abilities import (
 from app.sim.ai.attach import attach_behavior
 from app.sim.ai.candidates import Candidate, generate_candidates
 from app.sim.ai.capabilities import Capabilities, capabilities_of, supports
+from app.sim.ai.coordination import (
+    CoordinationProfile,
+    assignment_for,
+    baseline_profile,
+    compose_profile,
+    coordinate,
+    leading_mage,
+    nominated_target_ids,
+    profile_for,
+)
 from app.sim.ai.decide import Decision, decide, intent_of
-from app.sim.ai.factors import FACTORS, FactorContribution, FactorName, FactorWeights
-from app.sim.ai.fixtures import placeholder_behavior, sample_library
+from app.sim.ai.factors import (
+    FACTORS,
+    FactorContribution,
+    FactorName,
+    FactorWeights,
+    PersonalityInfluence,
+)
+from app.sim.ai.fixtures import (
+    FIVE_PACKAGES,
+    combined_library,
+    contrasting_library,
+    placeholder_behavior,
+    sample_library,
+    strength_library,
+)
 from app.sim.ai.inspect.record import (
     DecisionTrace,
     PersonalityRecord,
@@ -52,21 +75,29 @@ from app.sim.ai.inspect.record import (
     TraceRecord,
 )
 from app.sim.ai.inspect.report import as_dicts, render_json, render_text
-from app.sim.ai.intent import ActionKind, Intent, UnitAi
+from app.sim.ai.intent import ActionKind, Assignment, Intent, TroopCoordination, UnitAi
 from app.sim.ai.observe import Observation, observe
 from app.sim.ai.profiles import (
     BehaviorLibrary,
+    CoordinationInfluence,
     CreatureProfile,
     MagePersonality,
     PersonalityDefinition,
     PersonalityRef,
+    PersonalityRule,
+    PersonalitySource,
     PersonalityTag,
     ResolvedBehavior,
+    ResolvedPersonality,
     TraitDefinition,
     TraitTag,
     UnitBehavior,
+    defaulted,
+    describe_behavior,
 )
-from app.sim.ai.scoring import ScoredCandidate, score_candidates
+from app.sim.ai.scoring import ScoredCandidate, contextual_weights, score_candidates
+from app.sim.ai.situation import holds
+from app.sim.ai.vocabulary import CONTEXTS, Context
 from app.sim.blocking import blockers_against, clamp_to_blockers
 from app.sim.casting import (
     DEFAULT_CAST_POLICY,
@@ -256,6 +287,7 @@ __all__ = [
     "BASELINE_TRICKLE",
     "BURNING_GROUND",
     "CAST_ORIGINS",
+    "CONTEXTS",
     "DAMAGE_DEALT",
     "DAMAGE_TAKEN",
     "DEFAULT_CAST_POLICY",
@@ -268,6 +300,7 @@ __all__ = [
     "EMPTY_SPELL_CATALOG",
     "ENERGY_METERS",
     "FACTORS",
+    "FIVE_PACKAGES",
     "FORMATION_RANK_GAP",
     "FORMATION_SPACING",
     "IDENTITY_MULTIPLIERS",
@@ -290,6 +323,7 @@ __all__ = [
     "AimedCast",
     "AreaDamage",
     "ArmySetup",
+    "Assignment",
     "BaseConfig",
     "BaseState",
     "BattleEvent",
@@ -308,6 +342,9 @@ __all__ = [
     "CastOrigin",
     "CastPolicy",
     "ChipReserve",
+    "Context",
+    "CoordinationInfluence",
+    "CoordinationProfile",
     "CreatureProfile",
     "DamageProfile",
     "DashToTarget",
@@ -338,10 +375,14 @@ __all__ = [
     "Order",
     "OrderKind",
     "PersonalityDefinition",
+    "PersonalityInfluence",
     "PersonalityRecord",
     "PersonalityRef",
+    "PersonalityRule",
+    "PersonalitySource",
     "PersonalityTag",
     "ResolvedBehavior",
+    "ResolvedPersonality",
     "ResonanceCounts",
     "ResonanceCurve",
     "Rng",
@@ -367,6 +408,7 @@ __all__ = [
     "TraitDefinition",
     "TraitTag",
     "Troop",
+    "TroopCoordination",
     "TroopId",
     "TroopSetup",
     "Unit",
@@ -387,7 +429,9 @@ __all__ = [
     "anchors_on_mage",
     "apply_effects",
     "as_dicts",
+    "assignment_for",
     "attach_behavior",
+    "baseline_profile",
     "blockers_against",
     "build_ability_catalog",
     "build_spell_catalog",
@@ -396,6 +440,11 @@ __all__ = [
     "chip_box",
     "clamp_to_blockers",
     "clear_of_chip",
+    "combined_library",
+    "compose_profile",
+    "contextual_weights",
+    "contrasting_library",
+    "coordinate",
     "count_resonance",
     "create_event_emitter",
     "create_rng",
@@ -403,25 +452,30 @@ __all__ = [
     "create_world",
     "damage_unit",
     "decide",
+    "defaulted",
     "deployment_anchor",
     "deployment_band",
     "derive_formation",
+    "describe_behavior",
     "digest_battle",
     "energy_gain",
     "energy_multiplier_for",
     "energy_rule_for",
     "generate_candidates",
     "hold",
+    "holds",
     "hotspot_box",
     "hotspot_centre",
     "hotspot_contains",
     "intent_of",
     "is_alive",
     "is_resummonable",
+    "leading_mage",
     "legal_orders",
     "max_ticks",
     "may_attack_base",
     "new_energy_meters",
+    "nominated_target_ids",
     "objective_position",
     "observe",
     "opposing",
@@ -433,6 +487,7 @@ __all__ = [
     "per_second",
     "placeholder_battle",
     "placeholder_behavior",
+    "profile_for",
     "render_json",
     "render_text",
     "resolve_school_energy_rules",
@@ -451,6 +506,7 @@ __all__ = [
     "spell_cast",
     "station",
     "step_battle",
+    "strength_library",
     "strip_centre",
     "support_capacity_of",
     "supports",

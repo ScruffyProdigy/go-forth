@@ -54,7 +54,7 @@ def test_every_runnable_scenario_module_is_a_file_in_this_package() -> None:
 
 def test_every_pending_scenario_names_the_ticket_that_unblocks_it() -> None:
     for scenario in PENDING:
-        assert scenario.blocked_on in ("JQ-329", "JQ-330"), scenario.name
+        assert scenario.blocked_on == "JQ-329", scenario.name
 
 
 def test_every_scenario_says_what_it_asserts() -> None:
@@ -63,10 +63,10 @@ def test_every_scenario_says_what_it_asserts() -> None:
         assert len(scenario.asserts.split()) >= 6, scenario.name
 
 
-def test_the_split_is_three_runnable_and_four_pending() -> None:
+def test_the_split_is_four_runnable_and_three_pending() -> None:
     """Pinned so that landing a pending scenario is a deliberate edit here too."""
-    assert len(RUNNABLE) == 3
-    assert len(PENDING) == 4
+    assert len(RUNNABLE) == 4
+    assert len(PENDING) == 3
 
 
 def test_no_scenario_module_is_registered_twice() -> None:

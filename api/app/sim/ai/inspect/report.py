@@ -23,6 +23,7 @@ import json
 
 from app.sim.ai.factors import FactorContribution
 from app.sim.ai.inspect.record import CandidateRecord, PersonalityRecord, TraceRecord
+from app.sim.ai.intent import Assignment
 from app.sim.types import Vec2
 
 #: What a decision with no JQ-329 reason attached renders as. Distinguishable
@@ -67,8 +68,37 @@ def _personality(personality: PersonalityRecord) -> str:
     """
     if personality.overridden is None:
         return f"{personality.tag} {personality.strength:g}"
+
+    # More than one mage named this tag, so a single "overridden" would
+    # attribute one mage's choice to both. Name them instead.
+    if len(personality.sources) > 1:
+        detail = ", ".join(
+            f"{source.mage_id} {source.strength:g}{' overridden' if source.overridden else ' default'}"
+            for source in personality.sources
+        )
+        return f"{personality.tag} {personality.strength:g} (from {detail})"
+
     source = "overridden" if personality.overridden else "default"
     return f"{personality.tag} {personality.strength:g} ({source})"
+
+
+def _influences(candidate: CandidateRecord) -> str:
+    """Which authored tag moved which weight here, and what woke it up.
+
+    The complement to `_contributions`: that says what the unit weighed, this
+    says who put the weight there. A tag silent on this candidate does not
+    appear, which is how a contextual rule shows itself.
+    """
+    return ", ".join(f"{i.tag}/{i.context} {i.factor} {i.delta:+.2f}" for i in candidate.influences)
+
+
+def _assignment_line(assignment: Assignment | None) -> str:
+    if assignment is None:
+        return ""
+    return (
+        f"\n    assigned {assignment.target_id}"
+        f" for {assignment.protecting_id} since tick {assignment.since_tick}"
+    )
 
 
 def _behavior_line(record: TraceRecord) -> str:
@@ -82,21 +112,27 @@ def _behavior_line(record: TraceRecord) -> str:
 def _record_text(record: TraceRecord) -> str:
     lines = [
         f"tick {record.tick}  {record.unit_id} ({record.type_id}, {record.side}/{record.troop_id})",
-        f"    posted at {_position(record.station)}{'' if record.may_attack_base else '  [base off limits]'}",
+        f"    posted at {_position(record.station)}"
+        f"{'' if record.may_attack_base else '  [base off limits]'}"
+        f"{_assignment_line(record.assignment)}",
         _behavior_line(record),
         f"    weights: {', '.join(f'{factor} {value:g}' for factor, value in record.weights)}",
         f"    chose {_action(record.chosen)}  {record.chosen.score:+.3f}  ({record.reason or NO_REASON})",
         f"      {_contributions(record.chosen.contributions)}",
     ]
 
+    if record.chosen.influences:
+        lines.append(f"      via {_influences(record.chosen)}")
+
     if record.rivals:
         beaten = record.candidate_count - 1 - len(record.rivals)
         tail = f" (+{beaten} more)" if beaten > 0 else ""
         lines.append(f"    over {len(record.rivals)} of {record.candidate_count - 1} rivals{tail}:")
-        lines.extend(
-            f"      {_action(rival)}  {rival.score:+.3f}\n        {_contributions(rival.contributions)}"
-            for rival in record.rivals
-        )
+        for rival in record.rivals:
+            lines.append(f"      {_action(rival)}  {rival.score:+.3f}")
+            lines.append(f"        {_contributions(rival.contributions)}")
+            if rival.influences:
+                lines.append(f"        via {_influences(rival)}")
     else:
         lines.append("    no other candidate was legal")
 
@@ -126,6 +162,10 @@ def _candidate_dict(candidate: CandidateRecord) -> dict[str, object]:
             else None
         ),
         "score": candidate.score,
+        "influences": [
+            {"tag": i.tag, "context": i.context, "factor": i.factor, "delta": i.delta}
+            for i in candidate.influences
+        ],
         "contributions": [
             {
                 "factor": c.factor,
@@ -152,11 +192,28 @@ def as_dicts(records: tuple[TraceRecord, ...]) -> list[dict[str, object]]:
             "assignment": {
                 "station": {"x": record.station.x, "y": record.station.y},
                 "mayAttackBase": record.may_attack_base,
+                "coordinated": (
+                    {
+                        "targetId": record.assignment.target_id,
+                        "protectingId": record.assignment.protecting_id,
+                        "sinceTick": record.assignment.since_tick,
+                    }
+                    if record.assignment is not None
+                    else None
+                ),
             },
             "behavior": {
                 "traits": list(record.traits),
                 "personalities": [
-                    {"tag": p.tag, "strength": p.strength, "overridden": p.overridden}
+                    {
+                        "tag": p.tag,
+                        "strength": p.strength,
+                        "overridden": p.overridden,
+                        "sources": [
+                            {"mageId": q.mage_id, "strength": q.strength, "overridden": q.overridden}
+                            for q in p.sources
+                        ],
+                    }
                     for p in record.personalities
                 ],
                 "weights": [{"factor": factor, "weight": value} for factor, value in record.weights],

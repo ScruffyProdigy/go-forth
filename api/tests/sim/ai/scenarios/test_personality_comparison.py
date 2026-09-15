@@ -16,8 +16,8 @@ it does.
 from __future__ import annotations
 
 from app.sim.ai.fixtures import (
-    GUARDIAN,
     METHODICAL,
+    PROTECTIVE,
     RECKLESS,
     SAMPLE_PERSONALITIES,
     SAMPLE_PROFILES,
@@ -27,7 +27,14 @@ from app.sim.ai.profiles import MAX_STRENGTH, BehaviorLibrary, MagePersonality, 
 from app.sim.types import Vec2
 from app.sim.world import Unit
 from tests.sim.ai.helpers import make_unit
-from tests.sim.ai.scenarios.harness import ScenarioRun, play, tags, weight
+from tests.sim.ai.scenarios.harness import (
+    ScenarioRun,
+    effective_weights,
+    influences_on,
+    play,
+    tags,
+    weight,
+)
 from tests.sim.fixtures_units import ADEPT, HOUND
 
 TICKS = 20
@@ -102,12 +109,50 @@ def test_a_reckless_troop_and_a_methodical_one_do_not_behave_the_same() -> None:
     assert diverged, "personality did not reach the decision at all"
 
 
-def test_a_reckless_troop_discounts_danger_relative_to_a_methodical_one() -> None:
-    """The direction is the invariant; the magnitude is provisional tuning data."""
+def test_personality_lives_in_the_contextual_weights_not_the_standing_ones() -> None:
+    """Where the effect is, which is not where it used to be.
+
+    Before JQ-330 a personality shifted the standing weights and stayed shifted
+    for the whole battle. Its deltas are contextual now, so the standing set is
+    identical whatever the mage is like, and the difference appears only on the
+    candidates a tag actually speaks to. Pinned because three tests here read
+    the wrong number until it was: a scenario checking standing weights would
+    report "personality does nothing" for a working personality.
+    """
     reckless = run_with(PersonalityRef(RECKLESS)).by_unit("hound-a")[0]
     methodical = run_with(PersonalityRef(METHODICAL)).by_unit("hound-a")[0]
 
-    assert weight(reckless, "danger") < weight(methodical, "danger")
+    assert weight(reckless, "danger") == weight(methodical, "danger")
+    assert min(effective_weights(reckless, "danger")) < min(effective_weights(methodical, "danger"))
+
+
+def test_a_reckless_troop_discounts_danger_relative_to_a_methodical_one() -> None:
+    """The direction is the invariant; the magnitude is provisional tuning data.
+
+    Read off the candidates rather than the standing weights — see above.
+    """
+    reckless = run_with(PersonalityRef(RECKLESS)).by_unit("hound-a")[0]
+    methodical = run_with(PersonalityRef(METHODICAL)).by_unit("hound-a")[0]
+
+    assert min(effective_weights(reckless, "danger")) < min(effective_weights(methodical, "danger"))
+
+
+def test_the_trace_names_the_tag_the_context_and_the_factor_it_moved() -> None:
+    """The ticket: "explain which context activated each tag".
+
+    The non-emptiness assertions are not padding: `all(...)` over an empty tuple
+    is true and an empty factor set differs from a populated one, so without
+    them both checks below pass when a tag has gone completely silent — which is
+    the regression they exist to catch.
+    """
+    reckless = influences_on(run_with(PersonalityRef(RECKLESS)).by_unit("hound-a")[0])
+    methodical = influences_on(run_with(PersonalityRef(METHODICAL)).by_unit("hound-a")[0])
+
+    assert reckless, "reckless said nothing about any candidate"
+    assert methodical, "methodical said nothing about any candidate"
+    assert all(tag == "reckless" for tag, _, _ in reckless)
+    assert all(tag == "methodical" for tag, _, _ in methodical)
+    assert {factor for _, _, factor in methodical} != {factor for _, _, factor in reckless}
 
 
 def test_the_trace_names_the_personality_that_was_in_play() -> None:
@@ -120,15 +165,13 @@ def test_the_trace_names_the_personality_that_was_in_play() -> None:
 def test_the_mages_personality_reaches_its_summons_not_just_itself() -> None:
     """A personality lives on the mage and is meant to lead the whole troop.
 
-    Uses `GUARDIAN`, which JQ-330 is replacing with `PROTECTIVE`. The tag is
-    incidental here — any personality would do — so the integration pass swaps
-    the name and nothing else. Flagged because it is the one place in this
-    package that names a tag JQ-330 removes rather than renames in place.
+    The tag is incidental — any personality would do. It was `guardian` until
+    JQ-330 replaced that tag with `protective`.
     """
-    run = run_with(PersonalityRef(GUARDIAN))
+    run = run_with(PersonalityRef(PROTECTIVE))
 
     for unit_id in ("mage", "hound-a", "hound-b"):
-        assert GUARDIAN in tags(run.by_unit(unit_id)[0])
+        assert PROTECTIVE in tags(run.by_unit(unit_id)[0])
 
 
 def test_it_does_not_reach_the_other_side() -> None:
@@ -155,7 +198,7 @@ def test_a_raised_strength_moves_the_weight_further_than_the_default() -> None:
     default = run_with(PersonalityRef(RECKLESS)).by_unit("mage")[0]
     raised = run_with(PersonalityRef(RECKLESS, strength=2.0)).by_unit("mage")[0]
 
-    assert weight(raised, "danger") < weight(default, "danger")
+    assert min(effective_weights(raised, "danger")) < min(effective_weights(default, "danger"))
 
 
 def test_strength_saturates_at_the_weight_floor_rather_than_going_negative() -> None:
@@ -169,8 +212,11 @@ def test_strength_saturates_at_the_weight_floor_rather_than_going_negative() -> 
     hound_at_default = run_with(PersonalityRef(RECKLESS)).by_unit("hound-a")[0]
     hound_at_max = run_with(PersonalityRef(RECKLESS, strength=MAX_STRENGTH)).by_unit("hound-a")[0]
 
-    assert weight(hound_at_default, "danger") == 0.0
-    assert weight(hound_at_max, "danger") == 0.0
+    assert min(effective_weights(hound_at_default, "danger")) == 0.0
+    assert min(effective_weights(hound_at_max, "danger")) == 0.0
+    # And the half the contextual redesign did fix: the floor is reached only on
+    # the candidates reckless speaks to, not flattened across the whole battle.
+    assert weight(hound_at_max, "danger") > 0.0
 
 
 def test_a_zero_strength_contributes_nothing_rather_than_inverting() -> None:
@@ -178,5 +224,6 @@ def test_a_zero_strength_contributes_nothing_rather_than_inverting() -> None:
     zero = run_with(PersonalityRef(RECKLESS, strength=0.0)).by_unit("hound-a")[0]
     without = play(entourage(), UNIT_TYPES, library(), ticks=TICKS).by_unit("hound-a")[0]
 
-    assert weight(zero, "danger") == weight(without, "danger")
-    assert weight(zero, "target_suitability") == weight(without, "target_suitability")
+    for factor in ("danger", "target_suitability"):
+        assert weight(zero, factor) == weight(without, factor)
+        assert effective_weights(zero, factor) == effective_weights(without, factor)

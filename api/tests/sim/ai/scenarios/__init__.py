@@ -8,10 +8,10 @@ invariants rather than on score values**. A scenario that asserted `score ==
 "the ranged unit never ends a tick inside the melee unit's reach" survives
 retuning and still catches the regression.
 
-Three of the seven run today, on JQ-328's loop alone. The other four need
-behaviors that do not exist yet, and are registered here as pending against the
-ticket that owns them rather than quietly left out — `test_registry.py` holds the
-list honest, so this package says what it does not yet cover.
+Four of the seven run today. The other three need JQ-329's positioning, which is
+still in review, and are registered here as pending against it rather than
+quietly left out — `test_registry.py` holds the list honest, so this package says
+what it does not yet cover.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ SCENARIOS: tuple[Scenario, ...] = (
         name="regroup",
         asserts="a scattered troop returns to coordinated positions once the "
         "commitment that scattered it is released",
-        blocked_on="JQ-330",
+        module="test_regroup",
     ),
 )
 
