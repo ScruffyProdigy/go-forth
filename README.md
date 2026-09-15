@@ -280,11 +280,33 @@ input exists anywhere a plan can reach. A field that let one in would break no
 other test — everything would still run, and the plan phase would quietly stop
 being three taps — so the constraint is checked rather than trusted.
 
-A zone is held when **exactly one** side has living units inside it; contested
-and empty zones pay nobody, and ownership is not sticky. Only troops under Push
-enemy base may attack a base, and a base reaching zero ends the whole match
-rather than the round. Base HP never recovers: `result.base_hp` goes straight
-back into the next round's `BattleSetup.base_hp`.
+### Lanes and hotspots
+
+Zones are **lanes, divided west to east** — they run alongside the attack axis
+rather than across it, so every lane is the same distance from both bases. The
+earlier layout stacked them north to south, which handed each side a zone next to
+its own deployment strip that the enemy never reached. That was free income
+nobody had to fight for, and farming it beat every other line: a mirror ended
+1795-1795 on every seed, and a player who committed everything to the contested
+middle lost by 1633.
+
+Scoring sits on a **hotspot** at the centre of each lane, and only a **mage**
+standing in it holds anything. A lane is a big box and a straggler in the corner
+of one would be enough to deny it, so the test is a small square in the middle of
+the map — and requiring the mage means the summon screen has to have won that
+ground first, with the troop's slowest and most fragile unit now standing in the
+open. Denial is a combat outcome rather than an occupancy technicality.
+
+A lane is held when **exactly one** side has a living mage in its hotspot;
+contested and empty lanes pay nobody, and ownership is not sticky.
+
+Two lanes rather than three is a decision about the plan, not the map: you open at
+three mages, and three troops into two lanes forces you to double up somewhere
+and your opponent to guess where.
+
+Only troops under Push enemy base may attack a base, and a base reaching zero
+ends the whole match rather than the round. Base HP never recovers:
+`result.base_hp` goes straight back into the next round's `BattleSetup.base_hp`.
 
 The per-tick **phase order** is declared in one place,
 [`app/sim/phases/__init__.py`](api/app/sim/phases/__init__.py). Adding behaviour

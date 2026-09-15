@@ -7,7 +7,7 @@ import dataclasses
 
 import pytest
 
-from app.sim.map import THREE_ZONE_MAP, MapConfig, ZoneConfig, strip_centre, zone_centre
+from app.sim.map import TWO_LANE_MAP, MapConfig, ZoneConfig, hotspot_centre, strip_centre
 from app.sim.orders import (
     DEFEND_BASE,
     PUSH_ENEMY_BASE,
@@ -24,73 +24,83 @@ from app.sim.world import ArmySetup, BattleSetup, RosterEntry, TroopSetup, creat
 from tests.sim.fixtures_units import ADEPT, HOUND
 
 
-def four_zone_map() -> MapConfig:
-    config = copy.deepcopy(THREE_ZONE_MAP)
-    config.zones.append(ZoneConfig("D", Span(469, 500), Span(0, 375), 1))
-    config.deployment["south"].lane = Span(500, 529)
+def three_lane_map() -> MapConfig:
+    """The same map with a third lane squeezed into the push corridor."""
+    config = copy.deepcopy(TWO_LANE_MAP)
+    config.zones[0].extent = Span(0, 110)
+    config.zones[1].extent = Span(265, 375)
+    config.zones.insert(1, ZoneConfig("M", Span(100, 469), Span(150, 225), 1))
+    config.hotspot_size = 60
     return config
 
 
-def test_the_three_zone_map_offers_exactly_five_orders() -> None:
-    assert len(legal_orders(THREE_ZONE_MAP)) == 5
+def test_the_two_lane_map_offers_exactly_four_orders() -> None:
+    assert len(legal_orders(TWO_LANE_MAP)) == 4
 
 
-def test_the_five_are_hold_each_zone_defend_and_push() -> None:
-    assert legal_orders(THREE_ZONE_MAP) == (
-        hold("A"),
-        hold("B"),
-        hold("C"),
+def test_the_four_are_hold_each_lane_defend_and_push() -> None:
+    assert legal_orders(TWO_LANE_MAP) == (
+        hold("W"),
+        hold("E"),
         DEFEND_BASE,
         PUSH_ENEMY_BASE,
     )
 
 
-def test_five_is_a_fact_about_the_map_rather_than_a_constant() -> None:
-    assert len(legal_orders(four_zone_map())) == 6
+def test_four_is_a_fact_about_the_map_rather_than_a_constant() -> None:
+    assert len(legal_orders(three_lane_map())) == 5
 
 
 def test_a_hold_order_must_name_a_zone_the_map_has() -> None:
     with pytest.raises(ValueError, match="zone"):
-        validate_order(hold("Z"), THREE_ZONE_MAP)
+        validate_order(hold("Z"), TWO_LANE_MAP)
 
 
 def test_a_hold_order_must_name_some_zone() -> None:
     with pytest.raises(ValueError, match="name the zone"):
-        validate_order(Order("holdZone"), THREE_ZONE_MAP)
+        validate_order(Order("holdZone"), TWO_LANE_MAP)
 
 
 def test_defend_and_push_name_no_zone() -> None:
     with pytest.raises(ValueError, match="names no zone"):
-        validate_order(Order("pushEnemyBase", "A"), THREE_ZONE_MAP)
+        validate_order(Order("pushEnemyBase", "A"), TWO_LANE_MAP)
 
 
 def test_a_verb_that_is_not_an_order_is_rejected() -> None:
     with pytest.raises(ValueError, match="not an order"):
-        validate_order(Order("retreat"), THREE_ZONE_MAP)  # type: ignore[arg-type]
+        validate_order(Order("retreat"), TWO_LANE_MAP)  # type: ignore[arg-type]
 
 
-def test_hold_forms_up_on_the_middle_of_its_zone() -> None:
-    assert objective_position(hold("B"), "north", THREE_ZONE_MAP) == zone_centre(THREE_ZONE_MAP.zones[1])
+def test_hold_forms_up_on_its_lanes_hotspot() -> None:
+    assert objective_position(hold("E"), "north", TWO_LANE_MAP) == hotspot_centre(
+        TWO_LANE_MAP, TWO_LANE_MAP.zones[1]
+    )
 
 
-def test_hold_names_the_same_zone_for_both_sides() -> None:
-    north = objective_position(hold("B"), "north", THREE_ZONE_MAP)
+def test_a_lane_is_the_same_lane_for_both_sides() -> None:
+    """The whole point of dividing west to east: every lane is the same distance
+    from both bases, so no order means 'turtle' to one player and 'deep strike'
+    to the other."""
+    north = objective_position(hold("E"), "north", TWO_LANE_MAP)
+    south = objective_position(hold("E"), "south", TWO_LANE_MAP)
 
-    assert objective_position(hold("B"), "south", THREE_ZONE_MAP) == north
+    assert north == south
+    base_gap = TWO_LANE_MAP.bases["south"].position.y - TWO_LANE_MAP.bases["north"].position.y
+    assert north.y == TWO_LANE_MAP.bases["north"].position.y + base_gap / 2
 
 
 def test_defend_forms_up_in_front_of_its_own_base() -> None:
-    assert objective_position(DEFEND_BASE, "north", THREE_ZONE_MAP) == strip_centre(THREE_ZONE_MAP, "north")
+    assert objective_position(DEFEND_BASE, "north", TWO_LANE_MAP) == strip_centre(TWO_LANE_MAP, "north")
 
 
 def test_push_walks_at_the_enemy_base() -> None:
-    assert objective_position(PUSH_ENEMY_BASE, "north", THREE_ZONE_MAP) == (
-        THREE_ZONE_MAP.bases["south"].position
+    assert objective_position(PUSH_ENEMY_BASE, "north", TWO_LANE_MAP) == (
+        TWO_LANE_MAP.bases["south"].position
     )
 
 
 def test_only_push_may_attack_a_base() -> None:
-    allowed = [order for order in legal_orders(THREE_ZONE_MAP) if may_attack_base(order)]
+    allowed = [order for order in legal_orders(TWO_LANE_MAP) if may_attack_base(order)]
 
     assert allowed == [PUSH_ENEMY_BASE]
 
@@ -110,23 +120,23 @@ def army(side: Side, order: Order) -> ArmySetup:
 
 def test_every_troop_carries_exactly_one_order() -> None:
     world = create_world(
-        THREE_ZONE_MAP,
-        BattleSetup(unit_types=[ADEPT, HOUND], armies=[army("north", hold("A")), army("south", DEFEND_BASE)]),
+        TWO_LANE_MAP,
+        BattleSetup(unit_types=[ADEPT, HOUND], armies=[army("north", hold("W")), army("south", DEFEND_BASE)]),
         create_rng(1),
     )
 
-    assert [troop.order for troop in world.troops] == [hold("A"), DEFEND_BASE]
+    assert [troop.order for troop in world.troops] == [hold("W"), DEFEND_BASE]
 
 
 def test_a_unit_acts_under_its_troops_order() -> None:
     world = create_world(
-        THREE_ZONE_MAP,
-        BattleSetup(unit_types=[ADEPT, HOUND], armies=[army("north", hold("C")), army("south", DEFEND_BASE)]),
+        TWO_LANE_MAP,
+        BattleSetup(unit_types=[ADEPT, HOUND], armies=[army("north", hold("W")), army("south", DEFEND_BASE)]),
         create_rng(1),
     )
 
     north = next(unit for unit in world.units if unit.side == "north")
-    assert order_of(world, north) == hold("C")
+    assert order_of(world, north) == hold("W")
 
 
 def test_a_troop_cannot_be_built_without_one() -> None:
@@ -137,7 +147,7 @@ def test_a_troop_cannot_be_built_without_one() -> None:
 def test_an_order_naming_a_zone_the_map_does_not_have_stops_the_battle_being_built() -> None:
     with pytest.raises(ValueError, match="zone"):
         create_world(
-            THREE_ZONE_MAP,
+            TWO_LANE_MAP,
             BattleSetup(
                 unit_types=[ADEPT, HOUND],
                 armies=[army("north", hold("Q")), army("south", DEFEND_BASE)],

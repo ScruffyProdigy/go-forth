@@ -11,7 +11,7 @@ from app.sim.ai.fixtures import AGGRESSIVE, DUTIFUL, SAMPLE_TRAITS, SKIRMISHER, 
 from app.sim.ai.profiles import BehaviorLibrary, CreatureProfile, UnitBehavior
 from app.sim.config import SimConfig
 from app.sim.fixtures import placeholder_battle
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.phases import TICK_PHASES
 from app.sim.phases.combat import combat_phase
 from app.sim.phases.decision import decision_phase
@@ -22,7 +22,7 @@ from app.sim.types import Vec2
 from app.sim.units import UnitType
 from app.sim.world import World, create_world
 from tests.sim.ai.helpers import attach, context, make_unit, make_world
-from tests.sim.ai.separation import COINCIDENT, closest_opposing_approach, overlap_episodes
+from tests.sim.ai.separation import TRANSIT_TICKS, overlap_episodes
 from tests.sim.fixtures_units import ADEPT, HOUND
 
 MIDFIELD = Vec2(180, 300)
@@ -49,7 +49,7 @@ def at_station(world: World) -> None:
 
 def test_a_unit_with_no_behavior_data_is_left_completely_alone() -> None:
     """A battle that ships no library has to behave exactly as slice A did."""
-    world = create_world(THREE_ZONE_MAP, placeholder_battle(), create_rng(1))
+    world = create_world(TWO_LANE_MAP, placeholder_battle(), create_rng(1))
     assert world.units
     before = {unit.id: unit.destination for unit in world.units}
 
@@ -389,7 +389,7 @@ def test_a_unit_that_arrives_mid_battle_is_given_behaviour_too() -> None:
     """
     battle = placeholder_battle()
     battle.behavior = placeholder_behavior()
-    result = run_battle(THREE_ZONE_MAP, [], battle, 20260916, SimConfig(max_battle_seconds=20.0))
+    result = run_battle(TWO_LANE_MAP, [], battle, 20260916, SimConfig(max_battle_seconds=20.0))
 
     opening = {unit.id for unit in result.ticks[0].state.units}
     arrivals = [unit for unit in result.final_state.units if unit.id not in opening]
@@ -398,33 +398,36 @@ def test_a_unit_that_arrives_mid_battle_is_given_behaviour_too() -> None:
     assert all(unit.ai is not None for unit in arrivals)
 
 
-def test_pressing_past_lets_opposing_units_rest_coincident() -> None:
-    """The measured cost of press-past, pending JQ-380. Not a defect in either rule.
+def test_opposing_units_pass_through_each_other_but_do_not_rest_there() -> None:
+    """Where JQ-380 stands after the lane map, which is most of the way to fixed.
 
-    This test asserted the opposite until JQ-379 merged, and was written to fail
-    here. A unit acting on an intent has already bypassed the engage-en-route
-    hold, and the standoff clamp now declines to cap it once inside — so nothing
-    in movement keeps it off an enemy, and nothing in scoring does either.
-    `danger` makes closing unattractive, not impossible, which `_danger` says
-    plainly because I claimed otherwise once and was wrong.
+    The history matters, because the number moved twice for reasons that had
+    nothing to do with each other:
 
-    Measured across five seeds: opposing units reach exactly 0.0 and stay there
-    for up to 155 ticks — nearly eight seconds of a ninety-second battle, which
-    is rest rather than transit.
+    * Under the old clamp, nothing ever touched — 16.2 apart at closest.
+    * JQ-379 let an intent-driven unit press past an enemy, and the cost was
+      opposing units resting coincident: exactly 0.0, for up to 155 ticks.
+    * JQ-376's lanes cut that to at most 9 ticks and usually 1, never quite
+      reaching 0.0. Narrow lanes and a mage-held hotspot give units far less
+      reason to walk through one another to somewhere distant.
 
-    Neither rule is wrong alone: JQ-379 without a behaviour layer keeps units
-    16.8 apart, and this loop under the old clamp kept them 16.2 apart. JQ-380
-    owns the choice between accepting it and adding a *projecting* separation
-    rule — one that pushes a step out to a minimum body separation rather than
-    blocking it, since blocking reintroduces the JQ-379 freeze at a smaller
-    radius. **When it lands, rewrite this to whichever way it went.**
+    So what is left is transit rather than rest, which is the distinction JQ-380
+    turns on — a unit crossing another's square in a twentieth of a second reads
+    as passing; one standing inside it for seven seconds reads as a bug. That
+    ticket is still Ryan's to close, but the case for a projecting separation
+    rule is much weaker than it was when it was filed, and this test is the
+    evidence either way.
+
+    It asserts the shape rather than the exact numbers: contact may happen, and
+    it must stay brief. A regression back to resting coincident fails here.
     """
     battle = placeholder_battle()
     battle.behavior = placeholder_behavior()
-    result = run_battle(THREE_ZONE_MAP, [], battle, 3, SimConfig(max_battle_seconds=90.0))
+    result = run_battle(TWO_LANE_MAP, [], battle, 3, SimConfig(max_battle_seconds=90.0))
 
     episodes = overlap_episodes(result)
 
-    assert closest_opposing_approach(result) < COINCIDENT
-    assert episodes, "no overlap at all means JQ-380 landed without this being updated"
-    assert max(episodes) > 20, "overlap under a second would be transit, not rest"
+    assert all(length <= TRANSIT_TICKS for length in episodes), (
+        f"opposing units stayed coincident for {max(episodes)} ticks, which is rest rather "
+        f"than transit — the thing JQ-380 was filed about"
+    )

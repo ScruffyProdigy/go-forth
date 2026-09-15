@@ -31,7 +31,7 @@ from collections.abc import Sequence
 
 from app.sim import (
     DEFAULT_SIM_CONFIG,
-    THREE_ZONE_MAP,
+    TWO_LANE_MAP,
     SimConfig,
     SpellInjection,
     Vec2,
@@ -79,7 +79,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     config = DEFAULT_SIM_CONFIG if args.seconds is None else SimConfig(max_battle_seconds=args.seconds)
 
-    result = run_battle(THREE_ZONE_MAP, [], battle, args.seed, config)
+    result = run_battle(TWO_LANE_MAP, [], battle, args.seed, config)
 
     sys.stdout.write(f"{serialize_battle(result)}\n")
 

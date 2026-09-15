@@ -8,7 +8,7 @@ import pytest
 
 from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig
 from app.sim.context import TickContext, create_tick_context
-from app.sim.map import THREE_ZONE_MAP, MapConfig
+from app.sim.map import TWO_LANE_MAP, MapConfig
 from app.sim.orders import DEFEND_BASE, PUSH_ENEMY_BASE, Order, hold
 from app.sim.phases.combat import combat_phase
 from app.sim.rng import create_rng
@@ -22,7 +22,7 @@ from tests.sim.fixtures_units import ADEPT, HOUND
 def base_in_reach() -> MapConfig:
     """The south base moved up to meet the north deployment strip, so a pushing
     troop is swinging at the wall on the first tick rather than the hundredth."""
-    config = copy.deepcopy(THREE_ZONE_MAP)
+    config = copy.deepcopy(TWO_LANE_MAP)
     config.id = "base-in-reach"
     config.bases["south"].position = Vec2(187.5, 110)
     return config
@@ -81,7 +81,7 @@ def test_a_pushing_unit_damages_the_enemy_base() -> None:
     assert world.bases["south"].hp < world.bases["south"].max_hp
 
 
-@pytest.mark.parametrize("order", [hold("A"), hold("B"), DEFEND_BASE])
+@pytest.mark.parametrize("order", [hold("W"), hold("E"), DEFEND_BASE])
 def test_no_other_order_may_touch_a_base(order: Order) -> None:
     world = world_under(order)
 

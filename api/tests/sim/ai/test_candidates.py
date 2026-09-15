@@ -6,14 +6,14 @@ from collections.abc import Sequence
 
 from app.sim.ai.candidates import Candidate, generate_candidates
 from app.sim.geometry import distance
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.orders import PUSH_ENEMY_BASE, hold
 from app.sim.types import Vec2
 from tests.sim.ai.helpers import look, make_unit, make_world
 from tests.sim.fixtures_units import ADEPT, HOUND, WISP
 
 MIDFIELD = Vec2(180, 300)
-SOUTH_BASE = THREE_ZONE_MAP.bases["south"].position
+SOUTH_BASE = TWO_LANE_MAP.bases["south"].position
 
 
 def kinds(candidates: Sequence[Candidate]) -> list[str]:

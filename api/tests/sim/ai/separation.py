@@ -59,3 +59,11 @@ def overlap_episodes(result: BattleResult, threshold: float = COINCIDENT) -> lis
 
     episodes.extend(running[pair] for pair in sorted(running))
     return episodes
+
+
+#: The longest an overlap can last and still read as one unit crossing another's
+#: square rather than standing in it. Half a second at the default tick rate.
+#: The distinction JQ-380 turns on, and the reason `overlap_episodes` reports
+#: runs rather than a count — a hundred one-tick brushes and one seven-second
+#: occupation are the same total and opposite answers.
+TRANSIT_TICKS = 10

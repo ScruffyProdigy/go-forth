@@ -21,7 +21,7 @@ from app.sim.ai.scoring import score_candidate, score_candidates
 from app.sim.casting import FirstUsefulMoment
 from app.sim.config import DEFAULT_SIM_CONFIG, seconds_per_tick
 from app.sim.effects import ORIGIN_SELF, AreaDamage, DamageProfile, DashToTarget, EnergyRefill
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.types import Vec2
 from app.sim.units import UnitType
 from app.sim.world import Unit, World
@@ -101,7 +101,7 @@ BITER = UnitType(
 
 
 def look(world: World, unit: Unit) -> Observation:
-    return observe(world, unit, THREE_ZONE_MAP, TICK, CATALOG)
+    return observe(world, unit, TWO_LANE_MAP, TICK, CATALOG)
 
 
 def caster(energy: float, unit_type: UnitType = POUNCER) -> Unit:

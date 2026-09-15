@@ -12,7 +12,7 @@ from app.sim.casting import CastPolicy
 from app.sim.config import DEFAULT_SIM_CONFIG
 from app.sim.context import TickContext, create_tick_context
 from app.sim.energy import resolve_school_energy_rules
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.orders import PUSH_ENEMY_BASE
 from app.sim.phase import TickPhase
 from app.sim.phases import TICK_PHASES
@@ -46,7 +46,7 @@ def context(
     configs = school_configs or []
     return create_tick_context(
         config=DEFAULT_SIM_CONFIG,
-        map_config=THREE_ZONE_MAP,
+        map_config=TWO_LANE_MAP,
         multipliers=resolve_side_multipliers(configs),
         energy_rules=resolve_school_energy_rules(configs),
         abilities=build_ability_catalog(abilities or []),
@@ -92,7 +92,7 @@ def unit(
         # A's movement used before orders existed — the enemy base — and a test
         # about standing still passes the unit's own position instead.
         formation_offset=Vec2(0, 0),
-        destination=destination if destination is not None else THREE_ZONE_MAP.bases[opposing(side)].position,
+        destination=destination if destination is not None else TWO_LANE_MAP.bases[opposing(side)].position,
         ability_id=ability_id,
         emplacement=emplacement,
         blocks_movement=blocks_movement,
@@ -127,14 +127,14 @@ def field(*units: Unit) -> World:
         troops=troops,
         bases={
             side: BaseState(
-                max_hp=THREE_ZONE_MAP.bases[side].max_hp,
-                position=THREE_ZONE_MAP.bases[side].position,
-                hp=THREE_ZONE_MAP.bases[side].max_hp,
+                max_hp=TWO_LANE_MAP.bases[side].max_hp,
+                position=TWO_LANE_MAP.bases[side].position,
+                hp=TWO_LANE_MAP.bases[side].max_hp,
             )
             for side in ("north", "south")
         },
         zone_score={"north": 0, "south": 0},
-        zone_holders={zone.id: None for zone in THREE_ZONE_MAP.zones},
+        zone_holders={zone.id: None for zone in TWO_LANE_MAP.zones},
     )
 
 

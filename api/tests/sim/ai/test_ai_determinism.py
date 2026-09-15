@@ -18,7 +18,7 @@ import sys
 from app.sim.ai.fixtures import placeholder_behavior
 from app.sim.config import SimConfig
 from app.sim.fixtures import placeholder_battle
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.run_battle import BattleResult, run_battle
 from app.sim.serialize import digest_battle, serialize_battle
 
@@ -37,12 +37,12 @@ DECISIONS_SCRIPT = """
 from app.sim.ai.fixtures import placeholder_behavior
 from app.sim.fixtures import placeholder_battle
 from app.sim.config import SimConfig
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.run_battle import run_battle
 
 battle = placeholder_battle()
 battle.behavior = placeholder_behavior()
-result = run_battle(THREE_ZONE_MAP, [], battle, {seed}, SimConfig(max_battle_seconds={seconds}))
+result = run_battle(TWO_LANE_MAP, [], battle, {seed}, SimConfig(max_battle_seconds={seconds}))
 
 for unit in sorted(result.final_state.units, key=lambda u: u.id):
     ai = unit.ai
@@ -60,7 +60,7 @@ for unit in sorted(result.final_state.units, key=lambda u: u.id):
 def battle_with_behavior() -> BattleResult:
     battle = placeholder_battle()
     battle.behavior = placeholder_behavior()
-    return run_battle(THREE_ZONE_MAP, [], battle, SEED, SHORT)
+    return run_battle(TWO_LANE_MAP, [], battle, SEED, SHORT)
 
 
 def child(*argv: str) -> str:
@@ -118,7 +118,7 @@ def test_the_decisions_are_not_empty() -> None:
 
 def test_behavior_data_changes_the_battle() -> None:
     """Otherwise every determinism check here would be testing slice A."""
-    plain = run_battle(THREE_ZONE_MAP, [], placeholder_battle(), SEED, SHORT)
+    plain = run_battle(TWO_LANE_MAP, [], placeholder_battle(), SEED, SHORT)
 
     assert digest_battle(plain) != digest_battle(battle_with_behavior())
 
@@ -139,7 +139,7 @@ def test_the_sample_battle_actually_engages() -> None:
     for seed in (SEED, SEED + 1, SEED + 2, 1, 7):
         battle = placeholder_battle()
         battle.behavior = placeholder_behavior()
-        result = run_battle(THREE_ZONE_MAP, [], battle, seed, SHORT)
+        result = run_battle(TWO_LANE_MAP, [], battle, seed, SHORT)
 
         defeats = [event for event in result.events if event.type == "unitDefeated"]
         verbs = {

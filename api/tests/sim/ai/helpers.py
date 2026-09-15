@@ -19,7 +19,7 @@ from app.sim.ai.observe import Observation, observe
 from app.sim.ai.profiles import BehaviorLibrary
 from app.sim.config import DEFAULT_SIM_CONFIG, seconds_per_tick
 from app.sim.context import TickContext, create_tick_context
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.orders import PUSH_ENEMY_BASE, Order
 from app.sim.rng import create_rng
 from app.sim.schools import resolve_side_multipliers
@@ -83,14 +83,14 @@ def make_world(units: Sequence[Unit], orders: Mapping[TroopId, Order] | None = N
         troops=troops,
         bases={
             side: BaseState(
-                max_hp=THREE_ZONE_MAP.bases[side].max_hp,
-                position=THREE_ZONE_MAP.bases[side].position,
-                hp=THREE_ZONE_MAP.bases[side].max_hp,
+                max_hp=TWO_LANE_MAP.bases[side].max_hp,
+                position=TWO_LANE_MAP.bases[side].position,
+                hp=TWO_LANE_MAP.bases[side].max_hp,
             )
             for side in ("north", "south")
         },
         zone_score={"north": 0, "south": 0},
-        zone_holders={zone.id: None for zone in THREE_ZONE_MAP.zones},
+        zone_holders={zone.id: None for zone in TWO_LANE_MAP.zones},
     )
 
 
@@ -101,11 +101,11 @@ def attach(world: World, library: BehaviorLibrary, unit_types: Sequence[UnitType
 def context(seed: int = 5) -> TickContext:
     return create_tick_context(
         config=DEFAULT_SIM_CONFIG,
-        map_config=THREE_ZONE_MAP,
+        map_config=TWO_LANE_MAP,
         multipliers=resolve_side_multipliers([]),
         rng=create_rng(seed),
     )
 
 
 def look(world: World, unit: Unit) -> Observation:
-    return observe(world, unit, THREE_ZONE_MAP, SECONDS_PER_TICK)
+    return observe(world, unit, TWO_LANE_MAP, SECONDS_PER_TICK)
