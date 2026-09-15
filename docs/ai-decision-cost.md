@@ -178,7 +178,7 @@ python -m app.scripts.decision_report --json --seconds 20
 
 ## How to read these numbers, and how they were checked
 
-Four methods notes, every one learned by getting something wrong first. The
+Five methods notes, every one learned by getting something wrong first. The
 umbrella over all of them:
 
 > **A check that can only return "fine" is not a check.**
@@ -254,3 +254,33 @@ is one of the failures you are trying to catch.
 All three notes above came out of one session of three agents merging each
 other's branches. Each defect was invisible from the branch that contained it,
 and every suite involved was green throughout.
+
+### A check whose coverage is a function of the code it checks
+
+The variant that grep cannot find, because nothing about it is wrong. It was
+doing real work when written and quietly stopped, not because it changed but
+because the arrangements it enumerates moved out from under it.
+
+Anything that sweeps a set of situations and asserts over *whatever each one
+produces* has this property. Tighten a gate upstream and some situations start
+producing nothing; the assertions over them still pass, the test still reads as
+covering the whole sweep, and the count of things actually checked is nowhere in
+the output. JQ-329 found one of theirs down to three live cases out of ten, and
+knew only because they printed the number instead of reasoning about it.
+
+The instance here: `test_no_unit_attacks_a_target_that_had_already_died` sweeps
+every record after the wisp dies and checks that none names it. The wisp dies on
+tick 1, and for most of what follows the hunter is walking to its station naming
+nobody — **40 hunter records, 1 before the death, and 2 of the remaining 39
+naming any target at all.** "No record names the dead unit" was being satisfied
+by thirty-seven records that named no unit whatsoever.
+
+It is bracketed at both ends now: the hunter must have named the wisp *while it
+lived*, and must still be naming somebody afterwards. Without the first the
+absence proves nothing; without the second the sweep has stopped looking. Its
+neighbour was worse and simpler — it closed on `chosen.kind in ("advance",
+"attack", "cast", "hold")`, which lists every action kind there is.
+
+**So count what a sweep actually examined, and assert the count.** Reasoning
+about how many cases a fixture exercises is exactly the step that was wrong in
+every instance above.

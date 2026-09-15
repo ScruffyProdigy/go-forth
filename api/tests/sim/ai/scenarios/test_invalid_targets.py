@@ -71,7 +71,19 @@ def test_no_decision_ever_names_a_unit_that_is_not_in_the_world() -> None:
 
 
 def test_no_unit_attacks_a_target_that_had_already_died() -> None:
-    """The precise failure: an attack committed after the target was removed."""
+    """The precise failure: an attack committed after the target was removed.
+
+    The sweep is bracketed at both ends, because on its own it degrades to
+    nothing without changing. The wisp dies on tick 1, and for most of the ticks
+    after it the hunter is walking to its station and naming no target at all —
+    so "no record names the dead unit" is satisfied by 37 records that name
+    nobody. Measured, not guessed: 40 hunter records, 1 before the death, 2 of
+    the remaining 39 naming any target whatsoever.
+
+    So: it must have named the wisp while the wisp was alive, and it must still
+    be naming *somebody* afterwards. Without the first the absence proves
+    nothing; without the second the sweep has silently stopped looking.
+    """
     result = run(doomed())
     removals = (
         event.tick
@@ -82,18 +94,35 @@ def test_no_unit_attacks_a_target_that_had_already_died() -> None:
 
     assert died_at is not None, "the wisp never died, so this proves nothing"
 
+    hunter = result.by_unit("hunter")
+    assert any(r.chosen.target_id == "doomed" for r in hunter if r.tick <= died_at), (
+        "the hunter never targeted the wisp while it lived, so losing it proves nothing"
+    )
+    assert any(r.chosen.target_id is not None for r in hunter if r.tick > died_at), (
+        "the hunter named no target at all after the death; the sweep is not looking at anything"
+    )
+
     for record in result.records:
         if record.tick > died_at and record.chosen.target_id == "doomed":
             raise AssertionError(f"{record.unit_id} aimed at a dead unit on tick {record.tick}")
 
 
 def test_the_hunter_finds_something_else_to_do_after_its_target_dies() -> None:
-    """Recovery, not just absence of error: it must not stall on the empty square."""
+    """Recovery, not just absence of error: it must not stall on the empty square.
+
+    An earlier version closed with `chosen.kind in ("advance", "attack", "cast",
+    "hold")`, which lists every action kind there is and so was true by
+    construction. What recovery actually means here is that it goes on to name
+    the *other* enemy, which is a claim that can fail.
+    """
     result = run(doomed())
-    after = [r for r in result.by_unit("hunter") if r.chosen.target_id != "doomed"]
+    hunter = result.by_unit("hunter")
+    after = [r for r in hunter if r.chosen.target_id != "doomed"]
 
     assert after, "the hunter never decided anything after its target died"
-    assert after[-1].chosen.kind in ("advance", "attack", "cast", "hold")
+    assert any(r.chosen.target_id == "survivor" for r in after), (
+        "the hunter never moved on to the surviving enemy"
+    )
 
 
 def test_a_unit_with_no_enemies_left_still_decides_something() -> None:
