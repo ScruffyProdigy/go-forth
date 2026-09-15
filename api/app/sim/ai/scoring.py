@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from app.sim.ai.candidates import Candidate
 from app.sim.ai.factors import FACTORS, FactorContribution, FactorName, FactorWeights, clamp_score
 from app.sim.ai.observe import Observation
+from app.sim.effects import AreaDamage, DashToTarget
 from app.sim.geometry import distance, move_toward
 from app.sim.types import Vec2
 from app.sim.world import Unit
@@ -38,6 +39,28 @@ SUPPORT_SATURATION = 3.0
 ENGAGEABLE = 0.5
 #: What closing on a target is worth against actually hitting it.
 APPROACH_DISCOUNT = 0.5
+#: How much better a ready ability is than the plain swing underneath it, when
+#: its own mechanic actually accomplishes something. A creature with a feature
+#: that gives it an edge prefers to use that feature — but preferring is what
+#: this is, a thumb on the scale rather than a rule, so a dutiful unit can still
+#: walk past a cast it could make.
+ABILITY_PREMIUM = 1.3
+#: What closing on something whose reach matches your own is worth: nothing over
+#: the swing itself. A melee enemy was walking into contact anyway, so the dash
+#: bought a moment at most.
+DASH_ON_EQUAL_REACH = 1.0
+#: And what it is worth against something that badly out-ranges you. This is the
+#: dash's real purpose — not arriving sooner, but taking away the gap the enemy
+#: was using to hit you for free. Higher than the generic premium because it
+#: denies the target its whole way of fighting rather than merely helping yours.
+DASH_ON_LONGER_REACH = 1.6
+#: And what it is worth when the mechanic accomplishes nothing — a dash at
+#: something already in reach moves the unit nowhere and the gauge is gone.
+#: Below one, so a plain attack outscores a wasted ability and the gauge is kept.
+WASTED_ABILITY_DISCOUNT = 0.5
+#: Enemies inside an area ability's radius at which spending it is clearly worth
+#: it. Fewer than this scales down rather than being refused outright.
+AREA_WORTH_IT = 2.0
 #: What an enemy's damage counts for when you are at the very edge of its
 #: reach, versus standing on top of it. See `_danger`.
 EDGE_EXPOSURE = 0.5
@@ -56,14 +79,37 @@ class ScoredCandidate:
     contributions: tuple[FactorContribution, ...]
 
 
+def _dash_of(observation: Observation) -> DashToTarget | None:
+    ability = observation.ability
+    if ability is None:
+        return None
+    return next((e for e in ability.effects if isinstance(e, DashToTarget)), None)
+
+
 def _position_after(observation: Observation, candidate: Candidate) -> Vec2:
     """Where this candidate would leave the unit standing.
 
     Uses the same `move_toward` the movement phase uses, so the danger a unit
     weighs is the danger it actually walks into and not an approximation of it.
+
+    A cast that dashes is projected the same way, mirroring `_resolve_dash` —
+    which is the point of deriving behaviour from ability mechanics rather than
+    from a label on the card. A unit weighing a pounce weighs where the pounce
+    puts it, so the same danger and objective factors judge it without either
+    knowing what a pounce is.
     """
     if candidate.kind == "advance" and candidate.destination is not None:
         return move_toward(observation.unit.position, candidate.destination, observation.step)
+
+    if candidate.kind == "cast":
+        dash = _dash_of(observation)
+        target = _find(observation, candidate.target_id)
+        if dash is not None and target is not None:
+            gap = distance(observation.unit.position, target.position)
+            step = min(dash.max_distance, gap - dash.stop_short)
+            if step > 0:
+                return move_toward(observation.unit.position, target.position, step)
+
     return observation.unit.position
 
 
@@ -108,6 +154,10 @@ def _target_suitability(observation: Observation, candidate: Candidate) -> float
     On top of the baseline, in descending order: this swing would finish it, it
     is already hurt, and it hits hard enough to be worth silencing first.
     """
+    if candidate.kind == "cast" and candidate.target_id is None:
+        # Lands on the caster: judged by how much of the field it covers.
+        return _area_suitability(observation)
+
     target = _find(observation, candidate.target_id)
     if target is None or candidate.kind == "hold":
         return 0.0
@@ -120,6 +170,9 @@ def _target_suitability(observation: Observation, candidate: Candidate) -> float
     threat = target.damage / (target.damage + unit.damage) if (target.damage + unit.damage) > 0 else 0.0
 
     suitability = ENGAGEABLE + 0.30 * kills_now + 0.10 * wounded + 0.10 * threat
+
+    if candidate.kind == "cast":
+        return clamp_score(suitability * _ability_multiplier(observation, candidate))
 
     # Walking toward a target serves the same end as swinging at it, just less
     # directly — so it scores the same way, discounted. Without this an
@@ -265,3 +318,81 @@ def score_candidates(
 ) -> tuple[ScoredCandidate, ...]:
     """Scores in the order given, which `candidates.py` has already made stable."""
     return tuple(score_candidate(observation, candidate, weights) for candidate in candidates)
+
+
+def _ability_multiplier(observation: Observation, candidate: Candidate) -> float:
+    """Whether this ability's own mechanic accomplishes anything, as a scale.
+
+    The premium is the tactical instinct that a creature with a feature giving it
+    an edge would rather use that feature than swing. The discount is the other
+    half of the same instinct: if the circumstances are not right, the feature is
+    worth holding, and spending it anyway is worse than an ordinary attack
+    because the gauge does not come back.
+
+    Read off the effects rather than off the ability's id, so a new card with a
+    dash on it is judged correctly by code that has never heard of it.
+    """
+    dash = _dash_of(observation)
+    if dash is None:
+        return ABILITY_PREMIUM
+
+    target = _find(observation, candidate.target_id)
+    if target is None:
+        return WASTED_ABILITY_DISCOUNT
+
+    gap = distance(observation.unit.position, target.position)
+    would_move = min(dash.max_distance, gap - dash.stop_short)
+
+    # Already close enough to swing: the dash buys nothing the next attack would
+    # not, and the gauge could have carried this unit into the next fight.
+    if gap <= observation.capabilities.reach or would_move <= 0:
+        return WASTED_ABILITY_DISCOUNT
+
+    return _dash_value_against(observation.capabilities.reach, target.range)
+
+
+def _dash_value_against(own_reach: float, target_reach: float) -> float:
+    """What closing costs the target, which is what the dash is really worth.
+
+    A dash at something that fights at your own range is worth little: it was
+    coming to you regardless, and arriving a second earlier is the whole of the
+    gain. A dash at something that out-ranges you is worth a great deal, because
+    the gap *is* that creature's advantage — closing it does not merely help you
+    attack, it takes away the way the target was going to fight at all.
+
+    Read off the target's live reach, so a card nobody has heard of is judged
+    correctly and a unit whose range has been cut stops being worth pouncing on
+    without anything being re-labelled.
+    """
+    total = own_reach + target_reach
+    if total <= 0:
+        return DASH_ON_EQUAL_REACH
+
+    # Half at parity, toward one as the target out-reaches us; rescaled so
+    # parity sits at the floor and anything shorter than us cannot go below it.
+    denial = clamp_score((target_reach / total - 0.5) * 2)
+
+    return DASH_ON_EQUAL_REACH + (DASH_ON_LONGER_REACH - DASH_ON_EQUAL_REACH) * max(0.0, denial)
+
+
+def _area_suitability(observation: Observation) -> float:
+    """How well an ability centred on the caster would land, by what it covers.
+
+    An area effect aimed at one straggler is a wasted gauge and aimed at four is
+    the reason the card exists, so the count of enemies inside its radius is the
+    judgement — the same shape as the minimum-targets rule a DM would apply by
+    eye. The radius comes from the effect itself; an ability with no area lands
+    on whatever the caster is already able to reach.
+    """
+    ability = observation.ability
+    if ability is None:
+        return 0.0
+
+    radii = [effect.radius for effect in ability.effects if isinstance(effect, AreaDamage)]
+    radius = max(radii) if radii else observation.capabilities.reach
+
+    covered = sum(
+        1.0 for enemy in observation.enemies if distance(observation.unit.position, enemy.position) <= radius
+    )
+
+    return clamp_score(min(1.0, covered / AREA_WORTH_IT) * ABILITY_PREMIUM)

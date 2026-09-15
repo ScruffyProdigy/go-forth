@@ -102,6 +102,7 @@ def intent_of(decision: Decision) -> Intent:
         kind=candidate.kind,
         target_id=candidate.target_id,
         destination=candidate.destination,
+        ability_id=candidate.ability_id,
         score=decision.score,
         contributions=decision.contributions,
     )

@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from app.sim.ai.intent import ACTION_KINDS, ActionKind
 from app.sim.ai.objective import enemy_base_position
 from app.sim.ai.observe import Observation
+from app.sim.effects import ORIGIN_SELF
 from app.sim.geometry import distance
 from app.sim.types import UnitId, Vec2
 
@@ -36,20 +37,24 @@ class Candidate:
     """One thing a unit could do this tick."""
 
     kind: ActionKind
-    #: On `attack`, who to hit. On `advance`, who this move is closing on — an
-    #: advance on the troop's station has none. Scoring reads it either way: a
-    #: unit that wants a fight has to be able to score walking toward one, or
-    #: "aggressive" can only ever mean "swing at whatever wandered into reach".
+    #: On `attack` and `cast`, who to hit. On `advance`, who this move is
+    #: closing on — an advance on the troop's station has none, and neither does
+    #: a cast that lands on the caster. Scoring reads it either way: a unit that
+    #: wants a fight has to be able to score walking toward one, or "aggressive"
+    #: can only ever mean "swing at whatever wandered into reach".
     target_id: UnitId | None = None
+    #: Set on `cast`. Which ability this spends.
+    ability_id: str | None = None
     #: Set on `advance` and `hold`. Handed to movement as `unit.destination`.
     destination: Vec2 | None = None
 
 
-def _sort_key(candidate: Candidate) -> tuple[int, str, float, float]:
+def _sort_key(candidate: Candidate) -> tuple[int, str, str, float, float]:
     destination = candidate.destination
     return (
         ACTION_KINDS.index(candidate.kind),
         candidate.target_id or "",
+        candidate.ability_id or "",
         destination.x if destination else 0.0,
         destination.y if destination else 0.0,
     )
@@ -103,10 +108,41 @@ def generate_candidates(observation: Observation) -> tuple[Candidate, ...]:
             if distance(unit.position, enemy.position) <= capabilities.reach:
                 candidates.append(Candidate(kind="attack", target_id=enemy.id))
 
+    candidates.extend(_cast_candidates(observation))
+
     # Deduplicated on the sort key: two enemies standing on one point would
     # otherwise produce the same advance twice.
-    unique: dict[tuple[int, str, float, float], Candidate] = {}
+    unique: dict[tuple[int, str, str, float, float], Candidate] = {}
     for candidate in candidates:
         unique.setdefault(_sort_key(candidate), candidate)
 
     return tuple(sorted(unique.values(), key=_sort_key))
+
+
+def _cast_candidates(observation: Observation) -> list[Candidate]:
+    """Spending a ready ability, once per target it could legally be aimed at.
+
+    Legality only. Whether spending it *now* is a good idea — rather than
+    holding it for a better moment — is a preference, and preferences are scored
+    rather than filtered. That split is what lets a creature that values the
+    objective and one that values a kill disagree about the same full gauge.
+
+    A gauge that is not full produces nothing here at all, which is the same
+    rule as a rooted unit getting no advance: the loop never scores the
+    impossible.
+    """
+    ability = observation.ability
+    if ability is None or observation.unit.energy < ability.energy_cost:
+        return []
+
+    if ability.origin == ORIGIN_SELF:
+        # Lands on the caster, so there is exactly one way to spend it.
+        return [Candidate(kind="cast", ability_id=ability.id)]
+
+    reach = ability.range if ability.range is not None else observation.capabilities.reach
+
+    return [
+        Candidate(kind="cast", target_id=enemy.id, ability_id=ability.id)
+        for enemy in observation.enemies
+        if distance(observation.unit.position, enemy.position) <= reach
+    ]

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from app.sim.abilities import build_ability_catalog
+from app.sim.ai.casting import FollowsIntent
 from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig, max_ticks, validate_sim_config
 from app.sim.context import TickContext, create_tick_context
 from app.sim.energy import SchoolEnergyRuleTable, resolve_school_energy_rules
@@ -144,6 +145,9 @@ def run_battle(
         unit_types=build_unit_type_catalog(battle_state.unit_types),
         energy_rules=energy_rules,
         abilities=build_ability_catalog(battle_state.abilities),
+        # Honours a committed cast and holds otherwise, falling through to
+        # the default for units with no behaviour data (JQ-328).
+        cast_policy=FollowsIntent(),
         spells=build_spell_catalog(battle_state.spells),
     )
 

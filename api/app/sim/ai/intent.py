@@ -22,10 +22,14 @@ from app.sim.ai.factors import FactorContribution
 from app.sim.ai.profiles import NEUTRAL_BEHAVIOR, ResolvedBehavior
 from app.sim.types import UnitId, Vec2
 
-ActionKind = Literal["advance", "attack", "hold"]
+ActionKind = Literal["advance", "attack", "cast", "hold"]
 
 #: Declared order, which is also the order candidates are generated in and the
-#: order ties break in. `hold` sits last because it is the fallback.
+#: order ties break in. `hold` sits last because it is the fallback, and `cast`
+#: sits after `attack` so an exact tie conserves the gauge — a ready ability that
+#: is merely *as good as* swinging is worth keeping for a moment that is better.
+#: Preferring the ability when it is actually better is scoring's job, not the
+#: tie-break's.
 ACTION_KINDS: tuple[ActionKind, ...] = get_args(ActionKind)
 
 
@@ -38,6 +42,9 @@ class Intent:
     target_id: UnitId | None = None
     #: Set for `advance` and `hold`. Where movement should walk toward.
     destination: Vec2 | None = None
+    #: Set for `cast`. The ability the abilities phase should spend, via the
+    #: `FollowsIntent` policy in `ai/casting.py`.
+    ability_id: str | None = None
     #: The winning candidate's total, in `[-1, 1]`.
     score: float = 0.0
     #: Why it won. Diagnostics only; nothing in the sim branches on it.

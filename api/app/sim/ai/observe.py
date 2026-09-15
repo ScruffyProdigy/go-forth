@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.sim.abilities import Ability, AbilityCatalog
 from app.sim.ai.capabilities import Capabilities, capabilities_of
 from app.sim.ai.objective import Objective, objective_for
 from app.sim.map import MapConfig
@@ -40,6 +41,9 @@ class Observation:
     allies: tuple[Unit, ...]
     #: How far this unit could move this tick. Zero for something rooted.
     step: float
+    #: This unit's ability, resolved from the catalog, or None if it has none.
+    #: Whether the gauge is full enough to spend it is read off the unit.
+    ability: Ability | None
     map_config: MapConfig
 
 
@@ -48,6 +52,7 @@ def observe(
     unit: Unit,
     map_config: MapConfig,
     seconds_per_tick: float,
+    abilities: AbilityCatalog | None = None,
 ) -> Observation:
     capabilities = capabilities_of(unit)
 
@@ -65,5 +70,6 @@ def observe(
             )
         ),
         step=capabilities.speed * seconds_per_tick,
+        ability=(abilities or {}).get(unit.ability_id) if unit.ability_id else None,
         map_config=map_config,
     )

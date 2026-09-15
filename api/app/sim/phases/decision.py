@@ -42,7 +42,7 @@ class DecisionPhase:
                 continue
 
             decision = decide(
-                observe(world, unit, ctx.map_config, ctx.seconds_per_tick),
+                observe(world, unit, ctx.map_config, ctx.seconds_per_tick, ctx.abilities),
                 unit.ai.behavior,
                 ctx.rng,
             )
