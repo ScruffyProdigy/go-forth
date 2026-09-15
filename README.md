@@ -87,10 +87,12 @@ cd api && source .venv/bin/activate && python -m app.server
 if you have it, but nothing requires it.
 
 Then open **http://localhost:5175**. That is the opening demo (JQ-311): plan a
-round, lock it in, watch the battle resolve, read the result. It runs on a
-**fixture session**, not the server — the Lobby contract and the authoritative
-realtime session are JQ-309, and until they land `client/src/match/fixtures/`
-stands in for both.
+round, lock it in, watch the battle resolve, read the result. It still runs on a
+**fixture session** rather than the server. JQ-309 built the server side — the
+Lobby contract, the wire schema and the authoritative realtime session over
+`/api/v1/ws` — and pointing the client at it is JQ-311's follow-up. To drive the
+real thing today, use the stub Lobby (below); the Lobby contract has its own
+suite in `api/tests/lobby/`.
 
 Because it is a fixture, every state the demo has to make legible is reachable
 on purpose. Append `?scenario=` to pick one:
@@ -138,9 +140,26 @@ The game is playable standalone, with a stub in place of JoinQuest:
 The JWKS half is real — an RS256 keypair, a well-formed
 `/.well-known/jwks.json`, and tokens that verify against it. The signing key is
 cached in `.stub-lobby/` (gitignored) so tokens keep verifying across restarts.
-`stub-lobby.sh provision` pushes a match assignment at `POST /api/v1/matches`,
-which JQ-188 builds — until then it reports the 404 and prints the payload it
-would have sent.
+
+`provision` pushes a real match assignment and prints a ready-to-open URL per
+seat — the game's own launch base with `token=` appended exactly as the Lobby
+appends it:
+
+```bash
+./scripts/stub-lobby.sh serve       # leave this running: JWKS + token endpoint
+./scripts/stub-lobby.sh provision   # prints two launch URLs
+```
+
+Open one in each of two browsers and that is the two-phone demo, locally, with
+no platform in front of it.
+
+**No database needed either.** `GAME_IN_MEMORY=1` swaps the Postgres repository
+for an in-memory one, so a fresh checkout is playable with nothing installed but
+Python:
+
+```bash
+GAME_IN_MEMORY=1 ./scripts/dev.sh
+```
 
 ### Run the tests
 
@@ -171,10 +190,18 @@ cd client && npm run lint && npm run typecheck && npm test
 │   │   ├── server.py         # binds the port
 │   │   ├── migrate.py        # the migration runner
 │   │   ├── config.py
+│   │   ├── routes.py         # the HTTP surface
+│   │   ├── ws.py             # the realtime transport
+│   │   ├── service.py        # what routes and sockets both go through
+│   │   ├── repository.py     # + pg_repository.py — identity, seating, results
+│   │   ├── lobby/            # the JoinQuest contract — fixed, shared with rpslr
+│   │   ├── match/            # this game: wire, plan, round, session, clock
 │   │   ├── sim/              # the battle sim — pure, deterministic, headless
 │   │   └── scripts/
 │   │       └── battle_demo.py  # runs a battle, prints the event stream
 │   └── tests/                # outside the package, per Python convention
+│       ├── lobby/            # one module per integration-guide §8 row
+│       ├── match/            # wire, plan, round, session, clock, realtime
 │       └── sim/              # the sim's own suite, mirroring app/sim/
 ├── client/                   # Vite + React 18 game UI
 │   ├── Dockerfile            # static build served by nginx
@@ -184,11 +211,13 @@ cd client && npm run lint && npm run typecheck && npm test
 │   └── src/
 │       ├── plan/             # the plan phase (JQ-293)
 │       └── match/            # the match flow: session seam, battle, result
-│           └── fixtures/     # stands in for the server until JQ-309
+│           └── fixtures/     # still the client's transport; JQ-311 swaps it
 ├── k8s/
 │   ├── base/                 # namespace, api, client, postgres, ingress
 │   ├── env/                  # per-environment ConfigMaps, ingress, TLS certs
 │   └── secrets/              # *.example.yaml only; real ones are gitignored
+├── docs/
+│   └── python-vs-typescript.md  # reading this next to rpslr, module by module
 ├── scripts/                  # setup, dev, db, test, stub-lobby, build, deploy
 └── .github/workflows/        # api-tests, client-tests, environment-config-test
 ```
@@ -197,12 +226,49 @@ cd client && npm run lint && npm run typecheck && npm test
 
 ## Game API
 
-| Method | Path       | Description        |
-|--------|------------|--------------------|
-| GET    | `/healthz` | returns `200 ok`   |
+| Method | Path                                    | Description                                    |
+|--------|-----------------------------------------|------------------------------------------------|
+| GET    | `/healthz`                              | returns `200 ok` — no database, no outbound calls |
+| GET    | `/api/v1/status`                        | catalog sync: `launchUrlsOnProvision: true`    |
+| GET    | `/api/v1/game-modes`                    | the two modes and their 2-seat templates       |
+| POST   | `/api/v1/matches`                       | Lobby provision (or a standalone self-serve)   |
+| GET    | `/api/v1/matches/{ref}`                 | seating, for a link preview                    |
+| POST   | `/api/v1/matches/{ref}/claim`           | take a seat with a Lobby seat JWT              |
+| GET    | `/api/v1/resume`                        | recovery path 1 — this browser's own binding   |
+| GET    | `/api/v1/players/{lobbyUserId}/history` | what this person has played                    |
+| WS     | `/api/v1/ws`                            | authoritative state out, seat commands in      |
 
-That is the whole surface for now, on purpose. Session and integration endpoints
-are JQ-188.
+### Two modes, and why the demo is one of them
+
+The production match is **first to three round wins**, with a base destroyed
+ending the match on the spot and no base recovery between rounds. That is
+`starter`.
+
+The opening demo plays exactly **one round**, and it is its own mode —
+`opening-round` — rather than a flag on `starter`. A single round reported
+through the production mode would be indistinguishable, in every downstream
+rating and standings table, from a best-of-five somebody actually won. So the
+demo reports a `testComplete` ending on the wire and `CANCELLED` — unrated — to
+the Lobby, with the round winner carried in metadata so the run is still legible.
+
+A destroyed base is the exception: it is a real terminal outcome even in a demo,
+and is reported as `baseDestroyed` with the remaining base HP, rather than as
+"the test finished".
+
+### The wire contract
+
+[`api/app/match/wire.py`](api/app/match/wire.py) is every byte that crosses
+between server and client, and it is deliberately **not** `sim/serialize.py`.
+That module renders a finished battle as canonical text so two runs can be
+compared byte for byte; it is total (it carries the opponent's energy and
+unlocked plan), it is frozen for a different reason, and it describes a whole
+battle rather than a tick. `tests/match/test_wire.py` asserts on the import graph
+that nothing outside the sim and the headless demo reaches for it.
+
+Reading this next to the TypeScript references: see
+[`docs/python-vs-typescript.md`](docs/python-vs-typescript.md), which maps every
+module to its rpslr counterpart and names the handful of genuine language
+differences.
 
 ---
 
@@ -422,10 +488,17 @@ non-example secret is ever committed.
 
 ## Still out of scope
 
-No game logic beyond `/healthz`: the client's opening demo talks to a fixture,
-not to this api. The session layer and JoinQuest integration endpoints are
-JQ-188 and JQ-309, and the battle the client renders will come from the sim's
-slices (JQ-287 onwards) rather than from `client/src/match/fixtures/`.
+**The client still talks to its own fixture.** JQ-309 built the server side of
+the transport — the contract endpoints, the wire schema and the authoritative
+session over WebSocket — and `client/src/match/session.ts` has not been pointed
+at it yet. That swap is JQ-311's, and it carries two renames with it: the client
+was written against a three-zone map (`A`/`B`/`C`) before JQ-376 made it two
+lanes (`W`/`E`), and it spells the hold order `hold` where the sim spells it
+`holdZone`. The server's names are authoritative.
+
+Reclaim, command deduplication and reproducible diagnostics are **JQ-310**; live
+state is held in memory and is not restored from a row if the process restarts.
+Green dashboard checks and the integrated two-phone smoke test are **JQ-313**.
 
 Battle-map readability at density — occupancy chips, mage energy rings,
 tap-to-inspect, the twenty-a-side case — is **JQ-312**. The demo's renderer

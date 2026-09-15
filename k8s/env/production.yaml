@@ -17,6 +17,11 @@ data:
   CORS_ALLOWED_ORIGINS: ""
   GAME_API_AUDIENCE: "https://go-forth.example"
   GAME_PLAY_URL: "https://go-forth.example"
+  # A seat token is required to claim (JQ-309). Off, this API also serves
+  # standalone self-serve matches — the mode that makes a fresh checkout
+  # playable with no platform in front of it, and not something a deployed
+  # environment should offer.
+  GAME_REQUIRE_LOBBY_AUTH: "1"
 ---
 apiVersion: v1
 kind: ConfigMap

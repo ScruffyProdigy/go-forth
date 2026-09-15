@@ -11,6 +11,10 @@ data:
   # Seat JWT `aud` is the API's own origin — the host, not the /api ingress path.
   GAME_API_AUDIENCE: "http://go-forth.local"
   GAME_PLAY_URL: "http://go-forth.local"
+  # Standalone stays ON here, unlike staging and production: this is the
+  # kind-cluster loop a developer drives by hand, and requiring a seat token
+  # would mean running the stub Lobby before the game does anything at all.
+  GAME_REQUIRE_LOBBY_AUTH: "0"
 ---
 apiVersion: v1
 kind: ConfigMap
