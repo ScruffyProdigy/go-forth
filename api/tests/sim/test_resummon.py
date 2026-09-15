@@ -502,14 +502,21 @@ def test_a_dissolve_reports_no_units_defeated() -> None:
     """Nothing killed the summons, so nothing is credited with killing them."""
     result = run_battle(NARROW_MAP, PINNED, GLASS_TROOP, 1)
 
+    dissolve = next(event for event in result.events if event.type == "troopDissolve")
+    dissolved = [unit.unit_id for unit in dissolve.swing.units_removed]
     defeated = [
         unit.unit_id
         for event in result.events
         if event.type == "unitDefeated"
         for unit in event.swing.units_removed
     ]
-    assert "north-t0-u1" not in defeated
-    assert "north-t0-u2" not in defeated
+
+    # Both sides of the comparison are read out of the battle rather than written
+    # down. Hardcoded ids would let this pass by naming units that never existed,
+    # and an absence is only evidence when the thing it is absent from is real.
+    assert dissolved, "nothing dissolved, so finding it absent from the defeats proves nothing"
+    assert defeated, "nothing was defeated either, so the comparison is empty on both sides"
+    assert [unit_id for unit_id in dissolved if unit_id in defeated] == []
 
 
 #: Enough seeds that the claim below is about the fixture rather than about one
