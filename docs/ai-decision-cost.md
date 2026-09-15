@@ -284,3 +284,41 @@ neighbour was worse and simpler — it closed on `chosen.kind in ("advance",
 **So count what a sweep actually examined, and assert the count.** Reasoning
 about how many cases a fixture exercises is exactly the step that was wrong in
 every instance above.
+
+### Preconditions are not free, and neither is skipping them
+
+Asserting a test's own preconditions is the fix for most of the shapes above, so
+it is worth saying that it has its own failure modes in both directions.
+
+**Too weak** is the vacuous case already covered: a precondition over a
+collection that may be empty asserts nothing.
+
+**Too strong is the one that bites while the fix is correct.** JQ-329's
+oscillation test needed to establish that a unit had something to alternate
+between. The obvious precondition — "it chose more than one distinct action" —
+is sound reasoning and the wrong assertion, because *a unit that settles
+correctly picks one thing for ever*. The precondition contradicted the behaviour
+under test and failed on working code. What had to hold was that two moves were
+**available**, which is a property of the candidate set rather than of the
+outcome. Their second attempt then failed too, because a unit standing exactly on
+its station generates no walk-to-station candidate, so the tension it needed does
+not exist until the unit has stepped off.
+
+The rule that survives: **a precondition belongs on the inputs, not on the
+result.** Anything phrased over what the code decided is liable either to be
+satisfied by the failure you are hunting or to forbid the success you want.
+
+### And the one that catches the rest: come back to the tests you are not editing
+
+The most common variant is the check nobody revisits. Every negative control in
+this document was run on a test that was being written or changed at the time.
+JQ-329 found their oscillation test — the one guarding the headline result of
+their ticket — passed with the mechanism deleted, and found it only by running a
+control on something they had shipped and moved past.
+
+The determinism suite here was audited for exactly that reason and holds: with
+the decision phase made to draw from the rng whenever a trace is attached,
+eleven tests fail, `test_tracing_does_not_consume_randomness` among them. That
+is the ticket's central claim, and it is guarded. It had never been checked
+before it was checked.
+
