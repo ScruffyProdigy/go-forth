@@ -322,3 +322,49 @@ eleven tests fail, `test_tracing_does_not_consume_randomness` among them. That
 is the ticket's central claim, and it is guarded. It had never been checked
 before it was checked.
 
+
+
+## What the suite is actually worth
+
+**"All tests pass" is a weak claim. "Each mechanism was removed and the suite
+objected" is the strong one.** The first is a statement about the suite; the
+second is a statement about the code. Fourteen vacuous or degraded assertions
+found across three packages in one afternoon say the first is worth very little
+on its own.
+
+So every mechanism this ticket delivers was removed, one at a time, and the suite
+asked whether it noticed:
+
+| mutation | |
+|---|---|
+| decision phase never hands the recorder anything | caught |
+| tracing consumes randomness | caught |
+| record cap ignored | caught |
+| unit filter ignored | caught |
+| tick window ignored | caught |
+| rivals no longer the best losers | caught |
+| report omits factor contributions | caught |
+| report hides that records were dropped | caught |
+| JSON emits factors in reverse order | caught |
+| weights no longer walk declared factor order | **survived — now caught** |
+| *control: whitespace-only edit* | *survived, as it must* |
+
+Two things make that table worth reading rather than merely reassuring, and both
+are this document's own lessons turned on the harness that produced it.
+
+**Every mutation asserts its anchor matched and reports its byte delta before the
+run.** A mutation that silently fails to apply reports "caught" for free, which
+is the formatter-reflow failure above, mechanised.
+
+**The control mutation must survive.** Ten-for-ten is exactly the result that
+should make a reader suspect the harness rather than trust it — a harness broken
+toward always-reporting-caught looks identical to a well-tested package. A
+whitespace-only edit survives, so the other ten results mean what they say.
+
+The one survivor was real. `_weights_of` could walk the factors in reverse and
+nothing objected: the determinism tests compare runs of the same code, so a
+consistently *wrong* order is still consistent, and the contributions had an
+order test while the weights did not. Writing it exposed a second thing — the
+recorder tests attach no behavior, so their records carry no weights at all, and
+the obvious placement would have asserted against an empty tuple. It lives with
+the scenarios instead, where weights exist.

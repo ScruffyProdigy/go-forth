@@ -134,3 +134,23 @@ def test_a_combined_unit_and_a_plain_one_can_actually_diverge_in_play() -> None:
     assert run.actions("loaded") != run.actions("plain") or (
         run.unit("loaded").position != run.unit("plain").position
     )
+
+
+def test_weights_are_recorded_in_declared_factor_order() -> None:
+    """Never the mapping's own order, which is not reproducible across processes.
+
+    Found by removing the mechanism and watching nothing object: `_weights_of`
+    could walk `reversed(FACTORS)` and the whole suite stayed green. The
+    determinism tests do not cover it — a consistently *wrong* order is still
+    consistent, and they compare runs of the same code. The contributions had
+    such a test and the weights did not.
+
+    It lives here rather than beside the other recorder tests because those
+    fixtures attach no behavior, so their records carry no weights at all: the
+    assertion would have been made against an empty tuple, which is the very
+    shape this session spent the afternoon removing.
+    """
+    record = first(run_with(), "plain")
+
+    assert record.weights, "no weights were recorded, so their order proves nothing"
+    assert tuple(factor for factor, _ in record.weights) == FACTORS
