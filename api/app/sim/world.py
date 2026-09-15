@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 
 from app.sim.abilities import Ability
 from app.sim.ai.attach import attach_behavior
-from app.sim.ai.intent import UnitAi
+from app.sim.ai.intent import TroopCoordination, UnitAi
 from app.sim.ai.profiles import EMPTY_LIBRARY, BehaviorLibrary
 from app.sim.energy import EnergyMeter, new_energy_meters
 from app.sim.formation import (
@@ -177,6 +177,11 @@ class Troop:
     summon_ids: list[UnitId] = field(default_factory=list)
     #: Summons this troop has lost and may rebuild, oldest first (§4.5).
     dispelled_slots: list[DispelledSlot] = field(default_factory=list)
+    #: Who this troop has asked to answer which threat (JQ-330). Rebuilt from
+    #: live state every tick by the decision phase, and carried here rather than
+    #: in a side table so a snapshot holds it: an assignment outlives the tick
+    #: that made it, so a replay that could not see it would not be one.
+    coordination: TroopCoordination = field(default_factory=TroopCoordination)
     #: Next id suffix to hand a resummoned unit. Monotonic so a rebuilt summon
     #: never reuses the id of the one it replaces — a replay reading the event
     #: stream would otherwise see one unit defeated twice.

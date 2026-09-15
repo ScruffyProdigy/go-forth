@@ -32,8 +32,15 @@ SECONDS = 20.0
 SHORT = SimConfig(max_battle_seconds=SECONDS)
 
 #: Printed by a child interpreter: every unit's composed weights and the intent
-#: it finished on. The battle serialisation covers positions and damage; this
+#: it finished on, every troop's standing assignments, and the provenance behind
+#: each personality. The battle serialisation covers positions and damage; this
 #: covers the decisions themselves, which are what the ticket asks be reproducible.
+#:
+#: The assignments and the influences matter here more than they look. Both are
+#: built by walking collections and appending, and both reach the output — so
+#: either one iterated in hash order would produce a battle that serialised
+#: identically while its reasons came out shuffled, which is exactly the class of
+#: drift that only shows up once two numbers are close enough to change a choice.
 DECISIONS_SCRIPT = """
 from app.sim.ai.fixtures import placeholder_behavior
 from app.sim.ai.intent import ACTION_KINDS
@@ -51,11 +58,28 @@ for unit in sorted(result.final_state.units, key=lambda u: u.id):
     intent = ai.intent if ai else None
     weights = [f"{{f}}={{w:.4f}}" for f, w in (ai.behavior.weights.items() if ai else [])]
     traits = ",".join(ai.behavior.traits) if ai else ""
-    tags = ",".join(f"{{t}}:{{s}}" for t, s in (ai.behavior.personalities if ai else ()))
+    def sources(p):
+        return "|".join(f"{{s.mage_id}}={{s.strength}}/{{s.overridden}}" for s in p.sources)
+
+    tags = ",".join(
+        f"{{p.tag}}:{{p.strength}}:{{sources(p)}}"
+        for p in (ai.behavior.personalities if ai else ())
+    )
+    influences = ",".join(
+        f"{{i.tag}}@{{i.context}}:{{i.factor}}={{i.delta:.4f}}" for i in (intent.influences if intent else ())
+    )
     print(f"id={{unit.id}}", f"traits={{traits}}", f"tags={{tags}}", *weights,
           f"kind={{intent.kind if intent else None}}",
           f"target={{intent.target_id if intent else None}}",
+          f"why={{influences}}",
           f"score={{intent.score:.6f}}" if intent else "score=None")
+
+for troop in sorted(result.final_state.troops, key=lambda t: t.id):
+    duty = ",".join(
+        f"{{a.unit_id}}>{{a.target_id}}@{{a.protecting_id}}#{{a.since_tick}}"
+        for a in troop.coordination.assignments
+    )
+    print(f"troop={{troop.id}}", f"duty={{duty}}")
 """
 
 
@@ -112,10 +136,17 @@ def test_the_decisions_are_not_empty() -> None:
     lines = decisions(SEED + 2).splitlines()
 
     assert len(lines) > 3
-    kinds = [field for line in lines for field in line.split() if field.startswith("kind=")]
+    units = [line for line in lines if line.startswith("id=")]
+    troops = [line for line in lines if line.startswith("troop=")]
+    kinds = [field for line in units for field in line.split() if field.startswith("kind=")]
 
-    assert len(kinds) == len(lines)
-    assert all(kind[len("kind=") :] in ("advance", "attack", "hold") for kind in kinds)
+    assert units and troops
+    assert len(kinds) == len(units)
+    # Against the declared vocabulary rather than a hand-written list: JQ-329
+    # added `withdraw` and `retreat`, and a literal list has to be edited by
+    # every ticket that adds a verb — failing for the good reason and the bad
+    # one alike.
+    assert all(kind[len("kind=") :] in ACTION_KINDS for kind in kinds)
 
 
 def test_behavior_data_changes_the_battle() -> None:

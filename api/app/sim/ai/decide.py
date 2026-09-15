@@ -23,7 +23,7 @@ from dataclasses import dataclass, replace
 
 from app.sim.ai import pursuit
 from app.sim.ai.candidates import Candidate, generate_candidates
-from app.sim.ai.factors import FactorContribution
+from app.sim.ai.factors import FactorContribution, PersonalityInfluence
 from app.sim.ai.intent import ENGAGING, MOVING_ACTIONS, TARGET_SWITCHED, Commitment, Intent
 from app.sim.ai.observe import Observation
 from app.sim.ai.profiles import ResolvedBehavior
@@ -53,6 +53,8 @@ class Decision:
     selected: Candidate
     score: float
     contributions: tuple[FactorContribution, ...]
+    #: Which personality tags spoke to the winner, and in which situation.
+    influences: tuple[PersonalityInfluence, ...]
     #: Every candidate that was scored, in the order they were scored.
     considered: tuple[ScoredCandidate, ...]
     #: Why this action won, as one of `intent.REASONS`. Usually the winning
@@ -77,6 +79,21 @@ def _with_jitter(
     Drawn in candidate order so the same battle draws the same numbers in the
     same sequence; the branch above is why a battle of jitter-free creatures
     consumes no randomness here whatsoever.
+
+    **`replace` rather than naming the fields.** This is the only place a
+    `ScoredCandidate` is rebuilt rather than scored, so it is the only place a
+    field can be silently lost — and losing one here is invisible three times
+    over. `influences` defaults to `()`, so mypy says nothing; no profile in
+    `app/` sets `tie_break_jitter` above zero, so the path is dead in every
+    battle anyone runs; and the tests that do set it build a behavior with no
+    personalities. A dropped reason would surface as every candidate in a
+    battle reporting that no personality had spoken to it, the first time
+    somebody enabled jitter on a profile.
+
+    A field list would have to be kept in step by whoever adds the next field.
+    `replace` carries whatever the record holds and changes only the score, so
+    there is nothing to remember. JQ-329 arrived at the same fix independently
+    on their branch; whichever body survives the merge, the path is safe.
     """
     if jitter <= 0 or rng is None:
         return scored
@@ -294,7 +311,7 @@ def decide(
     live = observation.commitment if released is None else None
 
     candidates = generate_candidates(observation)
-    scored = score_candidates(observation, candidates, behavior.weights)
+    scored = score_candidates(observation, candidates, behavior.weights, behavior.personalities)
     winner = _select(_with_jitter(scored, behavior.tie_break_jitter, rng))
     steady = _prefer_incumbent(scored, _hold_committed_target(scored, winner, live), observation.previous)
     chosen = _worth_moving(scored, steady)
@@ -306,6 +323,7 @@ def decide(
         selected=chosen.candidate,
         score=chosen.score,
         contributions=chosen.contributions,
+        influences=chosen.influences,
         considered=scored,
         reason=reason,
         commitment=commitment,
@@ -325,4 +343,5 @@ def intent_of(decision: Decision) -> Intent:
         contributions=decision.contributions,
         reason=decision.reason,
         protecting_id=candidate.protecting_id,
+        influences=decision.influences,
     )

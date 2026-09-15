@@ -30,6 +30,7 @@ from app.sim.ai.intent import (
     SCREENING_INFERRED,
     WITHDRAW_SPEED_SCALE,
     ActionKind,
+    Assignment,
     Commitment,
     Intent,
     UnitAi,
@@ -295,7 +296,13 @@ def test_a_guard_and_an_archer_answer_one_nominated_threat_from_their_own_distan
         threat = make_unit("t", RAM, "south", threat_at, destination=ally_at)
         world = make_world([screener, ally, threat])
 
-        observation = observe(world, screener, TWO_LANE_MAP, SECONDS_PER_TICK, nominated_target_ids=["t"])
+        observation = observe(
+            world,
+            screener,
+            TWO_LANE_MAP,
+            SECONDS_PER_TICK,
+            assignment=Assignment(unit_id="s", target_id="t", protecting_id="f", since_tick=0),
+        )
         screening = [c for c in generate_candidates(observation) if c.reason in SCREEN_REASONS]
 
         assert screening, f"{card.id} was nominated a threat and offered no screen"
@@ -559,8 +566,11 @@ def test_a_named_ally_reaches_the_screen_candidate_and_not_just_the_helper() -> 
             screener,
             TWO_LANE_MAP,
             SECONDS_PER_TICK,
-            nominated_target_ids=["t"],
-            protecting_id=protecting,
+            assignment=(
+                Assignment(unit_id="s", target_id="t", protecting_id=protecting, since_tick=0)
+                if protecting is not None
+                else Assignment(unit_id="s", target_id="t", protecting_id="", since_tick=0)
+            ),
         )
         return next(c for c in generate_candidates(observation) if c.reason in SCREEN_REASONS)
 
@@ -619,19 +629,35 @@ def test_a_screen_records_who_it_is_covering_and_whether_anyone_said_so() -> Non
     said which, so a guess that covered the wrong ally would be written up as
     broken AI rather than as a fallback doing its job.
 
-    Nothing assigns yet, so every screen in a battle today is an inferred one.
-    That is the honest reading and it is what the candidate says.
+    Both halves are reachable now that JQ-330's coordinator has merged: an
+    assignment naming an ally produces `screening`, and its absence produces
+    `screening_inferred` against the ally this end judged most exposed. Before
+    the merge only the second could happen, and this test said so — a sentence
+    that was true when written and would have quietly gone on passing while
+    asserting the wrong thing, since the inferred branch still fires whenever
+    nobody has been assigned.
     """
     threat_at = Vec2(HERE.x + 100, HERE.y)
     screener = make_unit("s", HOUND, "north", HERE, destination=HERE)
     ally = make_unit("f", WISP, "north", Vec2(HERE.x - 40, HERE.y + 50))
     world = make_world([screener, ally, make_unit("t", RAM, "south", threat_at)])
 
-    observation = observe(world, screener, TWO_LANE_MAP, SECONDS_PER_TICK, nominated_target_ids=["t"])
-    screen = next(c for c in generate_candidates(observation) if c.protecting_id is not None)
+    def screen_with(assignment: Assignment | None) -> Candidate:
+        observation = observe(world, screener, TWO_LANE_MAP, SECONDS_PER_TICK, assignment=assignment)
+        return next(c for c in generate_candidates(observation) if c.protecting_id is not None)
 
-    assert screen.reason == SCREENING_INFERRED
-    assert screen.protecting_id == "f"
+    # No assignment: the ally is inferred, and the candidate says so.
+    inferred = screen_with(None)
+    assert inferred.reason == SCREENING_INFERRED
+    assert inferred.protecting_id == "f", "the only ally is the one the threat is nearest"
+
+    # Assigned: the same ally, named rather than guessed, and the reason differs.
+    assigned = screen_with(Assignment(unit_id="s", target_id="t", protecting_id="f", since_tick=0))
+    assert assigned.reason == SCREENING
+    assert assigned.protecting_id == "f"
+    assert assigned.destination == inferred.destination, (
+        "same ally either way, so the geometry must be identical — only the provenance differs"
+    )
 
     # A lone guard gets no *separate* screen at all, and that is worth pinning
     # rather than glossing: with no allies the thing being covered is its own

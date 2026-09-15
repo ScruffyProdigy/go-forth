@@ -322,6 +322,48 @@ cd api && python -m app.scripts.battle_demo --seed 7
 stdout is the canonical event stream (so two runs can be diffed); the summary on
 stderr says who won.
 
+### Behaviour: what a creature wants, and who its mage asks
+
+Every unit runs one shared loop — observe, generate legal candidates, score,
+select — and the decision phase commits an intent that the existing movement and
+combat phases carry out. Adding a creature that uses existing mechanics costs
+data, not code: nothing in [`app/sim/ai/`](api/app/sim/ai) branches on a creature
+id.
+
+A unit's weights come from three places, summed and clamped: its stat block's
+own **contour** (tough and slow absorbs; quick and frail evades), any authored
+**creature profile and traits**, and the **personalities** of its troop's mages.
+
+**Personalities are contextual, not one aggression slider.** A tag is a set of
+rules, each naming the situation it speaks to, the actions it is eligible on,
+the priorities it moves, how far it looks, and its exceptions:
+
+```python
+PersonalityRule(when="ally-threatened", weights={"target_suitability": 1.0, "danger": -0.5})
+```
+
+That shape exists because the flat one has a failure it cannot be tuned out of.
+`reckless` discounting danger and `protective` pricing it add to zero, so a mage
+that is both comes out identical to a mage that is neither — and "willingness to
+take risks defending allies" is exactly what the pair is supposed to mean. Rules
+fix it twice over: the two tags speak in different moments, and `protective`'s
+danger delta is *negative* where an ally is being hurt, because caring about
+allies is not the same idea as fearing for yourself. Strength scales what a tag
+contributes and nothing else; zero means no opinion, never the opposite one.
+
+**A lightweight troop coordinator** allocates. It looks for enemies hurting its
+own, and asks one unit — the nearest eligible, deterministically — to answer
+each. That is its whole output: a target, never a position, so a melee guard and
+an archer answer the same assignment in the only ways each of them can. It never
+writes a destination, never overrides a capability, never commits more than half
+a troop, and releases the moment the defender, the target or the ally it was
+protecting dies or moves out of eligibility. A troop that has lost its last mage
+coordinates nothing, which is JQ-289's dissolve arriving where it should.
+
+```bash
+cd api && python -m app.scripts.battle_demo --seed 7   # both sides are led differently
+```
+
 **Scope.** Slice A (JQ-286) ships the world model, the tick loop, map config, the
 event envelope, and move-and-fight. Orders, formations, and zone scoring are
 JQ-287; energy and abilities JQ-288; resummoning and resonance JQ-289.
