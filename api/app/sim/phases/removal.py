@@ -20,6 +20,7 @@ That is what makes mage protection the core defensive skill.
 from __future__ import annotations
 
 from app.sim.context import TickContext
+from app.sim.energy import ALLY_DEFEATED
 from app.sim.events import troop_dissolved
 from app.sim.phases.targeting import is_alive
 from app.sim.types import Vec2
@@ -59,6 +60,20 @@ class RemovalPhase:
                     troop.dispelled_slots.append(
                         DispelledSlot(type_id=unit.type_id, formation_offset=unit.formation_offset)
                     )
+
+        # Death-triggered charge (JQ-288): a card whose school charges off
+        # `allyDefeated` pays out here, while the fallen are still on the field.
+        # Counted per troop rather than per side, because support in this game
+        # is local (§4.2) — a death across the field is not something a mage
+        # feels. Walked in world order for the reason above.
+        losses: dict[str, int] = {}
+        for unit in world.units:
+            if not is_alive(unit):
+                losses[unit.troop_id] = losses.get(unit.troop_id, 0) + 1
+        if losses:
+            for unit in world.units:
+                if is_alive(unit) and unit.troop_id in losses:
+                    unit.energy_meters[ALLY_DEFEATED] += losses[unit.troop_id]
 
         had_mages = {troop.id for troop in world.troops if troop.mage_ids}
 

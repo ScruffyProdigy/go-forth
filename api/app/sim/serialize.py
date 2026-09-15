@@ -23,6 +23,7 @@ def _event_line(event) -> str:  # type: ignore[no-untyped-def]
     return json.dumps(
         {
             "event": event.type,
+            "label": event.label,
             "tick": event.tick,
             "position": {"x": event.position.x, "y": event.position.y},
             "zone": event.zone_id,

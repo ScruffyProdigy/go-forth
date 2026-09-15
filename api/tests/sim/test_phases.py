@@ -67,11 +67,33 @@ def test_the_phase_order_is_declared_in_one_place() -> None:
     assert [p.name for p in TICK_PHASES] == [
         "orders",
         "movement",
+        "energy",
+        "spells",
+        "abilities",
         "combat",
+        "statuses",
         "scoring",
         "resummon",
         "removal",
     ]
+
+
+def test_a_gauge_is_charged_and_spent_before_the_weapons_swing() -> None:
+    names = [p.name for p in TICK_PHASES]
+
+    assert names.index("energy") < names.index("abilities") < names.index("combat")
+
+
+def test_an_injected_spell_lands_before_the_units_act_on_it() -> None:
+    names = [p.name for p in TICK_PHASES]
+
+    assert names.index("spells") < names.index("abilities")
+
+
+def test_statuses_tick_after_combat_but_before_the_dead_are_swept() -> None:
+    names = [p.name for p in TICK_PHASES]
+
+    assert names.index("combat") < names.index("statuses") < names.index("removal")
 
 
 def test_combat_runs_after_movement_so_a_unit_that_closed_can_swing() -> None:
