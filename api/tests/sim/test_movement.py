@@ -7,7 +7,7 @@ from app.sim.context import TickContext, create_tick_context
 from app.sim.geometry import distance
 from app.sim.map import THREE_ZONE_MAP
 from app.sim.orders import DEFEND_BASE, PUSH_ENEMY_BASE
-from app.sim.phases.movement import engagement_standoff, movement_phase
+from app.sim.phases.movement import engagement_standoff, movement_phase, standoff_slack
 from app.sim.phases.targeting import acquire_target
 from app.sim.rng import create_rng
 from app.sim.schools import resolve_side_multipliers
@@ -168,4 +168,60 @@ def test_a_unit_that_cannot_walk_stays_put() -> None:
 
     movement_phase.run(world, context())
 
+    assert hunter.position == before
+
+
+def slack_with_enemy_at(gap: float) -> float:
+    """The step cap a unit is left with when its only enemy is `gap` away."""
+    world, hunter, enemy = field()
+    for unit in world.units:
+        unit.speed = 0
+    hunter.speed = HOUND.speed
+    enemy.position = Vec2(hunter.position.x, hunter.position.y + gap)
+    return standoff_slack(world, hunter, context())
+
+
+def test_a_step_from_outside_is_still_clamped_at_the_standoff() -> None:
+    """The guarantee worth keeping: no unit, however fast, gets from outside an
+    enemy's reach to standing on top of it in a single tick."""
+    hunter = field()[1]
+    standoff = engagement_standoff(hunter)
+
+    assert slack_with_enemy_at(standoff + 5) == 5
+
+
+def test_an_enemy_already_inside_the_standoff_does_not_cap_the_step() -> None:
+    """The cap is on step *length*, which has no direction. Counting an enemy the
+    unit is already inside of caps every direction alike, so the unit cannot
+    leave, cross, or walk around it — an Ember Adept was pinned by anything
+    within 81 of it. Holding the line is the engage-en-route rule's job; this
+    clamp is only about what one tick may do."""
+    hunter = field()[1]
+    standoff = engagement_standoff(hunter)
+
+    assert slack_with_enemy_at(standoff / 2) >= hunter.speed * DEFAULT_SIM_CONFIG.tick_rate**-1
+
+
+def test_a_unit_clamped_exactly_onto_the_standoff_is_free_the_next_tick() -> None:
+    """Landing on the boundary is the normal outcome of the clamp above, so the
+    boundary has to count as inside. Treating it as outside hands back a slack of
+    zero on the very next tick and pins the unit there for good — the same trap
+    that froze off-axis walkers on their own weapon range, one rule further in."""
+    hunter = field()[1]
+
+    assert slack_with_enemy_at(engagement_standoff(hunter)) > 0
+
+
+def test_engaging_en_route_is_what_actually_holds_the_line() -> None:
+    """And it is untouched. The standoff sits inside weapon range, so a unit with
+    nothing to say for itself has already stopped before the clamp could bind —
+    which is why the bubble was invisible until a behaviour layer began issuing
+    advances that skip this check."""
+    world, hunter, enemy = field()
+    enemy.position = Vec2(hunter.position.x, hunter.position.y + engagement_standoff(hunter) / 2)
+    before = hunter.position
+
+    movement_phase.run(world, context())
+
+    assert acquire_target(world, hunter) is not None
     assert hunter.position == before
