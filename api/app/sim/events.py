@@ -10,9 +10,9 @@ a post-battle summary wants "what changed because of this", not "a thing
 occurred", so every event carries zone-score and base-HP deltas and the units it
 removed — zeroed when it moved none.
 
-`unitDefeated` shipped with slice A; `zoneFlip` and `baseHit` arrive with slice B.
-Ability casts are JQ-288, resummons and dissolves JQ-289 — each adding its own
-member to `BattleEventType`.
+`unitDefeated` shipped with slice A; `zoneFlip` and `baseHit` with slice B;
+`resummon` and `troopDissolve` with slice D. Ability casts are JQ-288 — each
+slice adding its own member to `BattleEventType`.
 
 A `zoneFlip`'s swing is the one that needs saying out loud: it carries the change
 in **per-tick income** the flip caused — the new holder gains the zone's rate, the
@@ -30,7 +30,7 @@ from typing import Any, Literal
 
 from app.sim.types import Side, UnitRef, Vec2
 
-BattleEventType = Literal["unitDefeated", "zoneFlip", "baseHit"]
+BattleEventType = Literal["unitDefeated", "zoneFlip", "baseHit", "resummon", "troopDissolve"]
 
 _NO_DELTA: Mapping[Side, float] = MappingProxyType({"north": 0, "south": 0})
 
@@ -123,6 +123,38 @@ def unit_defeated(*, tick: int, position: Vec2, unit: UnitRef, killer: UnitRef |
         "position": position,
         "actors": EventActors(source=killer, targets=(unit,)),
         "swing": EventSwing(units_removed=(unit,)),
+    }
+
+
+def resummoned(*, tick: int, summon: UnitRef, mage: UnitRef, position: Vec2) -> dict[str, Any]:
+    """A living mage refilled one of its troop's dispelled slots (§4.5).
+
+    The mage is the source and the rebuilt summon the target, at the mage's own
+    position — a troop rebuilds where it stands, which is what makes holding a
+    zone sticky.
+    """
+    return {
+        "type": "resummon",
+        "tick": tick,
+        "position": position,
+        "actors": EventActors(source=mage, targets=(summon,)),
+        "swing": EventSwing(),
+    }
+
+
+def troop_dissolved(*, tick: int, position: Vec2, summons: tuple[UnitRef, ...]) -> dict[str, Any]:
+    """A troop lost its last mage, so every summon it held left at once (§4.6).
+
+    One event for the whole troop rather than one per summon: the bond breaking
+    is a single thing that happened, and a highlight reel wants it that way.
+    There is no source — nothing killed these units, their support simply ended.
+    """
+    return {
+        "type": "troopDissolve",
+        "tick": tick,
+        "position": position,
+        "actors": EventActors(source=None, targets=summons),
+        "swing": EventSwing(units_removed=summons),
     }
 
 

@@ -13,7 +13,7 @@ from app.sim.orders import DEFEND_BASE, PUSH_ENEMY_BASE, Order, hold
 from app.sim.phases.combat import combat_phase
 from app.sim.rng import create_rng
 from app.sim.run_battle import run_battle
-from app.sim.schools import resolve_school_multipliers
+from app.sim.schools import resolve_side_multipliers
 from app.sim.types import Side, Vec2
 from app.sim.world import ArmySetup, BattleSetup, RosterEntry, TroopSetup, Unit, World, create_world
 from tests.sim.fixtures_units import ADEPT, HOUND
@@ -60,7 +60,7 @@ def context() -> TickContext:
     return create_tick_context(
         config=DEFAULT_SIM_CONFIG,
         map_config=CLOSE_MAP,
-        multipliers=resolve_school_multipliers([]),
+        multipliers=resolve_side_multipliers([]),
         rng=create_rng(3),
     )
 

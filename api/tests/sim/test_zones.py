@@ -9,7 +9,7 @@ from app.sim.map import THREE_ZONE_MAP, zone_by_id, zone_centre
 from app.sim.orders import DEFEND_BASE, hold
 from app.sim.phases.scoring import scoring_phase
 from app.sim.rng import create_rng
-from app.sim.schools import resolve_school_multipliers
+from app.sim.schools import resolve_side_multipliers
 from app.sim.types import SIDES, Side, Vec2
 from app.sim.world import ArmySetup, BattleSetup, RosterEntry, TroopSetup, Unit, World, create_world
 from app.sim.zones import zone_occupancy
@@ -42,7 +42,7 @@ def context() -> TickContext:
     return create_tick_context(
         config=DEFAULT_SIM_CONFIG,
         map_config=THREE_ZONE_MAP,
-        multipliers=resolve_school_multipliers([]),
+        multipliers=resolve_side_multipliers([]),
         rng=create_rng(5),
     )
 

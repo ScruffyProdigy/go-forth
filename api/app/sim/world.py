@@ -103,6 +103,31 @@ class Unit:
     destination: Vec2
     #: Ticks still to wait before this unit can attack again — ticks, not seconds.
     cooldown_remaining: int = 0
+    #: Mages only: how many summons this mage sustains (§4.2).
+    support_capacity: int | None = None
+    #: Mages only: seconds per resummon (§4.5). None means this mage never resummons.
+    resummon_pace_seconds: float | None = None
+    #: Ticks still to wait before this mage can resummon — a separate clock from
+    #: `cooldown_remaining`, so a mage rebuilds and casts independently (§4.5).
+    resummon_remaining: int = 0
+
+
+@dataclass
+class DispelledSlot:
+    """What a defeated summon leaves behind (§4.5).
+
+    The slot belongs to the troop, not to the summon type: two troops fielding
+    the same card never share a slot, and refilling one never moves a living
+    unit between troops.
+
+    It carries the fallen summon's `formation_offset` because the slot is a
+    *position in the troop* as much as a unit type — a rebuilt summon inherits
+    the station of the one it replaces (JQ-287), rather than appearing without
+    one and being assigned a fresh slot by the next orders pass.
+    """
+
+    type_id: str
+    formation_offset: Vec2
 
 
 @dataclass
@@ -111,9 +136,26 @@ class Troop:
     side: Side
     #: Exactly one, for the whole battle. The plan phase is where it is chosen.
     order: Order
-    #: Living mages. A troop whose last mage dies dissolves — slice D (§4.6).
+    #: Living mages. A troop whose last mage dies dissolves (§4.6).
     mage_ids: list[UnitId] = field(default_factory=list)
     summon_ids: list[UnitId] = field(default_factory=list)
+    #: Summons this troop has lost and may rebuild, oldest first (§4.5).
+    dispelled_slots: list[DispelledSlot] = field(default_factory=list)
+    #: Next id suffix to hand a resummoned unit. Monotonic so a rebuilt summon
+    #: never reuses the id of the one it replaces — a replay reading the event
+    #: stream would otherwise see one unit defeated twice.
+    next_unit_ordinal: int = 0
+
+
+def support_capacity_of(living_mages: Sequence[Unit]) -> int:
+    """The troop's combined support capacity: what its *living* mages sustain.
+
+    Capacity is read at resummon time rather than enforced continuously. A troop
+    that loses a mage keeps the summons already on the field and simply rebuilds
+    fewer — culling a living summon the moment its supporting mage died would
+    duplicate the troop bond (§4.6) while being harsher than it.
+    """
+    return sum(mage.support_capacity or 0 for mage in living_mages)
 
 
 @dataclass
@@ -261,6 +303,8 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
                         position=deployment_spot(config, army.side, anchor, offset, rng),
                         formation_offset=offset,
                         destination=station(order, army.side, offset, config),
+                        support_capacity=unit_type.support_capacity,
+                        resummon_pace_seconds=unit_type.resummon_pace_seconds,
                     )
                 )
 
@@ -269,6 +313,7 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
                 else:
                     troop.summon_ids.append(unit_id)
 
+            troop.next_unit_ordinal = len(mage_types) + len(summon_types)
             troops.append(troop)
 
     return World(

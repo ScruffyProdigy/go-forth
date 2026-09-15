@@ -4,9 +4,16 @@ Everything a caller needs is here; nothing here touches the outside world. The
 server hands `run_battle` a map, the school configs, a battle's roster data, and a
 seed, and gets back the whole battle — tick by tick, with its event stream.
 
-Slices A (JQ-286) and B (JQ-287) of the sim. Energy and abilities are JQ-288,
-resummoning and resonance JQ-289. See `phases/__init__.py` for where each of them
+**side** first — resonance is a property of a player's roster rather than of the
+and abilities JQ-288. See `phases/__init__.py` for where each of them attaches.
 attaches.
+dissolve inside `phases/removal.py`) and filled in the per-school multiplier
+field — so a system reads `ctx.multipliers[unit.side][school]`.
+record from the resonance curve (`resonance.py`). That record is now keyed by
+resummoning and resonance JQ-289. See `phases/__init__.py` for where each of them
+Slice D added resummoning and the troop bond (`phases/resummon.py`, and the
+Slices A (JQ-286) and B (JQ-287) of the sim. Energy and abilities are JQ-288,
+Slices A (JQ-286) and D (JQ-289) of the sim. Orders and zones are JQ-287, energy
 
 Two Python rules hold the determinism guarantee, neither of which had an
 equivalent in the TypeScript this was ported from:
@@ -34,6 +41,8 @@ from app.sim.events import (
     EventEmitter,
     EventSwing,
     create_event_emitter,
+    resummoned,
+    troop_dissolved,
     unit_defeated,
 )
 from app.sim.fixtures import PLACEHOLDER_UNIT_TYPES, placeholder_battle
@@ -76,6 +85,12 @@ from app.sim.orders import (
 )
 from app.sim.phase import TickPhase
 from app.sim.phases import TICK_PHASES
+from app.sim.resonance import (
+    STAT_AXES,
+    ResonanceCounts,
+    SideResonanceCounts,
+    count_resonance,
+)
 from app.sim.rng import Rng, create_rng, rng_from_state
 from app.sim.run_battle import (
     BattleOutcome,
@@ -85,13 +100,18 @@ from app.sim.run_battle import (
     step_battle,
 )
 from app.sim.schools import (
+    DEFAULT_RESONANCE_CURVE,
     IDENTITY_MULTIPLIERS,
     SCHOOLS,
+    ResonanceCurve,
     School,
     SchoolConfig,
     SchoolMultipliers,
     SchoolMultiplierTable,
+    SideMultiplierTable,
     resolve_school_multipliers,
+    resolve_side_multipliers,
+    resonance_step,
 )
 from app.sim.serialize import digest_battle, serialize_battle
 from app.sim.types import SIDES, Side, Span, TroopId, UnitId, UnitRef, Vec2, opposing
@@ -100,6 +120,7 @@ from app.sim.world import (
     ArmySetup,
     BaseState,
     BattleSetup,
+    DispelledSlot,
     RosterEntry,
     Troop,
     TroopSetup,
@@ -109,12 +130,14 @@ from app.sim.world import (
     is_alive,
     order_of,
     orders_by_troop,
+    support_capacity_of,
     troop_of,
     unit_ref,
 )
 from app.sim.zones import ZoneOccupancy, zone_occupancy
 
 __all__ = [
+    "DEFAULT_RESONANCE_CURVE",
     "DEFAULT_SIM_CONFIG",
     "DEFEND_BASE",
     "FORMATION_RANK_GAP",
@@ -126,6 +149,7 @@ __all__ = [
     "PUSH_ENEMY_BASE",
     "SCHOOLS",
     "SIDES",
+    "STAT_AXES",
     "THREE_ZONE_MAP",
     "TICK_PHASES",
     "ArmySetup",
@@ -139,6 +163,7 @@ __all__ = [
     "BattleTick",
     "ChipReserve",
     "DeploymentStrip",
+    "DispelledSlot",
     "EventActors",
     "EventEmitter",
     "EventSwing",
@@ -146,6 +171,8 @@ __all__ = [
     "MapConfig",
     "Order",
     "OrderKind",
+    "ResonanceCounts",
+    "ResonanceCurve",
     "Rng",
     "RosterEntry",
     "School",
@@ -153,6 +180,8 @@ __all__ = [
     "SchoolMultiplierTable",
     "SchoolMultipliers",
     "Side",
+    "SideMultiplierTable",
+    "SideResonanceCounts",
     "SimConfig",
     "Span",
     "TickContext",
@@ -173,6 +202,7 @@ __all__ = [
     "build_unit_type_catalog",
     "chip_box",
     "clear_of_chip",
+    "count_resonance",
     "create_event_emitter",
     "create_rng",
     "create_tick_context",
@@ -192,6 +222,9 @@ __all__ = [
     "orders_by_troop",
     "placeholder_battle",
     "resolve_school_multipliers",
+    "resolve_side_multipliers",
+    "resonance_step",
+    "resummoned",
     "rng_from_state",
     "run_battle",
     "seconds_per_tick",
@@ -199,7 +232,9 @@ __all__ = [
     "station",
     "step_battle",
     "strip_centre",
+    "support_capacity_of",
     "to_ticks",
+    "troop_dissolved",
     "troop_of",
     "unit_defeated",
     "unit_ref",
