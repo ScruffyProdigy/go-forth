@@ -54,29 +54,54 @@ def engagement_standoff(unit: Unit) -> float:
 
 
 def standoff_slack(world: World, unit: Unit, ctx: TickContext) -> float:
-    """How far this unit may step this tick without closing inside its standoff.
+    """How far this unit may step before it would **cross into** an enemy's standoff.
+
+    Only enemies the unit is currently *outside* of are counted. That exception is
+    the whole of the rule, and it is easy to leave out: the cap is on step
+    *length*, which has no direction, so counting an enemy the unit is already
+    inside of caps every direction alike and pins the unit where it stands. An
+    Ember Adept — range 90, standoff 81 — could not move at all with anything
+    within 81 of it, in an eighty-one unit bubble it could neither leave, cross,
+    nor walk around.
+
+    That is not what the standoff is for. Holding the line is the engage-en-route
+    rule in `run` below: a unit with nothing to say for itself stops the moment
+    anything is within its weapon range, which is further out than the standoff,
+    so an ordinary battle never reaches this clamp at all. What this guarantees
+    is narrower and only about a single tick: **no unit, however fast, gets from
+    outside an enemy's reach to standing on top of it in one step.** A unit that
+    is already close — because an enemy closed on it, or because a behaviour
+    layer decided to press on (JQ-328) or to leave (JQ-329) — is not held there.
 
     A step of length `d` changes the distance to any point by at most `d`, so
-    capping the step at the smallest slack is enough on its own: no trigonometry
-    and no per-target path test.
+    capping at the smallest slack is enough on its own: no trigonometry, no
+    per-target path test.
 
-    In practice this rarely binds against a unit, because `acquire_target` stops
-    the walk at full weapon range — a tenth further out than the standoff. What
-    it guarantees is that no single step, however fast the unit, can carry it
-    from outside weapon range to standing on top of an enemy.
-
-    The enemy base counts too — a unit stops at the edge of the base plate rather
-    than standing on it.
+    The enemy base gets the same treatment — a unit stops at the edge of the base
+    plate rather than standing on it, but one already inside the plate can leave.
     """
     slack = float("inf")
+    standoff = engagement_standoff(unit)
 
     for other in world.units:
         if other.side == unit.side or not is_alive(other):
             continue
-        slack = min(slack, distance(unit.position, other.position) - engagement_standoff(unit))
+        gap = distance(unit.position, other.position)
+        if gap <= standoff:
+            # At or inside this one. It does not get a vote on the step.
+            #
+            # `<=` rather than `<` on purpose. A unit clamped on the way in lands
+            # *exactly* on the standoff, so a strict test would count it the very
+            # next tick, hand back a slack of zero, and pin it there for good —
+            # the same boundary trap that froze off-axis walkers on their own
+            # weapon range, one rule further in.
+            continue
+        slack = min(slack, gap - standoff)
 
     enemy_base = ctx.map_config.bases[opposing(unit.side)]
-    slack = min(slack, distance(unit.position, enemy_base.position) - enemy_base.footprint_radius)
+    base_gap = distance(unit.position, enemy_base.position)
+    if base_gap > enemy_base.footprint_radius:
+        slack = min(slack, base_gap - enemy_base.footprint_radius)
 
     return max(0.0, slack)
 

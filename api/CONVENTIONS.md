@@ -90,6 +90,75 @@ reproducing its own output* — not two languages agreeing on float formatting.
 Those are different claims, and conflating them sends you chasing an impossible
 one.
 
+## Boundaries in the sim's geometry
+
+**Where this file has failed twice: a rule that stops a unit *at* a boundary, and
+a second rule that tests whether it is *past* that boundary.** The two overlap at
+exactly one point, and floating point will not reliably put anything on it.
+
+First instance (JQ-287). Movement capped a step at `distance - weapon range`, so
+a unit could never end a tick inside its range; combat fired at
+`distance <= range`. A unit walking straight at an enemy lands on the boundary
+exactly — along the line of approach a step closes the distance by its own length
+— so head-on worked and every test was written head-on. Walking *past* something
+closes by less, so the unit converged on its own weapon range from outside and
+stopped there for ever: a hair out of range so it could not shoot, out of slack so
+it could not walk on. A hound frozen at `20.000000000000018` against a range of
+20, alive and out of the battle.
+
+Second instance (JQ-379), in the fix for the first. The standoff clamp lands a
+unit *exactly* on the standoff line, and the test for "already inside the
+standoff" used a strict `<`. So the unit was counted again the next tick, handed
+a slack of zero, and pinned there permanently.
+
+**The rule: the predicate that decides where a unit stops and the predicate that
+decides what it may then do must overlap on an interval, not at a point.** In
+practice that means one of two things, and both are cheap:
+
+- Put the stopping distance strictly inside the acting distance — `ENGAGEMENT_STANDOFF`
+  is nine tenths of weapon range for this reason, so "close enough to stop" and
+  "close enough to fire" are the same state rather than two that meet at a point.
+- Where a clamp lands a value on a boundary, make the test for being at that
+  boundary inclusive. `gap <= standoff` counts the line as inside, because the
+  line is exactly where the clamp puts things.
+
+**Both were found by breaking a new test on purpose, not by review.** An
+invariant of the form "never get closer than X" is satisfied perfectly by a unit
+that never goes anywhere, so on its own it is not evidence of anything. Write the
+complementary test too — that a unit whose path takes it inside range ends up
+able to fire — and stage it **off-axis**, because head-on is the one arrangement
+that works when this is broken.
+
+## Movement does not guarantee separation
+
+Read the standoff clamp in `phases/movement.py` and it looks like the thing that
+keeps units apart. It is not, and the difference matters because it is invisible
+until a behaviour layer is attached.
+
+What actually holds a line is the **engage-en-route** rule: a unit stops the
+moment anything is within its weapon range. The standoff sits inside that range,
+so an ordinary unit has already stopped before the clamp could bind. Measured on
+the placeholder armies with no behaviour layer, closest approach between opposing
+units over a whole battle is 16.8 on every seed, and there is not a single tick
+where two of them are within 1 of each other.
+
+A unit acting on an *intent* (JQ-328) skips that check by design — that is what
+makes "press the objective past a weak enemy" possible, and pressing past
+something in a sim with no collision means passing through it. The clamp does not
+catch it either: since JQ-379 an enemy a unit is already inside the standoff of
+does not cap the step, which is what stopped the clamp freezing units in place.
+
+So in a behaviour-driven battle, opposing units do overlap. Measured: coincident
+to 0.000, in episodes of 36 ticks at the median and 114 at the longest — nearly
+six seconds of a ninety-second battle with two units standing inside each other.
+
+**Nothing in the sim prevents this.** Whether it should is a live question
+(JQ-380): it is squarely in JQ-243's readability territory, since overlapping
+sprites read as one unit, which is worse than the blob the engagement gap was
+protecting against. The point here is only that a reader of the clamp must not
+conclude the sim keeps units apart. It keeps units *from walking into contact on
+their own initiative*, which is a different and much smaller claim.
+
 ## Layout
 
 ```
