@@ -148,11 +148,28 @@ def test_no_candidate_expresses_a_retreat() -> None:
     leads toward an enemy, because the station it would otherwise walk to is
     under its feet already.
 
-    That is faithful to this ticket, which owns advance, attack and hold;
-    retreat belongs with positioning and bounded pursuit in JQ-329. It is pinned
-    here rather than left implicit because the danger factor reads like a
+    That is faithful to this ticket, which owns advance, attack, cast and hold;
+    backing off belongs with positioning and bounded pursuit in JQ-329. It is
+    pinned here rather than left implicit because the danger factor reads like a
     survival instinct and is not one, and because this test failing is exactly
     the signal that JQ-329 has added the missing verb.
+
+    **Two verbs, not one, when it does.** They are different actions and want
+    different execution:
+
+    * **withdraw** — give ground while still fighting. Reduced speed, because
+      backing away from something while facing it is slower than running, and
+      the shooting continues.
+    * **retreat** — disengage and live. Full speed, and no attacking at all.
+
+    The first half of `withdraw` is already free: a unit with any non-attack
+    intent still auto-attacks whatever is in range, so moving and firing in one
+    tick works today. `retreat` is the one with no path at all — **nothing in
+    the loop can currently suppress an attack.** `acquire_target` falls back to
+    nearest-in-range for every intent that is not `attack`, so a retreating unit
+    would keep shooting the thing it is running from. Whoever adds these needs a
+    way for an intent to decline a target, and that is a change to
+    `phases/targeting.py` rather than to the candidate set.
     """
     station = Vec2(180, 300)
     cornered = make_unit("h", HOUND, "north", station, hp=HOUND.max_hp / 5)
