@@ -40,10 +40,32 @@ def test_ignores_non_sql_files() -> None:
 
 
 def test_the_real_migrations_directory_is_selectable() -> None:
-    # Guards the packaging: the SQL is read at runtime rather than compiled, so
-    # an image that fails to ship api/migrations builds fine and then fails
-    # every rollout at the init step.
+    """Guards the packaging, not the migration count.
+
+    The SQL is read at runtime rather than compiled, so an image that fails to
+    ship `api/migrations` builds fine and then fails every rollout at the init
+    step. What that guard needs is that the directory is there and every file in
+    it is selectable in order — *not* a literal list, which would have to be
+    re-edited on every migration and would eventually be updated without being
+    read.
+    """
     from app.migrate import MIGRATIONS_DIR
 
     names = [path.name for path in MIGRATIONS_DIR.iterdir()]
-    assert select_pending_migrations(names, []) == ["0001_init.sql"]
+    pending = select_pending_migrations(names, [])
+
+    assert pending, "no migrations found — the image would ship an empty schema"
+    assert pending[0] == "0001_init.sql"
+    assert pending == sorted(pending), "migrations apply in filename order"
+    # `.down.sql` files exist to be applied by hand, never automatically.
+    assert not any(name.endswith(".down.sql") for name in pending)
+
+
+def test_an_already_applied_migration_is_not_reselected() -> None:
+    from app.migrate import MIGRATIONS_DIR
+
+    names = [path.name for path in MIGRATIONS_DIR.iterdir()]
+    every = select_pending_migrations(names, [])
+    # Re-running is a no-op, which is what lets the same command serve
+    # `scripts/db.sh migrate` locally and the initContainer on every rollout.
+    assert select_pending_migrations(names, every) == []
