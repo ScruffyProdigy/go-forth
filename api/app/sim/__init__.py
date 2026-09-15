@@ -217,7 +217,9 @@ from app.sim.rng import Rng, create_rng, rng_from_state
 from app.sim.run_battle import (
     BattleOutcome,
     BattleResult,
+    BattleRunner,
     BattleTick,
+    create_runner,
     run_battle,
     step_battle,
 )
@@ -242,6 +244,7 @@ from app.sim.spells import (
     SpellCatalog,
     SpellInjection,
     build_spell_catalog,
+    injection_order,
     schedule_injections,
 )
 from app.sim.statuses import BURNING_GROUND, BurnStatus, GroundHazard
@@ -319,6 +322,7 @@ __all__ = [
     "BattleEventType",
     "BattleOutcome",
     "BattleResult",
+    "BattleRunner",
     "BattleSetup",
     "BattleTick",
     "BehaviorLibrary",
@@ -432,6 +436,7 @@ __all__ = [
     "count_resonance",
     "create_event_emitter",
     "create_rng",
+    "create_runner",
     "create_tick_context",
     "create_world",
     "damage_unit",
@@ -451,6 +456,7 @@ __all__ = [
     "hotspot_box",
     "hotspot_centre",
     "hotspot_contains",
+    "injection_order",
     "intent_of",
     "is_alive",
     "is_resummonable",

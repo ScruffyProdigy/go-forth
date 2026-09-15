@@ -242,7 +242,7 @@ api/
 │   ├── repository.py / pg_repository.py
 │   ├── lobby/       # the JoinQuest contract (JQ-309) — fixed, shared with rpslr
 │   ├── match/       # this game: wire schema, plan, round, session, clock
-│   └── sim/         # the battle sim (JQ-286)
+│   └── sim/         # the battle sim (JQ-286) — pure, deterministic
 ├── migrations/      # forward-only *.sql, applied in filename order
 └── tests/           # not co-located; the Python convention, unlike rpslr
 ```
