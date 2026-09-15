@@ -32,8 +32,10 @@ from app.sim.ai.fixtures import (
 )
 from app.sim.ai.observe import Observation
 from app.sim.ai.profiles import (
+    MAX_JITTER,
     BehaviorLibrary,
     CoordinationInfluence,
+    CreatureProfile,
     MagePersonality,
     PersonalityDefinition,
     PersonalityRef,
@@ -45,6 +47,7 @@ from app.sim.ai.profiles import (
 )
 from app.sim.ai.scoring import ScoredCandidate, score_candidate
 from app.sim.ai.vocabulary import PersonalityTag
+from app.sim.rng import create_rng
 from app.sim.types import Vec2
 from app.sim.units import UnitType, build_unit_type_catalog
 from app.sim.world import Unit, World
@@ -403,6 +406,66 @@ def test_a_purely_contextual_tag_leaves_the_standing_weights_alone() -> None:
     assert scored(led, *INTERCEPT).influences != scored(plain, *INTERCEPT).influences
     assert behavior_of(led, "melee").personalities
     assert not behavior_of(plain, "melee").personalities
+
+
+def test_jitter_perturbs_the_score_and_never_the_explanation() -> None:
+    """`_with_jitter` rebuilds a `ScoredCandidate`, and must carry `influences`.
+
+    This test exists because of a hazard rather than a bug, and the hazard is
+    worth naming or someone will delete the test as redundant.
+
+    `ScoredCandidate` is constructed in exactly two places: `score_candidate`,
+    and `_with_jitter` in `decide.py`, which rebuilds each entry with a nudged
+    score. An edit that reconstructs one without `influences` loses every reason
+    on that path — and would lose it *silently*, three times over. `influences`
+    defaults to `()`, so mypy sees nothing. No profile in `app/` sets
+    `tie_break_jitter` above zero, so the path is dead in every battle anyone
+    runs. And the only tests that do set it are JQ-328's tie-break tests, which
+    build a `ResolvedBehavior` with no personalities and assert nothing about
+    reasons.
+
+    So it would pass the whole suite and then, the first time a profile enabled
+    jitter, report "no tag spoke to this candidate" for every candidate in the
+    battle — which reads as "the personality does nothing", which is the same
+    false negative as reading the standing weights. Found by JQ-331 while
+    checking JQ-329's merge, before either branch landed.
+
+    The invariant is the useful half: jitter is allowed to change *which*
+    candidate wins, and never why it won.
+
+    The archer rather than the guard, because its winner is a candidate two tags
+    spoke to. A test whose winner had no influences either way would pass
+    whatever `_with_jitter` did with them.
+    """
+    world = escort(
+        BehaviorLibrary(
+            traits=SAMPLE_TRAITS,
+            personalities=SAMPLE_PERSONALITIES,
+            profiles=(CreatureProfile(SPRITE.id, tie_break_jitter=MAX_JITTER),),
+            mage_personalities=(
+                MagePersonality("m", (PersonalityRef(RECKLESS), PersonalityRef(PROTECTIVE))),
+            ),
+        )
+    )
+    observation = look(world, unit_of(world, "ranged"))
+    behavior = behavior_of(world, "ranged")
+
+    winners: set[str] = set()
+    explained = 0
+
+    for seed in range(8):
+        decision = decide(observation, behavior, create_rng(seed))
+        unjittered = next(s for s in decision.considered if s.candidate == decision.selected)
+
+        assert decision.influences == unjittered.influences
+        winners.add(decision.selected.kind)
+        explained += bool(decision.influences)
+
+    # Both halves, or the assertion above is being made about nothing: jitter
+    # has to have actually moved a decision, and the decisions it moved between
+    # have to include one somebody had something to say about.
+    assert len(winners) > 1, "jitter never changed the winner, so nothing was tested"
+    assert explained, "no seed picked an influenced candidate, so the test proved nothing"
 
 
 # --- exceptions, and the dimensions a rule composes on -----------------------
