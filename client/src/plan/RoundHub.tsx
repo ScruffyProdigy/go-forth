@@ -11,6 +11,7 @@
  * not exist yet, one line when it has a good default, expanded only on tap.
  */
 
+import type { ResolvedPlan } from '../match/resolve.ts';
 import { PlanMap } from './PlanMap.tsx';
 import { ResonanceHeadline } from './ResonanceHeadline.tsx';
 import { stepSummaries, type StepId } from './derive.ts';
@@ -20,10 +21,16 @@ export interface RoundHubProps {
   readonly plan: PlanState;
   readonly onOpenStep: (step: StepId) => void;
   readonly onLockIn: () => void;
+  /**
+   * The server's reading of this plan, when there is a server to ask (JQ-311).
+   * Absent means nothing is blocking and Lock In behaves as JQ-293 shipped it.
+   */
+  readonly resolved?: ResolvedPlan;
 }
 
-export function RoundHub({ plan, onOpenStep, onLockIn }: RoundHubProps) {
+export function RoundHub({ plan, onOpenStep, onLockIn, resolved }: RoundHubProps) {
   const steps = stepSummaries(plan);
+  const blockers = resolved?.blockers ?? [];
 
   return (
     <section className="hub" aria-label={`Round ${plan.round} plan`}>
@@ -51,7 +58,26 @@ export function RoundHub({ plan, onOpenStep, onLockIn }: RoundHubProps) {
           ))}
       </ul>
 
-      <button type="button" className="primary-button lock-in" onClick={onLockIn}>
+      {blockers.length > 0 ? (
+        <ul className="lock-blockers" data-testid="lock-blockers">
+          {blockers.map((blocker) => (
+            <li key={`${blocker.kind}-${blocker.message}`}>{blocker.message}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      {/*
+        A blocked plan is refused here rather than at world creation. JQ-304 is
+        the bug where the sim rejected a plan the client had already accepted —
+        after lock-in, on a screen with nothing left to change. Disabling the
+        button keeps the refusal next to the thing that can fix it.
+      */}
+      <button
+        type="button"
+        className="primary-button lock-in"
+        onClick={onLockIn}
+        disabled={blockers.length > 0}
+      >
         Lock in
       </button>
     </section>

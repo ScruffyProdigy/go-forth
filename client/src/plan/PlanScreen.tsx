@@ -15,6 +15,7 @@
 
 import { useReducer, useState } from 'react';
 
+import type { PlanResolver } from '../match/resolve.ts';
 import { RoundHub } from './RoundHub.tsx';
 import { StepFrame } from './StepFrame.tsx';
 import { WaitingForOpponent } from './WaitingForOpponent.tsx';
@@ -39,12 +40,30 @@ export interface PlanScreenProps {
   readonly initialPlan?: PlanState;
   /** Called when the player locks in — the future "submit plan" call. */
   readonly onLockIn?: (plan: PlanState) => void;
+  /**
+   * Asks what the plan currently means (JQ-311). Supplied by the match layer,
+   * which knows whether there is a server to ask; absent, the screen falls back
+   * to the derivations JQ-293 shipped with and nothing blocks lock-in.
+   */
+  readonly resolve?: PlanResolver;
+  /**
+   * Where lock-in leads. The match layer takes this over so that "locked" means
+   * the server has the plan, not that a local flag was set — which is why the
+   * built-in waiting screen is only the fallback.
+   */
+  readonly waitingView?: 'internal' | 'external';
 }
 
-export function PlanScreen({ initialPlan, onLockIn }: PlanScreenProps) {
+export function PlanScreen({
+  initialPlan,
+  onLockIn,
+  resolve,
+  waitingView = 'internal',
+}: PlanScreenProps) {
   const [plan, dispatch] = useReducer(planReducer, initialPlan ?? starterMirrorRound1());
   const [view, setView] = useState<View>('hub');
   const [detailMageId, setDetailMageId] = useState<string | null>(null);
+  const resolved = resolve?.(plan);
 
   /** Steps that exist this round, in order. Absent steps are skipped by Next. */
   const presentSteps = stepSummaries(plan)
@@ -64,10 +83,11 @@ export function PlanScreen({ initialPlan, onLockIn }: PlanScreenProps) {
     return (
       <RoundHub
         plan={plan}
+        resolved={resolved}
         onOpenStep={(step) => setView(step)}
         onLockIn={() => {
           onLockIn?.(plan);
-          setView('waiting');
+          if (waitingView === 'internal') setView('waiting');
         }}
       />
     );
@@ -101,7 +121,9 @@ export function PlanScreen({ initialPlan, onLockIn }: PlanScreenProps) {
       {view === 'troops' ? (
         <ChooseTroopsStep plan={plan} dispatch={dispatch} onCustomise={setDetailMageId} />
       ) : null}
-      {view === 'spells' ? <ChooseSpellsStep plan={plan} dispatch={dispatch} /> : null}
+      {view === 'spells' ? (
+        <ChooseSpellsStep plan={plan} dispatch={dispatch} resolved={resolved} />
+      ) : null}
       {view === 'orders' ? <GiveOrdersStep plan={plan} dispatch={dispatch} /> : null}
     </StepFrame>
   );

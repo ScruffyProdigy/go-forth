@@ -9,6 +9,7 @@
  * hide the mage-to-spell link that is the whole reason troops are chosen first.
  */
 
+import type { ResolvedPlan } from '../../match/resolve.ts';
 import { spellMenu, strandedSlots } from '../derive.ts';
 import type { PlanAction } from '../planReducer.ts';
 import type { PlanState } from '../types.ts';
@@ -16,9 +17,15 @@ import type { PlanState } from '../types.ts';
 export interface ChooseSpellsStepProps {
   readonly plan: PlanState;
   readonly dispatch: (action: PlanAction) => void;
+  /**
+   * The resolved menu, when a server has been asked (JQ-311 AC 2: actual
+   * resolved costs, effects and contributors). Without it the card's printed
+   * text is all there is to show, which is what JQ-293 shipped.
+   */
+  readonly resolved?: ResolvedPlan;
 }
 
-export function ChooseSpellsStep({ plan, dispatch }: ChooseSpellsStepProps) {
+export function ChooseSpellsStep({ plan, dispatch, resolved }: ChooseSpellsStepProps) {
   const menu = spellMenu(plan);
   const stranded = strandedSlots(plan);
 
@@ -63,16 +70,25 @@ export function ChooseSpellsStep({ plan, dispatch }: ChooseSpellsStepProps) {
       <ul className="spell-menu">
         {menu.map(({ spell, eligible, reason, affordable }) => {
           const equippedSlot = plan.spellSlots.indexOf(spell.id);
+          const server = resolved?.spells.find((entry) => entry.spellId === spell.id);
+          const contributors = server?.contributors ?? [];
 
           return (
             <li key={spell.id} className={eligible ? 'spell' : 'spell is-ineligible'}>
               <div className="spell-head">
                 <span className="spell-name">{spell.name}</span>
                 <span className={affordable ? 'spell-cost' : 'spell-cost is-unaffordable'}>
-                  {spell.cost}
+                  {server?.cost ?? spell.cost}
                 </span>
               </div>
-              <p className="spell-text">{spell.text}</p>
+              <p className="spell-text">{server?.effect ?? spell.text}</p>
+              {contributors.length > 0 ? (
+                <p className="spell-contributors" data-testid={`contributors-${spell.id}`}>
+                  {contributors
+                    .map((entry) => `${entry.mageName} (${entry.tag})`)
+                    .join(' · ')}
+                </p>
+              ) : null}
               {reason ? <p className="spell-reason">{reason}</p> : null}
 
               <div className="spell-actions">
