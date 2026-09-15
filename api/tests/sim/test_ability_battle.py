@@ -119,5 +119,8 @@ def test_an_emplacement_never_moves_over_a_whole_battle() -> None:
 def test_the_result_carries_the_energy_rules_the_battle_ran_under() -> None:
     result = run()
 
-    assert dict(result.energy_rules["fire"]) == {"damageDealt": 1.0}
-    assert dict(result.energy_rules["artifice"]) == {"elapsedSeconds": 10.0}
+    fire = {source.meter: source.energy_per_unit for source in result.energy_rules["fire"]}
+    artifice = {source.meter: source.energy_per_unit for source in result.energy_rules["artifice"]}
+
+    assert fire == {"elapsedSeconds": 4.0, "damageDealt": 1.0}
+    assert artifice == {"elapsedSeconds": 10.0}

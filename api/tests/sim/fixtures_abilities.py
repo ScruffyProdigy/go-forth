@@ -8,6 +8,7 @@ the failure names the wrong thing.
 from __future__ import annotations
 
 from app.sim.abilities import Ability, build_ability_catalog
+from app.sim.casting import CastPolicy
 from app.sim.config import DEFAULT_SIM_CONFIG
 from app.sim.context import TickContext, create_tick_context
 from app.sim.energy import resolve_school_energy_rules
@@ -40,6 +41,7 @@ def context(
     abilities: list[Ability] | None = None,
     spells: list[Spell] | None = None,
     school_configs: list[SchoolConfig] | None = None,
+    cast_policy: CastPolicy | None = None,
 ) -> TickContext:
     configs = school_configs or []
     return create_tick_context(
@@ -49,6 +51,7 @@ def context(
         energy_rules=resolve_school_energy_rules(configs),
         abilities=build_ability_catalog(abilities or []),
         spells=build_spell_catalog(spells or []),
+        cast_policy=cast_policy,
         rng=create_rng(5),
     )
 

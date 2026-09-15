@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from app.sim.abilities import EMPTY_ABILITY_CATALOG, AbilityCatalog
+from app.sim.casting import DEFAULT_CAST_POLICY, CastPolicy
 from app.sim.config import SimConfig, seconds_per_tick, validate_sim_config
 from app.sim.energy import SchoolEnergyRuleTable, resolve_school_energy_rules
 from app.sim.events import EventEmitter, create_event_emitter
@@ -45,6 +46,10 @@ class TickContext:
     abilities: AbilityCatalog
     #: The player spells that could land, by id.
     spells: SpellCatalog
+    #: Who decides when a unit spends a ready ability. A full gauge only makes
+    #: the ability available; this says whether now is the moment. JQ-296/328
+    #: replaces the default with something that weighs what else is coming.
+    cast_policy: CastPolicy
     #: The one emitter every system writes events through.
     emitter: EventEmitter
     rng: Rng
@@ -69,6 +74,7 @@ def create_tick_context(
     energy_rules: SchoolEnergyRuleTable | None = None,
     abilities: AbilityCatalog | None = None,
     spells: SpellCatalog | None = None,
+    cast_policy: CastPolicy | None = None,
 ) -> TickContext:
     validate_sim_config(config)
 
@@ -82,6 +88,7 @@ def create_tick_context(
         energy_rules=energy_rules if energy_rules is not None else resolve_school_energy_rules([]),
         abilities=abilities if abilities is not None else EMPTY_ABILITY_CATALOG,
         spells=spells if spells is not None else EMPTY_SPELL_CATALOG,
+        cast_policy=cast_policy if cast_policy is not None else DEFAULT_CAST_POLICY,
         emitter=emitter if emitter is not None else create_event_emitter(),
         rng=rng,
         unit_types=catalog,

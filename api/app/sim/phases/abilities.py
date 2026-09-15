@@ -1,38 +1,31 @@
-"""Firing the abilities whose gauges came up full.
+"""Spending the abilities whose gauges are full.
 
-A cast is entirely data-driven: the phase looks the ability up, decides where
-it lands, and hands its effects to `resolution.py`. There is no branch on which
-ability it is, and that is the property JQ-288 exists to establish — JQ-185's
-roster has to fit through here without widening it.
+A full gauge makes an ability **available**; it does not fire it. What this
+phase does each tick is ask the cast policy, for every unit holding a ready
+ability, whether now is the moment — and carry out the ones that say yes.
 
-A cast that needs a target and has none is **held**, not wasted: the gauge
-stays full and the unit casts on the first tick something is in reach. The
-alternative — burning a full gauge on empty air — makes a card's output depend
-on when its last enemy died, which is not a thing a designer can tune.
+That split is the point. "Auto-cast the instant the bar fills" makes a dash
+fire at whatever happens to be nearest, which is usually the cheap melee summon
+already walking into contact, and the gauge is gone by the time the ranged unit
+behind it is worth closing on. Holding is a real decision, so it belongs to
+whatever is making decisions — the behaviour layer (JQ-296/328) — and this
+phase only owns *executing* one. `casting.py` is the seam, with a deliberately
+unclever default so a battle carrying no behaviour data still acts.
+
+The cast itself is entirely data-driven once the decision is made: the phase
+looks the ability up and hands its effects to `resolution.py`. There is no
+branch on which ability it is, and that is the property JQ-288 exists to
+establish — JQ-185's roster has to fit through here without widening it.
 """
 
 from __future__ import annotations
 
-from app.sim.abilities import Ability
+from app.sim.casting import ability_ready
 from app.sim.context import TickContext
-from app.sim.effects import ORIGIN_SELF
 from app.sim.events import ability_cast
 from app.sim.phases.targeting import acquire_target, is_alive
 from app.sim.resolution import Cast, apply_effects, swing_of
-from app.sim.world import Unit, World, unit_ref
-
-
-def _cast_for(world: World, ctx: TickContext, unit: Unit, ability: Ability) -> Cast | None:
-    if ability.origin == ORIGIN_SELF:
-        return Cast(
-            world=world, ctx=ctx, side=unit.side, origin=unit.position, caster=unit, follows_caster=True
-        )
-
-    target = acquire_target(world, unit, reach=ability.range)
-    if target is None:
-        return None
-
-    return Cast(world=world, ctx=ctx, side=unit.side, origin=target.position, caster=unit, target=target)
+from app.sim.world import World, unit_ref
 
 
 class AbilitiesPhase:
@@ -40,19 +33,36 @@ class AbilitiesPhase:
 
     def run(self, world: World, ctx: TickContext) -> None:
         # A snapshot of the list: an ability that refills an ally's gauge can
-        # let that ally cast on this same tick, which is deliberate, but the
-        # list of who *gets a turn* is fixed before any of it runs.
+        # make that ally's ability available on this same tick, which is
+        # deliberate, but the list of who gets asked is fixed before any of it
+        # runs.
         for unit in list(world.units):
             if not is_alive(unit) or unit.ability_id is None:
                 continue
 
             ability = ctx.abilities.get(unit.ability_id)
-            if ability is None or unit.energy < ability.energy_cost:
+            if ability is None or not ability_ready(unit, ability):
                 continue
 
-            cast = _cast_for(world, ctx, unit, ability)
-            if cast is None:
+            # The phase does the search and the policy does the judging.
+            # A behaviour layer that wants a *different* target overrides the
+            # policy and ignores this one; the default is glad of it.
+            nearest = acquire_target(world, unit, reach=ability.range)
+            aimed = ctx.cast_policy.aim(world, unit, ability, nearest)
+            if aimed is None:
+                # Held, not wasted: the gauge stays full and the unit is asked
+                # again next tick.
                 continue
+
+            cast = Cast(
+                world=world,
+                ctx=ctx,
+                side=unit.side,
+                origin=aimed.origin,
+                caster=unit,
+                target=aimed.target,
+                follows_caster=aimed.follows_caster,
+            )
 
             unit.energy = 0.0
             outcome = apply_effects(ability.effects, cast)

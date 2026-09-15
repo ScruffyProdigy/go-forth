@@ -10,13 +10,21 @@ from __future__ import annotations
 import pytest
 
 from app.sim.abilities import Ability, build_ability_catalog
-from app.sim.effects import ORIGIN_SELF, AreaDamage, DamageProfile, EnergyRefill
+from app.sim.casting import AimedCast, ability_ready
+from app.sim.config import DEFAULT_SIM_CONFIG
+from app.sim.effects import ORIGIN_SELF, AreaDamage, DamageProfile, DashToTarget, EnergyRefill
 from app.sim.energy import DAMAGE_DEALT
 from app.sim.schools import SchoolConfig
 from app.sim.types import Vec2
 from app.sim.units import UnitType, build_unit_type_catalog
 from app.sim.world import Unit, is_resummonable, survives_round_end
 from tests.sim.fixtures_abilities import MID, context, field, phase, unit
+
+#: Every school trickles on a clock (§4.4), so a gauge gains this much each
+#: tick before anything the unit actually did is counted. Spelled out rather
+#: than folded into the expected totals below, which would make them read like
+#: magic numbers.
+TRICKLE_PER_TICK = 4 / DEFAULT_SIM_CONFIG.tick_rate
 
 BLAST = Ability(
     id="blast",
@@ -50,7 +58,7 @@ def test_a_fire_gauge_fills_off_damage_dealt() -> None:
 
     phase("energy").run(world, ctx)
 
-    assert caster.energy == 11
+    assert caster.energy == 11 + TRICKLE_PER_TICK
 
 
 def test_an_artifice_gauge_fills_off_the_clock_with_nothing_happening() -> None:
@@ -64,17 +72,19 @@ def test_an_artifice_gauge_fills_off_the_clock_with_nothing_happening() -> None:
 
 
 def test_the_gauge_is_scaled_by_the_schools_energy_gain_multiplier() -> None:
+    # A deep gauge, so the cap at full does not hide what the scaling did.
+    deep = Ability(id="blast", energy_cost=500, effects=BLAST.effects)
     caster = unit("caster", "north", MID, ability_id="blast")
     world = field(caster)
     ctx = context(
-        abilities=[BLAST],
+        abilities=[deep],
         school_configs=[SchoolConfig(id="fire", multipliers={"energy_gain_multiplier": 3.0})],
     )
     caster.energy_meters[DAMAGE_DEALT] = 10
 
     phase("energy").run(world, ctx)
 
-    assert caster.energy == 30
+    assert caster.energy == (10 + TRICKLE_PER_TICK) * 3
 
 
 def test_the_meters_are_drained_so_a_tick_is_never_paid_for_twice() -> None:
@@ -85,10 +95,125 @@ def test_the_meters_are_drained_so_a_tick_is_never_paid_for_twice() -> None:
     phase("energy").run(world, ctx)
     phase("energy").run(world, ctx)
 
-    assert caster.energy == 10
+    # The 10 damage is paid once; the second tick adds only its trickle.
+    assert caster.energy == pytest.approx(10 + 2 * TRICKLE_PER_TICK)
 
 
 # --- the auto-cast ---------------------------------------------------------
+
+
+def test_a_full_gauge_makes_the_ability_available_rather_than_firing_it() -> None:
+    """The mechanic, stated: filling the bar arms the ability. Whether this
+    tick is the moment to spend it is a decision, and it belongs to the
+    behaviour layer — see `casting.py`."""
+    caster = unit("caster", "north", MID, ability_id="blast")
+
+    assert not ability_ready(caster, BLAST)
+
+    caster.energy = BLAST.energy_cost
+
+    assert ability_ready(caster, BLAST)
+
+
+def test_a_gauge_that_reaches_full_stops_filling() -> None:
+    """A held ability must not bank toward the next one, or holding would be
+    quietly rewarded with a faster second cast."""
+    caster = unit("caster", "north", MID, ability_id="blast")
+    world, ctx = field(caster), context(abilities=[BLAST])
+    caster.energy_meters[DAMAGE_DEALT] = 500
+
+    phase("energy").run(world, ctx)
+
+    assert caster.energy == BLAST.energy_cost
+
+
+def test_a_ready_ability_is_held_while_the_policy_declines() -> None:
+    """Declining is "not yet", not a refusal: the gauge stays full and the
+    unit is asked again on the next tick."""
+
+    class NeverNow:
+        name = "neverNow"
+
+        def aim(self, world, unit, ability, target):  # type: ignore[no-untyped-def]
+            return None
+
+    caster = unit("caster", "north", MID, ability_id="blast")
+    victim = unit("victim", "south", Vec2(187.5, 300))
+    world = field(caster, victim)
+    ctx = context(abilities=[BLAST], cast_policy=NeverNow())
+    caster.energy = 20
+
+    phase("abilities").run(world, ctx)
+    phase("abilities").run(world, ctx)
+
+    assert victim.hp == 100
+    assert caster.energy == 20
+
+
+def test_the_policy_decides_what_a_ready_ability_is_aimed_at() -> None:
+    """The seam JQ-296/328 plugs into: the phase executes, the policy judges."""
+
+    class AlwaysTheFarOne:
+        name = "alwaysTheFarOne"
+
+        def aim(self, world, unit, ability, target):  # type: ignore[no-untyped-def]
+            far = max(
+                (u for u in world.units if u.side != unit.side),
+                key=lambda u: u.position.y,
+            )
+            return AimedCast(origin=far.position, target=far)
+
+    caster = unit("caster", "north", MID, ability_id="blast")
+    near = unit("near", "south", Vec2(187.5, 300))
+    far = unit("far", "south", Vec2(187.5, 500))
+    world = field(caster, near, far)
+    ctx = context(abilities=[BLAST], cast_policy=AlwaysTheFarOne())
+    caster.energy = 20
+
+    phase("abilities").run(world, ctx)
+
+    assert (near.hp, far.hp) == (100, 93)
+
+
+def test_the_default_policy_holds_a_dash_against_something_already_in_reach() -> None:
+    """A dash is for closing a gap. Spent on a target the unit could already
+    hit it buys nothing, and the gauge could have carried it to the next
+    fight — the cheap melee summon walking into your face is exactly the
+    thing not to spend it on."""
+    lunge = Ability(
+        id="lunge",
+        energy_cost=20,
+        range=80,
+        effects=(DashToTarget(max_distance=60), AreaDamage(radius=10, damage=DamageProfile(amount=7))),
+    )
+    hunter = unit("hunter", "north", MID, ability_id="lunge")
+    prey = unit("prey", "south", Vec2(187.5, MID.y + 10))
+    world, ctx = field(hunter, prey), context(abilities=[lunge])
+    hunter.energy = 20
+
+    phase("abilities").run(world, ctx)
+
+    assert hunter.position == MID
+    assert prey.hp == 100
+    assert hunter.energy == 20
+
+
+def test_the_default_policy_spends_a_dash_on_something_out_of_reach() -> None:
+    lunge = Ability(
+        id="lunge",
+        energy_cost=20,
+        range=80,
+        effects=(DashToTarget(max_distance=60), AreaDamage(radius=10, damage=DamageProfile(amount=7))),
+    )
+    hunter = unit("hunter", "north", MID, ability_id="lunge")
+    prey = unit("prey", "south", Vec2(187.5, MID.y + 50))
+    world, ctx = field(hunter, prey), context(abilities=[lunge])
+    hunter.energy = 20
+
+    phase("abilities").run(world, ctx)
+
+    assert hunter.position != MID
+    assert prey.hp == 93
 
 
 def test_a_full_gauge_casts_and_the_gauge_resets() -> None:

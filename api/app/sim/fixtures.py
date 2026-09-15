@@ -157,6 +157,11 @@ PLACEHOLDER_ABILITIES: list[Ability] = [
     ),
     Ability(
         id="pounce",
+        # Reaches as far as it dashes. A dash ability left on the unit's own
+        # weapon range can only ever acquire something already in reach, so
+        # the dash has nothing to close and the card never fires — which is
+        # exactly what happened before this line existed.
+        range=70,
         # `stop_short` is deliberately inside the hound's own 16 range, and
         # JQ-287 confirmed it should stay that way. Their standoff rule — a
         # unit never *walks* into contact, so a front line holds instead of
@@ -182,6 +187,8 @@ PLACEHOLDER_ABILITIES: list[Ability] = [
     Ability(
         id="ram-charge",
         energy_cost=45,
+        #: As above: the charge reaches as far as it travels.
+        range=90,
         effects=(
             DashToTarget(max_distance=90, stop_short=10),
             Knockback(radius=30, distance=25),

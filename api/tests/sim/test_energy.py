@@ -16,26 +16,66 @@ from app.sim.energy import (
     DAMAGE_TAKEN,
     ELAPSED_SECONDS,
     ENERGY_METERS,
+    EnergyRule,
+    EnergySource,
     energy_gain,
     energy_multiplier_for,
     energy_rule_for,
     new_energy_meters,
     resolve_school_energy_rules,
 )
-from app.sim.schools import SchoolConfig, resolve_school_multipliers
+from app.sim.schools import SCHOOLS, SchoolConfig, resolve_school_multipliers
+
+
+def rates(rule: EnergyRule) -> dict[str, float]:
+    """A rule as `{meter: rate}`, which is easier to assert against."""
+    return {source.meter: source.energy_per_unit for source in rule}
 
 
 def rules(*configs: SchoolConfig) -> dict[str, dict[str, float]]:
     table = resolve_school_energy_rules(list(configs))
-    return {school: dict(rule) for school, rule in table.items()}
+    return {school: rates(rule) for school, rule in table.items()}
 
 
-def test_fire_charges_off_damage_dealt() -> None:
-    assert rules()["fire"] == {DAMAGE_DEALT: 1.0}
+def test_fire_charges_off_damage_dealt_over_the_common_clock() -> None:
+    assert rules()["fire"] == {ELAPSED_SECONDS: 4.0, DAMAGE_DEALT: 1.0}
 
 
-def test_artifice_charges_off_a_timer_so_an_emplacement_still_comes_online() -> None:
+def test_stone_charges_off_damage_taken() -> None:
+    """§4.4 names it, and it cost a row rather than a branch."""
+    assert rules()["stone"] == {ELAPSED_SECONDS: 4.0, DAMAGE_TAKEN: 1.0}
+
+
+def test_necromancy_charges_off_ally_deaths() -> None:
+    assert rules()["necromancy"] == {ELAPSED_SECONDS: 4.0, ALLY_DEFEATED: 25.0}
+
+
+def test_artifice_charges_on_a_faster_clock_and_nothing_else() -> None:
+    """The clock is Artifice's character (§4.4), not a floor under something
+    else — which is what lets an emplacement that never swings come online."""
     assert rules()["artifice"] == {ELAPSED_SECONDS: 10.0}
+
+
+def test_every_school_trickles_so_no_unit_is_ever_wholly_inert() -> None:
+    table = resolve_school_energy_rules([])
+
+    for school in SCHOOLS:
+        assert rates(table[school]).get(ELAPSED_SECONDS, 0) > 0
+
+
+def test_a_rule_is_an_ordered_tuple_of_named_sources() -> None:
+    """Not a mapping keyed by meter. Ordered, so the sum is reproducible
+    without a separate list of meter names to walk; and a school could hold
+    two sources on one meter, which a mapping cannot express."""
+    rule = resolve_school_energy_rules([])["fire"]
+
+    assert isinstance(rule, tuple)
+    assert all(isinstance(source, EnergySource) for source in rule)
+
+
+def test_a_source_rejects_a_meter_the_sim_does_not_measure() -> None:
+    with pytest.raises(ValueError, match="is not a meter"):
+        EnergySource("vibes", 1)
 
 
 def test_a_school_config_overrides_its_default_rule() -> None:
@@ -64,19 +104,13 @@ def test_an_unknown_meter_is_rejected_rather_than_silently_ignored() -> None:
 
 
 def test_a_negative_rate_is_rejected() -> None:
-    with pytest.raises(ValueError, match="non-negative"):
+    with pytest.raises(ValueError, match="must not be negative"):
         resolve_school_energy_rules([SchoolConfig(id="fire", energy_rule={DAMAGE_DEALT: -1})])
 
 
 def test_a_school_configured_twice_is_rejected() -> None:
     with pytest.raises(ValueError, match="configured twice"):
         resolve_school_energy_rules([SchoolConfig(id="fire"), SchoolConfig(id="fire")])
-
-
-def test_every_school_has_a_rule_so_no_card_is_silently_inert() -> None:
-    table = resolve_school_energy_rules([])
-
-    assert all(table[school] for school in table)
 
 
 def test_a_dual_card_takes_the_best_rate_per_meter_across_its_schools() -> None:
@@ -89,7 +123,7 @@ def test_a_dual_card_takes_the_best_rate_per_meter_across_its_schools() -> None:
 
     merged = energy_rule_for(("fire", "artifice"), table)
 
-    assert dict(merged) == {DAMAGE_DEALT: 1.0, ELAPSED_SECONDS: 10.0}
+    assert rates(merged) == {DAMAGE_DEALT: 1.0, ELAPSED_SECONDS: 10.0}
 
 
 def test_a_dual_card_is_not_charged_twice_for_a_meter_both_schools_share() -> None:
@@ -100,7 +134,7 @@ def test_a_dual_card_is_not_charged_twice_for_a_meter_both_schools_share() -> No
         ]
     )
 
-    assert dict(energy_rule_for(("fire", "stone"), table)) == {DAMAGE_DEALT: 1.0}
+    assert rates(energy_rule_for(("fire", "stone"), table)) == {DAMAGE_DEALT: 1.0}
 
 
 def test_gain_is_scaled_by_the_schools_energy_gain_multiplier() -> None:
