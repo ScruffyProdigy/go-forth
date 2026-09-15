@@ -11,12 +11,16 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from app.sim.abilities import EMPTY_ABILITY_CATALOG, AbilityCatalog
+from app.sim.casting import DEFAULT_CAST_POLICY, CastPolicy
 from app.sim.config import SimConfig, seconds_per_tick, validate_sim_config
+from app.sim.energy import SchoolEnergyRuleTable, resolve_school_energy_rules
 from app.sim.events import EventEmitter, create_event_emitter
 from app.sim.map import MapConfig
 from app.sim.resonance import SideResonanceCounts
 from app.sim.rng import Rng
 from app.sim.schools import SideMultiplierTable
+from app.sim.spells import EMPTY_SPELL_CATALOG, SpellCatalog
 from app.sim.units import UnitType, UnitTypeCatalog, build_unit_type_catalog
 
 
@@ -35,6 +39,17 @@ class TickContext:
     #: magnitude reads. Resonance is applied by the effects that care, never
     #: blanket across the field.
     resonance: SideResonanceCounts
+    #: How each school fills a gauge. Same lifecycle as the multipliers, and
+    #: data for the same reason: a new school is a row, not a new branch.
+    energy_rules: SchoolEnergyRuleTable
+    #: The battle's cards' abilities, by id. `UnitType` names one; this resolves it.
+    abilities: AbilityCatalog
+    #: The player spells that could land, by id.
+    spells: SpellCatalog
+    #: Who decides when a unit spends a ready ability. A full gauge only makes
+    #: the ability available; this says whether now is the moment. JQ-296/328
+    #: replaces the default with something that weighs what else is coming.
+    cast_policy: CastPolicy
     #: The one emitter every system writes events through.
     emitter: EventEmitter
     rng: Rng
@@ -56,6 +71,10 @@ def create_tick_context(
     resonance: SideResonanceCounts | None = None,
     unit_types: UnitTypeCatalog | Sequence[UnitType] = (),
     emitter: EventEmitter | None = None,
+    energy_rules: SchoolEnergyRuleTable | None = None,
+    abilities: AbilityCatalog | None = None,
+    spells: SpellCatalog | None = None,
+    cast_policy: CastPolicy | None = None,
 ) -> TickContext:
     validate_sim_config(config)
 
@@ -66,6 +85,10 @@ def create_tick_context(
         map_config=map_config,
         multipliers=multipliers,
         resonance=resonance if resonance is not None else MappingProxyType({}),
+        energy_rules=energy_rules if energy_rules is not None else resolve_school_energy_rules([]),
+        abilities=abilities if abilities is not None else EMPTY_ABILITY_CATALOG,
+        spells=spells if spells is not None else EMPTY_SPELL_CATALOG,
+        cast_policy=cast_policy if cast_policy is not None else DEFAULT_CAST_POLICY,
         emitter=emitter if emitter is not None else create_event_emitter(),
         rng=rng,
         unit_types=catalog,

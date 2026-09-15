@@ -2,8 +2,10 @@
 
 Damage resolves in list order rather than simultaneously. That is a real design
 choice — it means a unit killed this tick does not swing back — and it is
-deterministic because unit order is deterministic. Abilities and energy are slice
-C (JQ-288); this is the plain auto-attack underneath them.
+deterministic because unit order is deterministic. This is the plain
+auto-attack underneath the abilities; what it adds for slice C (JQ-288) is the
+energy meters a swing moves, so that Fire's "charge off damage dealt" rule is
+true of a weapon swing and not only of an ability's blast.
 
 Bases are attacked here too, and only by troops under Push enemy base. The filter
 is applied here rather than trusted to whoever is choosing targets: a unit under
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 from app.sim.config import to_ticks
 from app.sim.context import TickContext
+from app.sim.energy import DAMAGE_DEALT, DAMAGE_TAKEN
 from app.sim.events import base_hit, unit_defeated
 from app.sim.geometry import distance
 from app.sim.orders import may_attack_base
@@ -37,6 +40,7 @@ def _swing_at_the_base(world: World, unit: Unit, ctx: TickContext) -> bool:
 
     dealt = min(unit.damage, base.hp)
     base.hp -= dealt
+    unit.energy_meters[DAMAGE_DEALT] += dealt
     ctx.emitter.emit(
         **base_hit(
             tick=world.tick,
@@ -71,6 +75,9 @@ class CombatPhase:
                 continue
 
             target.hp -= unit.damage
+            # The meters the energy phase converts next tick.
+            unit.energy_meters[DAMAGE_DEALT] += unit.damage
+            target.energy_meters[DAMAGE_TAKEN] += unit.damage
             unit.cooldown_remaining = to_ticks(unit.attack_cooldown_seconds, ctx.config)
 
             if target.hp <= 0:

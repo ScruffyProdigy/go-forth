@@ -21,6 +21,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from app.sim.abilities import Ability
+from app.sim.energy import EnergyMeter, new_energy_meters
 from app.sim.formation import (
     Formation,
     deployment_anchor,
@@ -33,6 +35,8 @@ from app.sim.map import MapConfig, validate_map_config
 from app.sim.orders import Order, validate_order
 from app.sim.rng import Rng
 from app.sim.schools import School
+from app.sim.spells import Spell, SpellInjection, build_spell_catalog, schedule_injections
+from app.sim.statuses import BurnStatus, GroundHazard
 from app.sim.types import SIDES, Side, TroopId, UnitId, UnitRef, Vec2
 from app.sim.units import UnitKind, UnitType, UnitTypeCatalog, build_unit_type_catalog
 
@@ -75,6 +79,14 @@ class BattleSetup:
     #: Base HP carried in from earlier rounds. A side left out opens at full.
     #: Damage persists across a match: nothing here ever refills a base (JQ-187).
     base_hp: dict[Side, float] = field(default_factory=dict)
+    #: Every ability the battle's cards can fire, by value. `UnitType` names
+    #: one by id; this is where the id is resolved.
+    abilities: list[Ability] = field(default_factory=list)
+    #: Every player spell that could land, whether or not one does.
+    spells: list[Spell] = field(default_factory=list)
+    #: The casts the match layer has already accepted: `(tick, spellId,
+    #: location)` plus the side that cast. Nothing here carries damage.
+    spell_injections: list[SpellInjection] = field(default_factory=list)
 
 
 @dataclass
@@ -110,6 +122,20 @@ class Unit:
     #: Ticks still to wait before this mage can resummon — a separate clock from
     #: `cooldown_remaining`, so a mage rebuilds and casts independently (§4.5).
     resummon_remaining: int = 0
+
+    #: The ability a full gauge fires, by id. None never charges (§4.4).
+    ability_id: str | None = None
+    #: The gauge. At its ability's cost it casts and this resets to zero.
+    energy: float = 0.0
+    #: What this unit has done and had done to it since the energy phase last
+    #: drained the gauge. Always walked through `ENERGY_METERS`, never by
+    #: iterating this dict: see the hash-ordering note in `rng.py`.
+    energy_meters: dict[EnergyMeter, float] = field(default_factory=new_energy_meters)
+    #: At most one burn at a time; a second application refreshes this one.
+    burn: BurnStatus | None = None
+    emplacement: bool = False
+    blocks_movement: bool = False
+    block_radius: float = 0.0
 
 
 @dataclass
@@ -176,6 +202,14 @@ class World:
     zone_score: dict[Side, float]
     #: Who currently holds each zone, by zone id. None while empty or contested.
     zone_holders: dict[str, Side | None]
+    #: Burning ground and anything else an effect leaves lying on the map.
+    hazards: list[GroundHazard] = field(default_factory=list)
+    #: Injected spells still to fire, in resolution order. The spells phase
+    #: takes what is due off the front; what is left is what is still coming.
+    pending_spells: list[SpellInjection] = field(default_factory=list)
+    #: Hazard ids are minted from a counter rather than from the RNG, so
+    #: adding a hazard cannot shift every later random draw in the battle.
+    next_hazard_id: int = 0
 
 
 def unit_ref(unit: Unit) -> UnitRef:
@@ -186,6 +220,31 @@ def unit_ref(unit: Unit) -> UnitRef:
 def is_alive(unit: Unit) -> bool:
     """A unit brought to zero stops acting at once, and is swept at end of tick."""
     return unit.hp > 0
+
+
+def survives_round_end(unit: Unit, world: World) -> bool:
+    """Does this unit persist into the next round of the match?
+
+    JQ-288: an emplacement "survives round end while its mage lives". The
+    condition is decided here, in the sim, because only the sim knows whether
+    the troop still has a mage — but *applying* it across rounds is JQ-187's
+    reset contract, so this is a question the match layer asks rather than
+    something the tick loop acts on.
+    """
+    if not unit.emplacement:
+        return False
+
+    troop = next((t for t in world.troops if t.id == unit.troop_id), None)
+    if troop is None:
+        return False
+
+    living = {u.id for u in world.units if u.hp > 0}
+    return any(mage_id in living for mage_id in troop.mage_ids)
+
+
+def is_resummonable(unit: Unit) -> bool:
+    """Whether slice D (JQ-289) may bring this unit back. An emplacement is not."""
+    return not unit.emplacement
 
 
 def _expand(entries: Sequence[RosterEntry], catalog: UnitTypeCatalog, kind: UnitKind) -> list[UnitType]:
@@ -254,6 +313,13 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
     _assert_one_army_per_side(battle_state.armies)
 
     catalog = build_unit_type_catalog(battle_state.unit_types)
+    ability_ids = {ability.id for ability in battle_state.abilities}
+    for unit_type in battle_state.unit_types:
+        if unit_type.ability_id is not None and unit_type.ability_id not in ability_ids:
+            raise ValueError(
+                f"unit type {unit_type.id} names ability {unit_type.ability_id}, "
+                "which is not in the battle's ability list"
+            )
     units: list[Unit] = []
     troops: list[Troop] = []
     seen_ids: set[UnitId] = set()
@@ -305,6 +371,10 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
                         destination=station(order, army.side, offset, config),
                         support_capacity=unit_type.support_capacity,
                         resummon_pace_seconds=unit_type.resummon_pace_seconds,
+                        ability_id=unit_type.ability_id,
+                        emplacement=unit_type.emplacement,
+                        blocks_movement=unit_type.blocks_movement,
+                        block_radius=unit_type.block_radius,
                     )
                 )
 
@@ -331,6 +401,9 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
         },
         zone_score={"north": 0, "south": 0},
         zone_holders={zone.id: None for zone in config.zones},
+        pending_spells=schedule_injections(
+            battle_state.spell_injections, build_spell_catalog(battle_state.spells)
+        ),
     )
 
 

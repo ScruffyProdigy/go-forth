@@ -16,8 +16,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from app.sim.abilities import build_ability_catalog
 from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig, max_ticks, validate_sim_config
 from app.sim.context import TickContext, create_tick_context
+from app.sim.energy import SchoolEnergyRuleTable, resolve_school_energy_rules
 from app.sim.events import BattleEvent
 from app.sim.map import MapConfig
 from app.sim.phases import TICK_PHASES
@@ -28,6 +30,7 @@ from app.sim.schools import (
     SideMultiplierTable,
     resolve_side_multipliers,
 )
+from app.sim.spells import build_spell_catalog
 from app.sim.types import SIDES, Side
 from app.sim.units import build_unit_type_catalog
 from app.sim.world import BattleSetup, World, create_world
@@ -67,6 +70,9 @@ class BattleResult:
     #: can carry the same numbers into the next round rather than re-deriving
     #: them from whatever that round happens to field.
     resonance: SideResonanceCounts
+    #: The energy rule each school charged under. Same reason as `multipliers`:
+    #: a consumer replaying the battle should not have to re-derive it.
+    energy_rules: SchoolEnergyRuleTable
     #: Whose base fell, on a `baseDestroyed` outcome. That side loses the match
     #: outright — not the round. None on every other outcome.
     destroyed_base: Side | None = None
@@ -116,6 +122,8 @@ def run_battle(
     validate_sim_config(config)
 
     rng = create_rng(seed)
+    configs = list(school_configs)
+    energy_rules = resolve_school_energy_rules(configs)
     world = create_world(map_config, battle_state, rng)
 
     # The mages a side selects for the round establish its resonance for the
@@ -125,7 +133,7 @@ def run_battle(
     # reason. Nothing between `create_world` and here touches the rng, so the
     # battle's draws are unaffected by the order.
     established = count_resonance(world)
-    multipliers = resolve_side_multipliers(list(school_configs), established)
+    multipliers = resolve_side_multipliers(configs, established)
 
     ctx = create_tick_context(
         config=config,
@@ -134,6 +142,9 @@ def run_battle(
         rng=rng,
         resonance=established,
         unit_types=build_unit_type_catalog(battle_state.unit_types),
+        energy_rules=energy_rules,
+        abilities=build_ability_catalog(battle_state.abilities),
+        spells=build_spell_catalog(battle_state.spells),
     )
 
     ticks: list[BattleTick] = [BattleTick(tick=0, state=copy.deepcopy(world), events=())]
@@ -169,4 +180,5 @@ def run_battle(
         multipliers=multipliers,
         resonance=established,
         destroyed_base=destroyed_base,
+        energy_rules=energy_rules,
     )

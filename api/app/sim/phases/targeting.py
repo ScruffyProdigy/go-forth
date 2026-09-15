@@ -13,8 +13,13 @@ from app.sim.world import Unit, World, is_alive
 __all__ = ["acquire_target", "is_alive"]
 
 
-def acquire_target(world: World, unit: Unit) -> Unit | None:
-    """The nearest living enemy within the unit's weapon range, or None."""
+def acquire_target(world: World, unit: Unit, reach: float | None = None) -> Unit | None:
+    """The nearest living enemy within reach, or None.
+
+    Reach defaults to the unit's weapon range. An ability passes its own, so a
+    card can reach further than it swings without a second search written for it.
+    """
+    limit = unit.range if reach is None else reach
     best: Unit | None = None
     best_gap = float("inf")
 
@@ -23,7 +28,7 @@ def acquire_target(world: World, unit: Unit) -> Unit | None:
             continue
 
         gap = distance(unit.position, candidate.position)
-        if gap > unit.range:
+        if gap > limit:
             continue
 
         if gap < best_gap or (gap == best_gap and best is not None and candidate.id < best.id):

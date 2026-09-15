@@ -11,8 +11,8 @@ occurred", so every event carries zone-score and base-HP deltas and the units it
 removed — zeroed when it moved none.
 
 `unitDefeated` shipped with slice A; `zoneFlip` and `baseHit` with slice B;
-`resummon` and `troopDissolve` with slice D. Ability casts are JQ-288 — each
-slice adding its own member to `BattleEventType`.
+`abilityCast` and `spell` with slice C; `resummon` and `troopDissolve` with
+slice D — each slice adding its own member to `BattleEventType`.
 
 A `zoneFlip`'s swing is the one that needs saying out loud: it carries the change
 in **per-tick income** the flip caused — the new holder gains the zone's rate, the
@@ -30,7 +30,15 @@ from typing import Any, Literal
 
 from app.sim.types import Side, UnitRef, Vec2
 
-BattleEventType = Literal["unitDefeated", "zoneFlip", "baseHit", "resummon", "troopDissolve"]
+BattleEventType = Literal[
+    "unitDefeated",
+    "zoneFlip",
+    "baseHit",
+    "abilityCast",
+    "spell",
+    "resummon",
+    "troopDissolve",
+]
 
 _NO_DELTA: Mapping[Side, float] = MappingProxyType({"north": 0, "south": 0})
 
@@ -63,6 +71,10 @@ class BattleEvent:
     #: flip that does not say which zone flipped is not worth reading, and the
     #: renderer's chips are indexed by zone id (JQ-294).
     zone_id: str | None = None
+    #: What fired, when the type alone does not say — the ability's id, the
+    #: spell's. A highlight reel needs to know *which* ability went off, and
+    #: `actors.source` names the caster rather than the card.
+    label: str | None = None
 
 
 class EventEmitter:
@@ -87,6 +99,7 @@ class EventEmitter:
         actors: EventActors | None = None,
         swing: EventSwing | None = None,
         zone_id: str | None = None,
+        label: str | None = None,
     ) -> BattleEvent:
         """Records an event, filling in the rest of the envelope."""
         event = BattleEvent(
@@ -96,6 +109,7 @@ class EventEmitter:
             actors=actors if actors is not None else EventActors(),
             swing=swing if swing is not None else EventSwing(),
             zone_id=zone_id,
+            label=label,
         )
         self._buffer.append(event)
         return event
@@ -207,4 +221,45 @@ def base_hit(
         "position": position,
         "actors": EventActors(source=attacker),
         "swing": EventSwing(base_hp=_delta(None, owner, damage)),
+    }
+
+
+def ability_cast(
+    *,
+    tick: int,
+    position: Vec2,
+    ability_id: str,
+    caster: UnitRef,
+    targets: tuple[UnitRef, ...],
+    swing: EventSwing,
+) -> dict[str, Any]:
+    """A unit's gauge came up full and it cast (§4.4).
+
+    The swing is whatever the effects moved, computed by the resolver rather
+    than by the phase — an ability that killed three units reports three, an
+    ability that only repositioned its caster reports nothing.
+    """
+    return {
+        "type": "abilityCast",
+        "tick": tick,
+        "position": position,
+        "actors": EventActors(source=caster, targets=targets),
+        "swing": swing,
+        "label": ability_id,
+    }
+
+
+def spell_cast(*, tick: int, position: Vec2, spell_id: str, swing: EventSwing) -> dict[str, Any]:
+    """A player spell landed (§3.5).
+
+    No source: a spell is fired by a player, not by a unit on the field, and
+    inventing a caster to fill the slot would put a lie in the stream.
+    """
+    return {
+        "type": "spell",
+        "tick": tick,
+        "position": position,
+        "actors": EventActors(),
+        "swing": swing,
+        "label": spell_id,
     }
