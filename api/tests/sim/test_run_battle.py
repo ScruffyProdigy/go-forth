@@ -9,7 +9,12 @@ import pytest
 from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig
 from app.sim.map import THREE_ZONE_MAP, MapConfig
 from app.sim.run_battle import run_battle
-from app.sim.schools import IDENTITY_MULTIPLIERS, SchoolConfig
+from app.sim.schools import (
+    DEFAULT_RESONANCE_CURVE,
+    IDENTITY_MULTIPLIERS,
+    SchoolConfig,
+    resonance_step,
+)
 from app.sim.types import Side, Span
 from app.sim.world import ArmySetup, BattleSetup, RosterEntry, TroopSetup
 from tests.sim.fixtures_units import ADEPT, WISP
@@ -104,7 +109,10 @@ def test_files_each_event_under_its_tick_as_well_as_in_the_stream() -> None:
 def test_resolves_the_school_multipliers_once_and_hands_them_back() -> None:
     result = run_battle(NARROW_MAP, [], HUNTER_VS_WISP, 1)
 
-    assert result.multipliers["fire"] == IDENTITY_MULTIPLIERS
+    # One Fire mage a side, so Fire sits on the curve's weakest step; a school
+    # neither player fielded stays at identity.
+    assert result.multipliers["north"]["fire"] == resonance_step(DEFAULT_RESONANCE_CURVE, 1)
+    assert result.multipliers["north"]["stone"] == IDENTITY_MULTIPLIERS
 
 
 def test_carries_a_school_config_override_through_to_the_battle() -> None:
@@ -115,7 +123,7 @@ def test_carries_a_school_config_override_through_to_the_battle() -> None:
         1,
     )
 
-    assert result.multipliers["fire"].energy_gain_multiplier == 2
+    assert result.multipliers["north"]["fire"].energy_gain_multiplier == 2
 
 
 def test_defaults_to_the_shipped_sim_config() -> None:

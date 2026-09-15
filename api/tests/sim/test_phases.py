@@ -8,7 +8,7 @@ from app.sim.map import THREE_ZONE_MAP
 from app.sim.phase import TickPhase
 from app.sim.phases import TICK_PHASES
 from app.sim.rng import create_rng
-from app.sim.schools import resolve_school_multipliers
+from app.sim.schools import resolve_side_multipliers
 from app.sim.types import SIDES, Side, Vec2
 from app.sim.world import (
     ArmySetup,
@@ -42,8 +42,9 @@ def context() -> TickContext:
     return create_tick_context(
         config=DEFAULT_SIM_CONFIG,
         map_config=THREE_ZONE_MAP,
-        multipliers=resolve_school_multipliers([]),
+        multipliers=resolve_side_multipliers([]),
         rng=create_rng(5),
+        unit_types=[ADEPT, HOUND],
     )
 
 
@@ -60,7 +61,7 @@ def phase(name: str) -> TickPhase:
 
 
 def test_the_phase_order_is_declared_in_one_place() -> None:
-    assert [p.name for p in TICK_PHASES] == ["movement", "combat", "removal"]
+    assert [p.name for p in TICK_PHASES] == ["movement", "combat", "resummon", "removal"]
 
 
 def test_combat_runs_after_movement_so_a_unit_that_closed_can_swing() -> None:

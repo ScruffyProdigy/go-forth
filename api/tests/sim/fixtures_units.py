@@ -35,3 +35,68 @@ WISP = UnitType(
     attack_cooldown_seconds=1,
     support_capacity=1,
 )
+
+#: A mage that rebuilds. Kept apart from ADEPT so the slice A tests keep running
+#: against the sim they were written for — a mage with no pace never resummons.
+KINDLER = UnitType(
+    id="kindler",
+    kind="mage",
+    schools=("fire",),
+    max_hp=60,
+    damage=10,
+    range=90,
+    speed=30,
+    attack_cooldown_seconds=1,
+    support_capacity=2,
+    resummon_pace_seconds=4,
+)
+#: A synthetic second school. v1 is a Fire mirror (§7.4), so without a card like
+#: this every resonance test would read the same school's numbers and a lookup
+#: that ignored the school entirely would pass.
+ARTIFICER = UnitType(
+    id="clockwork-artificer",
+    kind="mage",
+    schools=("artifice",),
+    max_hp=60,
+    damage=10,
+    range=90,
+    speed=30,
+    attack_cooldown_seconds=1,
+    support_capacity=2,
+    resummon_pace_seconds=4,
+)
+COG_SENTRY = UnitType(
+    id="cog-sentry",
+    kind="summon",
+    schools=("artifice",),
+    max_hp=40,
+    damage=20,
+    range=20,
+    speed=60,
+    attack_cooldown_seconds=1,
+)
+#: A dual mage: counts for both of its schools (§4.1), and rebuilds on whichever
+#: of them is stronger.
+MACHINIST = UnitType(
+    id="ember-machinist",
+    kind="mage",
+    schools=("fire", "artifice"),
+    max_hp=60,
+    damage=10,
+    range=90,
+    speed=30,
+    attack_cooldown_seconds=1,
+    support_capacity=2,
+    resummon_pace_seconds=4,
+)
+#: A dual summon: carries both stat axes, each fed by its own school (§4.11).
+FURNACE_GOLEM = UnitType(
+    id="furnace-golem",
+    kind="summon",
+    schools=("fire", "artifice"),
+    max_hp=120,
+    damage=20,
+    range=40,
+    speed=30,
+    attack_cooldown_seconds=1,
+)

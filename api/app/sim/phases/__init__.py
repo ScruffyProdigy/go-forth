@@ -15,13 +15,19 @@ Phase        Slice  Sits
 `abilities`  C      before combat
 `combat`     A
 `scoring`    B      after combat
-`resummon`   D      before removal
+`resummon`   D
 `removal`    A      last
 ===========  =====  ===============
 
 `removal` stays last: a unit brought to zero must not act again, and every phase
-that wants to see the dead — the troop-bond dissolve above all — has to run
-before they are swept.
+that wants to see the dead has to run before they are swept.
+
+`resummon` sits just before it, and the gap of one tick between the two is the
+point. A summon defeated this tick becomes a dispelled slot during `removal`,
+so the earliest any mage can begin rebuilding it is the tick after — a unit
+never pops back on the same tick it fell. The troop-bond dissolve (§4.6) lives
+inside `removal` rather than in a phase of its own for the same reason: it is
+the moment a troop learns it has lost its last mage.
 """
 
 from __future__ import annotations
@@ -30,7 +36,8 @@ from app.sim.phase import TickPhase
 from app.sim.phases.combat import combat_phase
 from app.sim.phases.movement import movement_phase
 from app.sim.phases.removal import removal_phase
+from app.sim.phases.resummon import resummon_phase
 
-TICK_PHASES: tuple[TickPhase, ...] = (movement_phase, combat_phase, removal_phase)
+TICK_PHASES: tuple[TickPhase, ...] = (movement_phase, combat_phase, resummon_phase, removal_phase)
 
 __all__ = ["TICK_PHASES", "TickPhase"]

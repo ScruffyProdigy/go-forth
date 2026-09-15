@@ -73,15 +73,51 @@ class Unit:
     position: Vec2
     #: Ticks still to wait before this unit can attack again — ticks, not seconds.
     cooldown_remaining: int = 0
+    #: Mages only: how many summons this mage sustains (§4.2).
+    support_capacity: int | None = None
+    #: Mages only: seconds per resummon (§4.5). None means this mage never resummons.
+    resummon_pace_seconds: float | None = None
+    #: Ticks still to wait before this mage can resummon — a separate clock from
+    #: `cooldown_remaining`, so a mage rebuilds and casts independently (§4.5).
+    resummon_remaining: int = 0
+
+
+@dataclass
+class DispelledSlot:
+    """What a defeated summon leaves behind (§4.5).
+
+    The slot belongs to the troop, not to the summon type: two troops fielding
+    the same card never share a slot, and refilling one never moves a living
+    unit between troops.
+    """
+
+    type_id: str
 
 
 @dataclass
 class Troop:
     id: TroopId
     side: Side
-    #: Living mages. A troop whose last mage dies dissolves — slice D (§4.6).
+    #: Living mages. A troop whose last mage dies dissolves (§4.6).
     mage_ids: list[UnitId] = field(default_factory=list)
     summon_ids: list[UnitId] = field(default_factory=list)
+    #: Summons this troop has lost and may rebuild, oldest first (§4.5).
+    dispelled_slots: list[DispelledSlot] = field(default_factory=list)
+    #: Next id suffix to hand a resummoned unit. Monotonic so a rebuilt summon
+    #: never reuses the id of the one it replaces — a replay reading the event
+    #: stream would otherwise see one unit defeated twice.
+    next_unit_ordinal: int = 0
+
+
+def support_capacity_of(living_mages: Sequence[Unit]) -> int:
+    """The troop's combined support capacity: what its *living* mages sustain.
+
+    Capacity is read at resummon time rather than enforced continuously. A troop
+    that loses a mage keeps the summons already on the field and simply rebuilds
+    fewer — culling a living summon the moment its supporting mage died would
+    duplicate the troop bond (§4.6) while being harsher than it.
+    """
+    return sum(mage.support_capacity or 0 for mage in living_mages)
 
 
 @dataclass
@@ -225,6 +261,8 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
                         attack_cooldown_seconds=unit_type.attack_cooldown_seconds,
                         hp=unit_type.max_hp,
                         position=_deployment_spot(config, army.side, placed, rng),
+                        support_capacity=unit_type.support_capacity,
+                        resummon_pace_seconds=unit_type.resummon_pace_seconds,
                     )
                 )
                 placed += 1
@@ -234,6 +272,7 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
                 else:
                     troop.summon_ids.append(unit_id)
 
+            troop.next_unit_ordinal = len(mage_types) + len(summon_types)
             troops.append(troop)
 
     return World(

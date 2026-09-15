@@ -21,13 +21,15 @@ from app.sim.context import TickContext, create_tick_context
 from app.sim.events import BattleEvent
 from app.sim.map import MapConfig
 from app.sim.phases import TICK_PHASES
+from app.sim.resonance import apply_resonance, count_resonance
 from app.sim.rng import create_rng
 from app.sim.schools import (
     SchoolConfig,
-    SchoolMultiplierTable,
-    resolve_school_multipliers,
+    SideMultiplierTable,
+    resolve_side_multipliers,
 )
 from app.sim.types import SIDES
+from app.sim.units import build_unit_type_catalog
 from app.sim.world import BattleSetup, World, create_world
 
 #: Why the battle stopped. Zone-score and base-destruction endings arrive with slice B.
@@ -55,7 +57,7 @@ class BattleResult:
     #: The map the battle was fought on, so a consumer need not be handed it twice.
     map: MapConfig
     config: SimConfig
-    multipliers: SchoolMultiplierTable
+    multipliers: SideMultiplierTable
 
 
 def step_battle(world: World, ctx: TickContext) -> list[BattleEvent]:
@@ -87,9 +89,22 @@ def run_battle(
     validate_sim_config(config)
 
     rng = create_rng(seed)
-    multipliers = resolve_school_multipliers(list(school_configs))
     world = create_world(map_config, battle_state, rng)
-    ctx = create_tick_context(config=config, map_config=map_config, multipliers=multipliers, rng=rng)
+
+    # Resonance is counted off the opening world and never again (§4.11), which
+    # is why it is resolved here rather than inside a phase. Nothing between
+    # `create_world` and here touches the rng, so the battle's draws are
+    # unaffected by the order.
+    multipliers = resolve_side_multipliers(list(school_configs), count_resonance(world))
+    apply_resonance(world, multipliers)
+
+    ctx = create_tick_context(
+        config=config,
+        map_config=map_config,
+        multipliers=multipliers,
+        rng=rng,
+        unit_types=build_unit_type_catalog(battle_state.unit_types),
+    )
 
     ticks: list[BattleTick] = [BattleTick(tick=0, state=copy.deepcopy(world), events=())]
     events: list[BattleEvent] = []
