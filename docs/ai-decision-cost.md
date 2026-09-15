@@ -58,7 +58,7 @@ These came out of reading actual reports, and are recorded for JQ-313's
 playtests. **None of them is fixed here** — JQ-331 is the tool, and each of
 these belongs to the ticket that owns the behavior.
 
-### 1. `danger` is inert at the opening-demo roster (JQ-329 owns this)
+### 1. `danger` is inert at the opening-demo roster (JQ-329 owns this) — **fixed, in review**
 
 Every report shows the same thing:
 
@@ -76,7 +76,7 @@ from a skirmisher reads as perfectly safe. Recorded here because it means **any
 danger-related tuning done before JQ-329 lands is tuning a number that never
 reaches a decision**.
 
-### 2. Aggressive creatures saturate the danger weight floor
+### 2. Aggressive creatures saturate the danger weight floor — **half-fixed, in review**
 
 `cinder-hound` opens at danger 0.75; the `aggressive` trait takes 0.5 off it,
 and a single `reckless` mage takes off the remaining 0.25 and more. The weight
@@ -93,7 +93,15 @@ this, not at a bug. Pinned in
 Worth revisiting once (1) is fixed, since a danger score that actually varies may
 make the floor easier to reach than intended.
 
-### 3. `hold` and `advance` on the station tie more often than expected
+**Status.** JQ-330 measured this against its own branch: the contextual redesign
+fixes half of it. Raising reckless from 1.0 to 2.0 still moves nothing on the
+candidates the tag speaks to, because its closing delta pins the floor above
+strength 0.42. What it does fix is the *leak* — the hound keeps its standing
+danger of 0.25 instead of being fearless in every context for a whole battle. A
+better failure rather than an absent one, and both halves are now pinned as
+tests here and on JQ-330's side.
+
+### 3. `hold` and `advance` on the station tie more often than expected — **fixed, in review**
 
 With danger inert and ally support saturated, a unit already at its post often
 scores `hold` and `advance`-on-station within a rounding error of each other, and
@@ -101,6 +109,16 @@ the tie is broken by declared candidate order rather than by anything meaningful
 It is reproducible and harmless today. It is the kind of thing that becomes
 visible as jitter once units have somewhere more interesting to be, so it is
 worth a second look during JQ-329's positioning work.
+
+**Status.** Bigger than this entry guessed. JQ-329 found the cause is structural
+rather than a matter of tuning: every factor is a *rate*, so `hold` scores zero
+however well placed a unit is, while both walking to the post and walking at an
+enemy score positive — moving beat standing almost everywhere. They measured a
+unit alternating 23.0 / 24.0 / 23.0 for a hundred and seventy ticks, committing
+to a chase and abandoning it every tick. Fixed with `decide.MOVEMENT_THRESHOLD`
+plus a smooth objective gradient; reversals now under 1%. Written up in
+`CONVENTIONS.md` under "Boundaries in scoring are the same hazard as boundaries
+in geometry".
 
 ## Profile descriptions vs. visible behavior
 
@@ -129,8 +147,70 @@ JQ-329, and one genuine mismatch that is a symptom of (1) rather than a separate
 problem. Re-run this table once JQ-329 and JQ-330 land — it is the cheapest check
 that the authored descriptions still describe the thing.
 
+**Status — re-measured against JQ-329's branch while it was in review.** Both
+outstanding rows resolve, and the whole table should be regenerated here on merge:
+
+| Profile | then | now | |
+|---|---|---|---|
+| `ember-adept` (*wary*) | 48% advance→enemy | **11%**, 62% advance→station | mismatch gone |
+| `cinder-hound` (*aggressive*) | 24% attack | **40%** | still the type that fights most |
+| `ember-sprite` (*keeps reach*) | unconfirmable | **11% attack**, 1% retreat | confirmed |
+
+The wary mage used to close on enemies *more often than the aggressive hound*,
+which was the sharpest single symptom of (1). It now closes less than the hound,
+which is the ordering the descriptions claim.
+
+One caution carried over from that re-run, because it nearly went into this
+document as a fact: an earlier measurement showed the sprite retreating 5% of the
+time and that was cited as confirming "keeps its reach". It was partly an
+artifact — the gate was on useful range rather than on weapon reach, leaving a
+band where a ranged unit could already shoot and was still offered a step, so
+some of that 5% was fidgeting rather than spacing. With the gate on reach it
+falls to 1% while attacks nearly triple. **A row marked confirmed on evidence
+that is partly an artifact is worse than one marked unconfirmable.**
+
 Reproduce the table with:
 
 ```bash
 python -m app.scripts.decision_report --json --seconds 20
 ```
+
+
+## How to read these numbers, and how they were checked
+
+Two methods notes, both learned by getting something wrong first. They cost
+nothing to follow and each of them hid a real defect for a while.
+
+### A distribution without its run length is misleading
+
+The reason mix is not one number, it is a number per run length. Measured on the
+same code, `holding_station` is 73% of decisions over a full 90-second battle and
+33% over the first 20 seconds, because a short slice is mostly the approach phase
+and a full battle spends a long tail holding once the lines have met.
+
+Neither figure is wrong and the two look like different games. JQ-329 and I
+briefly thought we disagreed about the sim; we were measuring different windows.
+They settled it by truncating their own runs and reproducing my distribution
+within a few points. **So label the seed count and the simulated duration beside
+any reason distribution**, here or anywhere else it is quoted.
+
+### A render verified by eye cannot tell a formatter from a no-op
+
+The screen-provenance line — `screening_inferred for south-t0-u2` — shipped once
+as dead code. The helper existed, was correct, and was never called: a formatter
+had reflowed the line the call was meant to replace, the edit silently matched
+nothing, and the report read exactly as it had before. Every render in this
+document had been checked by looking at it, which is precisely the check that
+cannot catch a function nobody calls.
+
+It surfaced as a contradiction rather than as a failure — the rendered output
+showed no ally while the data said all 149 screens had one — and chasing that
+rather than assuming the data was wrong is what found it. The tests that now
+cover it were each confirmed to fail against the broken version before being
+kept, which is the step that separates a test from a decoration.
+
+This is the same lesson `CONVENTIONS.md` already records for scoring, from the
+other direction: a single-tick assertion cannot tell a decision from an
+oscillation, and a render verified by eye cannot tell a formatter from a no-op.
+Both were caught by looking at **output over time** rather than asserting at a
+point.
