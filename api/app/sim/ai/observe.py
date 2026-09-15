@@ -19,12 +19,15 @@ downstream has to know how the world orders its units to stay reproducible.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from app.sim.abilities import Ability, AbilityCatalog
 from app.sim.ai.capabilities import Capabilities, capabilities_of
+from app.sim.ai.intent import Commitment
 from app.sim.ai.objective import Objective, objective_for
 from app.sim.map import MapConfig
+from app.sim.types import UnitId
 from app.sim.world import Unit, World
 
 
@@ -39,12 +42,38 @@ class Observation:
     enemies: tuple[Unit, ...]
     #: Living allies excluding this unit, sorted by id.
     allies: tuple[Unit, ...]
-    #: How far this unit could move this tick. Zero for something rooted.
+    #: How far this unit could move this tick, at full speed. An intent that
+    #: walks slower scales this; see `intent.movement_scale`.
     step: float
     #: This unit's ability, resolved from the catalog, or None if it has none.
     #: Whether the gauge is full enough to spend it is read off the unit.
     ability: Ability | None
     map_config: MapConfig
+    #: `world.tick`. Bounded pursuit needs to know how long it has been chasing,
+    #: and a decision may not read a clock — see `CONVENTIONS.md` on determinism.
+    tick: int = 0
+    #: Enemies this unit has been asked to answer, sorted by id, deduplicated.
+    #:
+    #: The seam JQ-330's troop coordinator hands an assignment through. Empty
+    #: here means nobody nominated anything, which is the state every test that
+    #: is not about coordination should be in. Candidates treats a nomination as
+    #: "this enemy is worth a position of its own", and generates the same
+    #: bounded set for it that it generates for the nearest enemy — so a melee
+    #: guard and an archer given one assignment answer it with their own legal
+    #: options rather than with a shared one.
+    nominated_target_ids: tuple[UnitId, ...] = ()
+    #: The chase this unit is already running, if any. Read from `unit.ai`.
+    commitment: Commitment | None = None
+
+
+def _nominations(ids: Iterable[UnitId] | None) -> tuple[UnitId, ...]:
+    """Sorted and deduplicated, because a caller may hand us a set.
+
+    Candidate order is tie-break order, and a set iterates in hash order, which
+    Python randomizes per process. Sorting here rather than trusting the caller
+    makes the guarantee local — see `CONVENTIONS.md`.
+    """
+    return tuple(sorted(set(ids))) if ids else ()
 
 
 def observe(
@@ -53,6 +82,7 @@ def observe(
     map_config: MapConfig,
     seconds_per_tick: float,
     abilities: AbilityCatalog | None = None,
+    nominated_target_ids: Iterable[UnitId] | None = None,
 ) -> Observation:
     capabilities = capabilities_of(unit)
 
@@ -72,4 +102,7 @@ def observe(
         step=capabilities.speed * seconds_per_tick,
         ability=(abilities or {}).get(unit.ability_id) if unit.ability_id else None,
         map_config=map_config,
+        tick=world.tick,
+        nominated_target_ids=_nominations(nominated_target_ids),
+        commitment=unit.ai.commitment if unit.ai is not None else None,
     )
