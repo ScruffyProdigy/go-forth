@@ -23,6 +23,7 @@ from app.sim.ai.candidates import generate_candidates
 from app.sim.ai.capabilities import capabilities_of
 from app.sim.ai.fixtures import sample_library
 from app.sim.ai.intent import (
+    MOVING_ACTIONS,
     PURSUIT_ENDED_REASONS,
     REASONS,
     SCREENING,
@@ -445,23 +446,67 @@ def test_every_reason_emitted_is_one_of_the_published_ones() -> None:
 
 
 def test_a_unit_does_not_oscillate_between_two_positions() -> None:
-    """Sustained flip-flopping is the failure this candidate set invites.
+    """The failure this candidate set invites, staged so it can actually happen.
 
-    Two mirrored options a hair apart, re-derived from scratch every tick, will
-    alternate for ever unless something holds a choice steady. Measured over the
-    placeholder armies the rate is under one percent of decisions; this stages
-    the arrangement most likely to produce it — a unit between two identical
-    enemies — and asks for no long alternating run at all.
+    A unit at its post with an enemy beyond its reach has two moves that both
+    score positive — close on the enemy, return to the station — and `hold`,
+    which scores zero because every factor is a rate. Wherever those two moves
+    balance, a loop that re-derives everything each tick alternates between them.
+    Measured during JQ-329 at 23.0, 24.0, 23.0 for a hundred and seventy ticks,
+    committing to a chase and abandoning it on every one.
+
+    **The fixture is the whole test, and the first one was wrong.** This was
+    originally staged as a hound between two identical enemies — a plausible
+    arrangement for dithering that turned out never to dither, with or without
+    the mechanism that prevents it. It passed with `decide._worth_moving`
+    disabled, which is to say it did not test what it is named for and would not
+    have noticed the guard being deleted.
+
+    The ash-ram does. Slow enough that a stride is a small fraction of the
+    distance, and short-ranged enough that the enemy stays outside its weapon, so
+    the two pulls stay close to balanced for the whole run. Measured with the
+    guard removed: 118 reversals in 120 decisions. With it: none. That gap is
+    what makes this evidence rather than decoration, and it was found by breaking
+    the mechanism and sweeping fixtures until one noticed.
     """
-    middle = make_unit("m", HOUND, "north", HERE, destination=HERE)
-    left = make_unit("l", RAM, "south", Vec2(HERE.x - 45, HERE.y), destination=HERE)
-    right = make_unit("r", RAM, "south", Vec2(HERE.x + 45, HERE.y), destination=HERE)
-    run = play([middle, left, right], ticks=120)
+    enemy_at = Vec2(HERE.x + 100, HERE.y)
+    unit = make_unit("m", RAM, "north", HERE, destination=HERE)
+    # Stationary, so the only thing moving is the unit and the only tension is
+    # between its own two reasons to move.
+    stationary = make_unit("e", WISP, "north", enemy_at)
+    stationary.side = "south"
+    stationary.troop_id = "south-t0"
+    stationary.speed = 0.0
+
+    run = play([unit, stationary], ticks=120, orders=HOLD_EAST)
 
     choices = [(i.kind, i.target_id) for i in run.intents("m")]
     flips = sum(
         1 for i in range(2, len(choices)) if choices[i] == choices[i - 2] and choices[i] != choices[i - 1]
     )
+
+    # **The tension has to exist, and it is asserted on the candidates rather
+    # than on the choices.** A first draft checked that the unit picked more than
+    # one distinct action across the run, reasoning that otherwise "it did not
+    # alternate" is true by construction. That contradicts the fix: a unit that
+    # settles correctly picks exactly one thing forever, so the precondition
+    # failed on working code. What has to be true is that there were two moves to
+    # alternate *between* — a property of the candidate set, not of the outcome.
+    # Sampled a few units off the post rather than on it. Standing exactly on a
+    # station suppresses the walk-to-station candidate, so at the opening there
+    # is only one move and the tension has not appeared yet; it appears the
+    # moment the unit has stepped off, which is where the alternation lived.
+    stepped_off = Vec2(HERE.x + 3, HERE.y)
+    fresh = make_unit("m", RAM, "north", stepped_off, destination=HERE)
+    foe = make_unit("e", WISP, "north", enemy_at)
+    foe.side, foe.troop_id, foe.speed = "south", "south-t0", 0.0
+    opening = generate_candidates(
+        observe(make_world([fresh, foe], orders=HOLD_EAST), fresh, TWO_LANE_MAP, SECONDS_PER_TICK)
+    )
+    moves = {(c.kind, c.target_id) for c in opening if c.kind in MOVING_ACTIONS}
+    assert len(moves) > 1, f"only one move was ever on offer ({moves}); nothing to alternate between"
+
+    assert len(choices) > 2, "too few decisions for a reversal to be expressible"
 
     assert flips <= len(choices) // 10, f"{flips} reversals in {len(choices)} decisions"
 
