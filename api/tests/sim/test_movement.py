@@ -7,7 +7,8 @@ from app.sim.context import TickContext, create_tick_context
 from app.sim.geometry import distance
 from app.sim.map import THREE_ZONE_MAP
 from app.sim.orders import DEFEND_BASE, PUSH_ENEMY_BASE
-from app.sim.phases.movement import movement_phase
+from app.sim.phases.movement import engagement_standoff, movement_phase
+from app.sim.phases.targeting import acquire_target
 from app.sim.rng import create_rng
 from app.sim.schools import resolve_school_multipliers
 from app.sim.types import SIDES, Vec2
@@ -95,13 +96,48 @@ def test_it_resumes_once_the_way_is_clear_again() -> None:
     assert hunter.position.y > 200
 
 
-def test_it_never_ends_a_tick_inside_its_own_weapon_range() -> None:
+def test_it_never_closes_nearer_than_its_engagement_standoff() -> None:
     world, hunter, enemy = field()
     enemy.position = Vec2(187.5, 200 + hunter.range + 1)
 
     movement_phase.run(world, context())
 
-    assert distance(hunter.position, enemy.position) == hunter.range
+    assert distance(hunter.position, enemy.position) >= engagement_standoff(hunter)
+
+
+def test_a_unit_that_passes_an_enemy_off_axis_ends_up_able_to_shoot_it() -> None:
+    """The other half of the standoff, and the half that was missing.
+
+    "Never close nearer than the standoff" is satisfied perfectly by a unit that
+    never gets near anything, so on its own it is not evidence of anything. This
+    is the complementary property: a unit whose path takes it inside weapon range
+    of an enemy ends up in a position to fire.
+
+    Off-axis on purpose. Walking straight at something is the case that works
+    under any rule — a step along the line of approach closes the distance by its
+    own length, so an exact boundary is reachable. Walking *past* something
+    closes it by less, which is where a standoff pinned to the boundary itself
+    leaves a unit converging on its own weapon range for ever: unable to shoot
+    because it is a hair outside, unable to walk on because its slack is spent.
+    Measured before the fix, a hound sat frozen at 20.000000000000018 against a
+    range of 20, alive and out of the battle permanently."""
+    world, hunter, enemy = field()
+    for unit in world.units:
+        unit.speed = 0
+    hunter.speed = HOUND.speed
+    hunter.position = Vec2(100, 100)
+    hunter.destination = Vec2(100, 500)
+    # Its path passes 10 to the side of the enemy — comfortably within reach.
+    enemy.position = Vec2(110, 400)
+
+    for _ in range(3000):
+        before = hunter.position
+        movement_phase.run(world, context())
+        if hunter.position == before:
+            break
+
+    assert acquire_target(world, hunter) is not None
+    assert distance(hunter.position, enemy.position) <= hunter.range
 
 
 def test_that_gap_is_what_keeps_two_ranks_readable() -> None:
