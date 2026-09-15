@@ -10,6 +10,7 @@ Where the remaining slices slot in:
 Phase        Slice  Sits
 ===========  =====  ===============
 `orders`     B      before movement
+`decision`   328    after orders
 `movement`   A
 `energy`     C      before combat
 `abilities`  C      before combat
@@ -28,9 +29,10 @@ from __future__ import annotations
 
 from app.sim.phase import TickPhase
 from app.sim.phases.combat import combat_phase
+from app.sim.phases.decision import decision_phase
 from app.sim.phases.movement import movement_phase
 from app.sim.phases.removal import removal_phase
 
-TICK_PHASES: tuple[TickPhase, ...] = (movement_phase, combat_phase, removal_phase)
+TICK_PHASES: tuple[TickPhase, ...] = (decision_phase, movement_phase, combat_phase, removal_phase)
 
 __all__ = ["TICK_PHASES", "TickPhase"]

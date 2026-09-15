@@ -8,6 +8,10 @@ Slice A (JQ-286) of the sim. Orders and zones are JQ-287, energy and abilities
 JQ-288, resummoning and resonance JQ-289. See `phases/__init__.py` for where each
 of them attaches.
 
+Shared unit behavior — creature profiles, mage personalities, and the
+deterministic decision loop that reads them — is JQ-328, in `ai/`. A battle that
+ships no behavior library runs without it and behaves exactly as slice A did.
+
 Two Python rules hold the determinism guarantee, neither of which had an
 equivalent in the TypeScript this was ported from:
 
@@ -18,6 +22,28 @@ equivalent in the TypeScript this was ported from:
   explicit `Rng` threaded through the tick context.
 """
 
+from app.sim.ai.attach import attach_behavior
+from app.sim.ai.candidates import Candidate, generate_candidates
+from app.sim.ai.capabilities import Capabilities, capabilities_of, supports
+from app.sim.ai.decide import Decision, decide, intent_of
+from app.sim.ai.factors import FACTORS, FactorContribution, FactorName, FactorWeights
+from app.sim.ai.fixtures import placeholder_behavior, placeholder_objectives, sample_library
+from app.sim.ai.intent import ActionKind, Intent, UnitAi
+from app.sim.ai.objective import Objective, ObjectiveFixtures, objective_for
+from app.sim.ai.observe import Observation, observe
+from app.sim.ai.profiles import (
+    BehaviorLibrary,
+    CreatureProfile,
+    MagePersonality,
+    PersonalityDefinition,
+    PersonalityRef,
+    PersonalityTag,
+    ResolvedBehavior,
+    TraitDefinition,
+    TraitTag,
+    UnitBehavior,
+)
+from app.sim.ai.scoring import ScoredCandidate, score_candidates
 from app.sim.config import (
     DEFAULT_SIM_CONFIG,
     SimConfig,
@@ -83,12 +109,14 @@ from app.sim.world import (
 
 __all__ = [
     "DEFAULT_SIM_CONFIG",
+    "FACTORS",
     "IDENTITY_MULTIPLIERS",
     "PLACEHOLDER_UNIT_TYPES",
     "SCHOOLS",
     "SIDES",
     "THREE_ZONE_MAP",
     "TICK_PHASES",
+    "ActionKind",
     "ArmySetup",
     "BaseConfig",
     "BaseState",
@@ -98,26 +126,48 @@ __all__ = [
     "BattleResult",
     "BattleSetup",
     "BattleTick",
+    "BehaviorLibrary",
+    "Candidate",
+    "Capabilities",
+    "CreatureProfile",
+    "Decision",
     "DeploymentStrip",
     "EventActors",
     "EventEmitter",
     "EventSwing",
+    "FactorContribution",
+    "FactorName",
+    "FactorWeights",
+    "Intent",
+    "MagePersonality",
     "MapConfig",
+    "Objective",
+    "ObjectiveFixtures",
+    "Observation",
+    "PersonalityDefinition",
+    "PersonalityRef",
+    "PersonalityTag",
+    "ResolvedBehavior",
     "Rng",
     "RosterEntry",
     "School",
     "SchoolConfig",
     "SchoolMultiplierTable",
     "SchoolMultipliers",
+    "ScoredCandidate",
     "Side",
     "SimConfig",
     "Span",
     "TickContext",
     "TickPhase",
+    "TraitDefinition",
+    "TraitTag",
     "Troop",
     "TroopId",
     "TroopSetup",
     "Unit",
+    "UnitAi",
+    "UnitBehavior",
     "UnitId",
     "UnitKind",
     "UnitRef",
@@ -126,21 +176,33 @@ __all__ = [
     "Vec2",
     "World",
     "ZoneConfig",
+    "attach_behavior",
     "build_unit_type_catalog",
+    "capabilities_of",
     "create_event_emitter",
     "create_rng",
     "create_tick_context",
     "create_world",
+    "decide",
     "digest_battle",
+    "generate_candidates",
+    "intent_of",
     "max_ticks",
+    "objective_for",
+    "observe",
     "opposing",
     "placeholder_battle",
+    "placeholder_behavior",
+    "placeholder_objectives",
     "resolve_school_multipliers",
     "rng_from_state",
     "run_battle",
+    "sample_library",
+    "score_candidates",
     "seconds_per_tick",
     "serialize_battle",
     "step_battle",
+    "supports",
     "to_ticks",
     "unit_defeated",
     "unit_ref",

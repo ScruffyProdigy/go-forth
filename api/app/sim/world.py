@@ -19,6 +19,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from app.sim.ai.attach import attach_behavior
+from app.sim.ai.intent import UnitAi
+from app.sim.ai.objective import DEFAULT_FIXTURES, ObjectiveFixtures
+from app.sim.ai.profiles import EMPTY_LIBRARY, BehaviorLibrary
 from app.sim.map import MapConfig, validate_map_config
 from app.sim.rng import Rng
 from app.sim.schools import School
@@ -53,6 +57,12 @@ class BattleSetup:
 
     unit_types: list[UnitType] = field(default_factory=list)
     armies: list[ArmySetup] = field(default_factory=list)
+    #: Creature profiles, trait overrides and mage personalities (JQ-328). A
+    #: battle that ships none runs with no decision loop at all.
+    behavior: BehaviorLibrary = EMPTY_LIBRARY
+    #: Stand-in order facts while JQ-287 is in flight, which that ticket
+    #: explicitly allows. Ignored the moment a troop has a real order.
+    objectives: ObjectiveFixtures = DEFAULT_FIXTURES
 
 
 @dataclass
@@ -73,6 +83,13 @@ class Unit:
     position: Vec2
     #: Ticks still to wait before this unit can attack again — ticks, not seconds.
     cooldown_remaining: int = 0
+    #: Where this unit is trying to stand. Written by the orders phase (JQ-287)
+    #: and by the decision phase (JQ-328); read by movement. None means "no one
+    #: has said", and movement falls back to the enemy base.
+    destination: Vec2 | None = None
+    #: Composed behavior and this tick's committed intent (JQ-328). None on a
+    #: battle that ships no behavior data, which then behaves as slice A did.
+    ai: UnitAi | None = None
 
 
 @dataclass
@@ -100,6 +117,9 @@ class World:
     troops: list[Troop]
     bases: dict[Side, BaseState]
     zone_score: dict[Side, float]
+    #: Carried on the world rather than held by the decision phase, so the facts
+    #: a decision was made against travel with the snapshot it was made in.
+    objectives: ObjectiveFixtures = DEFAULT_FIXTURES
 
 
 def unit_ref(unit: Unit) -> UnitRef:
@@ -236,6 +256,8 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
 
             troops.append(troop)
 
+    attach_behavior(units, troops, battle_state.behavior, catalog)
+
     return World(
         tick=0,
         rng_state=rng.state,
@@ -250,4 +272,5 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
             for side in SIDES
         },
         zone_score={"north": 0, "south": 0},
+        objectives=battle_state.objectives,
     )

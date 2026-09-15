@@ -60,7 +60,13 @@ def phase(name: str) -> TickPhase:
 
 
 def test_the_phase_order_is_declared_in_one_place() -> None:
-    assert [p.name for p in TICK_PHASES] == ["movement", "combat", "removal"]
+    assert [p.name for p in TICK_PHASES] == ["decision", "movement", "combat", "removal"]
+
+
+def test_deciding_runs_before_moving_so_a_unit_acts_on_this_tick_s_field() -> None:
+    names = [p.name for p in TICK_PHASES]
+
+    assert names.index("decision") < names.index("movement")
 
 
 def test_combat_runs_after_movement_so_a_unit_that_closed_can_swing() -> None:
