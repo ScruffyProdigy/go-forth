@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pytest
 
 from app.sim.config import DEFAULT_SIM_CONFIG
@@ -70,7 +72,11 @@ def test_the_phase_order_is_declared_in_one_place() -> None:
         "orders",
         "decision",
         "movement",
+        "energy",
+        "spells",
+        "abilities",
         "combat",
+        "statuses",
         "scoring",
         "resummon",
         "removal",
@@ -81,6 +87,82 @@ def test_deciding_runs_before_moving_so_a_unit_acts_on_this_tick_s_field() -> No
     names = [p.name for p in TICK_PHASES]
 
     assert names.index("decision") < names.index("movement")
+
+
+#: The phases slice C (JQ-288) adds. Named here so the check below is about
+#: them specifically rather than about the whole list, which is the assertion
+#: a merge resolution rewrites.
+SLICE_C_PHASES = ("energy", "spells", "abilities", "statuses")
+
+
+def test_slice_c_phases_are_in_the_list_the_loop_actually_walks() -> None:
+    """`step_battle` walks `TICK_PHASES` and nothing else, so a phase missing
+    from the tuple is a phase that never runs — and it fails quietly: a tuple
+    with three fewer entries still compiles, and the exact-order assertion
+    above can be rewritten to match whatever a merge produced.
+
+    Four branches edit this tuple. If you are resolving one and this fails,
+    the resolution dropped a phase. Do not delete this test to make it pass.
+    """
+    present = [p.name for p in TICK_PHASES]
+
+    assert [name for name in SLICE_C_PHASES if name not in present] == []
+
+
+def statuses_precedes_scoring(names: Sequence[str]) -> bool:
+    """Whether a phase list keeps status damage ahead of zone scoring.
+
+    Vacuously true while there is no scoring phase to be ahead of, which is
+    every run on this branch: `scoring` arrives with JQ-287.
+    """
+    if "scoring" not in names or "statuses" not in names:
+        return True
+
+    return names.index("statuses") < names.index("scoring")
+
+
+def test_statuses_lands_before_scoring_once_there_is_a_scoring_phase() -> None:
+    """Load-bearing the moment JQ-287 merges.
+
+    Burn and burning-ground damage is damage, so a unit a burn finishes should
+    stop holding its zone on the same tick a weapon kill would, rather than
+    the lane paying out once more because of which one killed it.
+    """
+    assert statuses_precedes_scoring([p.name for p in TICK_PHASES])
+
+
+def test_the_scoring_guard_is_not_vacuous_when_there_is_something_to_check() -> None:
+    """The guard above cannot fail on this branch, because there is no
+    `scoring` phase for it to check against until JQ-287 merges. That makes it
+    a guard that goes live, never having been watched fail, inside someone
+    else's merge resolution — and if it were vacuous for the wrong reason it
+    would report green forever and nobody would look. So the predicate is
+    exercised here against both orders, today.
+
+    The other way this could have stayed asleep is a phase named something
+    other than `scoring`. JQ-287's is `name = "scoring"`, read off their
+    branch rather than assumed.
+    """
+    assert statuses_precedes_scoring(["combat", "statuses", "scoring", "removal"])
+    assert not statuses_precedes_scoring(["combat", "scoring", "statuses", "removal"])
+
+
+def test_a_gauge_is_charged_and_spent_before_the_weapons_swing() -> None:
+    names = [p.name for p in TICK_PHASES]
+
+    assert names.index("energy") < names.index("abilities") < names.index("combat")
+
+
+def test_an_injected_spell_lands_before_the_units_act_on_it() -> None:
+    names = [p.name for p in TICK_PHASES]
+
+    assert names.index("spells") < names.index("abilities")
+
+
+def test_statuses_tick_after_combat_but_before_the_dead_are_swept() -> None:
+    names = [p.name for p in TICK_PHASES]
+
+    assert names.index("combat") < names.index("statuses") < names.index("removal")
 
 
 def test_combat_runs_after_movement_so_a_unit_that_closed_can_swing() -> None:

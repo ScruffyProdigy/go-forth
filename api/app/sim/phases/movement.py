@@ -27,11 +27,16 @@ them.
 
 Where it is walking *to* is not decided here. The orders phase writes
 `unit.destination` each tick from the troop's order; movement only ever reads it,
-which is the seam the behaviour layer overrides for a diversion.
+which is the seam a behaviour layer (JQ-296/328) overrides for a diversion.
+
+A step is then cut short at an enemy barricade (JQ-288). That clamp lives in
+`blocking.py` rather than here, and composes with the standoff above it because
+both only ever shorten a step along the direction the unit was already going.
 """
 
 from __future__ import annotations
 
+from app.sim.blocking import clamp_to_blockers
 from app.sim.context import TickContext
 from app.sim.geometry import distance, move_toward
 from app.sim.phases.targeting import acquire_target
@@ -112,7 +117,8 @@ class MovementPhase:
             if step <= 0:
                 continue
 
-            unit.position = move_toward(unit.position, unit.destination, step)
+            target = move_toward(unit.position, unit.destination, step)
+            unit.position = clamp_to_blockers(world, unit, target)
 
 
 movement_phase = MovementPhase()

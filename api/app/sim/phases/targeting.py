@@ -20,8 +20,13 @@ from app.sim.world import Unit, World, is_alive
 __all__ = ["acquire_target", "is_alive"]
 
 
-def _intended_target(world: World, unit: Unit) -> Unit | None:
-    """The target this unit committed to, if it is still a legal one."""
+def _intended_target(world: World, unit: Unit, limit: float) -> Unit | None:
+    """The target this unit committed to, if it is still a legal one.
+
+    `limit` rather than the unit's weapon range, so an ability searching with its
+    own reach still honours the choice: a unit that decided to finish a wounded
+    mage should dash at that mage, not at whichever hound drifted nearest.
+    """
     ai = unit.ai
     intent = ai.intent if ai is not None else None
     if intent is None or intent.kind != "attack" or intent.target_id is None:
@@ -32,14 +37,20 @@ def _intended_target(world: World, unit: Unit) -> Unit | None:
             continue
         if candidate.side == unit.side or not is_alive(candidate):
             return None
-        return candidate if distance(unit.position, candidate.position) <= unit.range else None
+        return candidate if distance(unit.position, candidate.position) <= limit else None
 
     return None
 
 
-def acquire_target(world: World, unit: Unit) -> Unit | None:
-    """The unit's chosen target if it still holds, else the nearest in range."""
-    intended = _intended_target(world, unit)
+def acquire_target(world: World, unit: Unit, reach: float | None = None) -> Unit | None:
+    """The unit's chosen target if it still holds, else the nearest within reach.
+
+    Reach defaults to the unit's weapon range. An ability passes its own, so a
+    card can reach further than it swings without a second search written for it.
+    """
+    limit = unit.range if reach is None else reach
+
+    intended = _intended_target(world, unit, limit)
     if intended is not None:
         return intended
 
@@ -51,7 +62,7 @@ def acquire_target(world: World, unit: Unit) -> Unit | None:
             continue
 
         gap = distance(unit.position, candidate.position)
-        if gap > unit.range:
+        if gap > limit:
             continue
 
         if gap < best_gap or (gap == best_gap and best is not None and candidate.id < best.id):

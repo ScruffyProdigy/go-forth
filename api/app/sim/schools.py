@@ -83,6 +83,10 @@ class SchoolConfig:
     multipliers: Mapping[str, float] | None = field(default=None)
     #: This school's resonance curve. None means the provisional default.
     resonance: ResonanceCurve | None = field(default=None)
+    #: How this school charges an energy gauge, as meters and their rates.
+    #: None takes the school's default. Slice C's `energy.py` resolves it —
+    #: the rule is data so a new school is a row rather than a new branch.
+    energy_rule: Mapping[str, float] | None = field(default=None)
 
 
 IDENTITY_MULTIPLIERS = SchoolMultipliers()
