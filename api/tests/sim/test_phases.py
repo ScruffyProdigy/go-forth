@@ -222,3 +222,74 @@ def test_removal_leaves_the_living_alone() -> None:
     phase("removal").run(world, context())
 
     assert len(world.units) == before
+
+
+def _phase_objects_defined_in_the_package() -> dict[str, object]:
+    """Every TickPhase instance defined by a module under `app/sim/phases/`.
+
+    Found by shape rather than by filename: a phase is a module-level *instance*
+    with a `name` string and a callable `run`. `targeting.py` lives here too and
+    defines no such object, which is the point of not simply listing the
+    directory.
+
+    Classes are skipped deliberately. `MovementPhase` and its siblings match the
+    same shape as the instances they produce — `name` is a class attribute and
+    `run` is a function — so without that filter every phase would be reported
+    twice, once as something in `TICK_PHASES` and once as something that never
+    could be.
+    """
+    import importlib
+    import pkgutil
+
+    import app.sim.phases
+
+    found: dict[str, object] = {}
+
+    for info in pkgutil.iter_modules(app.sim.phases.__path__):
+        module = importlib.import_module(f"app.sim.phases.{info.name}")
+        for attribute in sorted(dir(module)):
+            candidate = getattr(module, attribute)
+            if isinstance(candidate, type):
+                continue
+            has_name = isinstance(getattr(candidate, "name", None), str)
+            if has_name and callable(getattr(candidate, "run", None)):
+                found[f"{info.name}.{attribute}"] = candidate
+
+    return found
+
+
+def test_every_phase_that_exists_is_actually_in_the_tick_list() -> None:
+    """A phase module that never runs is the quietest bug this package can have.
+
+    Four slices are landing in parallel and each inserts a row into
+    `TICK_PHASES`, so whoever merges last resolves that tuple by hand. Drop a row
+    in that resolution and nothing complains: the tuple still compiles, and the
+    order assertion above gets updated to match whatever was resolved to — so it
+    goes green while describing a list with a phase missing from it. The test
+    that checks the order is the same test you would be editing to match, which
+    is exactly why it cannot catch this.
+
+    Verified by deleting `decision_phase` from the tuple: this test failed and
+    named it, while the order assertion — updated to match, as it would be in a
+    real resolution — passed.
+
+    This one works because it derives its expectation from what is on disk rather
+    than from a list someone wrote down. If a slice ships `energy.py` and the
+    merge loses it, this fails and says so.
+    """
+    missing = sorted(
+        where for where, phase in _phase_objects_defined_in_the_package().items() if phase not in TICK_PHASES
+    )
+
+    assert missing == [], (
+        f"these phases are defined but never run: {missing}. "
+        f"A phase dropped during a merge resolution is invisible everywhere else"
+    )
+
+
+def test_the_walk_actually_finds_the_phases() -> None:
+    """Guards the test above: an empty walk would satisfy it unconditionally."""
+    found = _phase_objects_defined_in_the_package()
+
+    assert len(found) == len(TICK_PHASES)
+    assert "decision.decision_phase" in found
