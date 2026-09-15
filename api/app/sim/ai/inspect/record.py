@@ -185,8 +185,13 @@ class DecisionTrace:
     def wants(self, tick: int, unit_id: UnitId) -> bool:
         """Whether this decision is in scope, before anything is built for it.
 
-        Public because the decision phase asks first: a trace narrowed to one
-        unit should cost the other nineteen a comparison, not a record.
+        Public, but nothing outside this class calls it. An earlier docstring
+        claimed the decision phase asks first, so that a narrowed trace would
+        cost the other units a comparison rather than a record — which described
+        a caller that was never written, and an optimisation that would buy
+        nothing if it were, since `record` performs this same check before it
+        builds anything. Kept public because it is a reasonable question to ask
+        a trace; the rationale is corrected because it was fiction.
         """
         config = self.config
         if tick < config.first_tick:

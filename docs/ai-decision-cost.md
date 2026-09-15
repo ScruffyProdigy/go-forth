@@ -313,6 +313,31 @@ This is also the standing hazard of building three tickets in parallel against
 each other's interfaces. It is genuinely efficient, and it silently removes a
 whole path from every suite involved.
 
+### The same seam, from the other side: a parameter with no caller
+
+The nastier half of the variant above, because it looks wired from both ends. A
+function grows an optional parameter so that consuming a not-yet-merged producer
+will be a wire-up rather than a redesign — and nothing ever passes it. The
+function is called. The parameter is optional, so nothing complains. There is a
+test, it passes, and it reads exactly like coverage.
+
+JQ-329 found one of theirs where a branch could not produce its first half from
+any input at all; mutating it to a sentinel left 150 tests green. The instance
+here was smaller and the same shape: `DecisionTrace.wants` was public and its
+docstring said the decision phase asks first, so a narrowed trace would cost the
+other units a comparison rather than a record. No such caller was ever written,
+and it would have bought nothing if it had been, since `record` performs the same
+check before building anything. The behaviour was covered; the **rationale** was
+fiction, and a reader would have taken it for a description of the architecture.
+
+Alongside it, the JSON renderer's dropped-count could have reported zero forever.
+The text renderer had that test and the JSON did not — the same asymmetry as the
+weights and the contributions, twice in one package, both found by mutation and
+neither by reading.
+
+**A parameter or a method justified by a caller that does not exist is a claim,
+not a contract.** Either wire it or say plainly that it is not wired.
+
 ### Preconditions are not free, and neither is skipping them
 
 Asserting a test's own preconditions is the fix for most of the shapes above, so
@@ -383,6 +408,14 @@ are this document's own lessons turned on the harness that produced it.
 **Every mutation asserts its anchor matched and reports its byte delta before the
 run.** A mutation that silently fails to apply reports "caught" for free, which
 is the formatter-reflow failure above, mechanised.
+
+**The anchor guard earned itself, on the run where it mattered.** Auditing the
+unwired seams below, a mutation aimed at the reason render printed `ANCHOR MISS`
+and refused to report — the line was one f-string, not the two the patch had
+guessed. Without the guard it would have printed `caught`, and a gap that was
+genuinely open would have been closed in the notes while staying open in the
+code. The failure it prevented was the plausible-looking answer, on the single
+run where the wrong answer would have been believed.
 
 **The control mutation must survive.** Ten-for-ten is exactly the result that
 should make a reader suspect the harness rather than trust it — a harness broken

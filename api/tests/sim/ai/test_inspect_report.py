@@ -181,3 +181,21 @@ def test_text_says_unexplained_when_no_reason_was_recorded() -> None:
     unexplained = type(record)(**{**record.__dict__, "reason": ""})
 
     assert NO_REASON in render_text((unexplained,))
+
+
+def test_json_carries_the_dropped_count_too() -> None:
+    """The text renderer had this test and the JSON did not.
+
+    The whole reason the cap counts what it turned away is so a truncated report
+    says it is truncated. A comparison run off the JSON needs that as much as a
+    person reading the text does — more, since there is no prose to notice its
+    absence in.
+    """
+    trace = traced(TraceConfig(max_records=1))
+    hound = make_unit("h2", HOUND, "north", Vec2(50, 50))
+    world = make_world([hound, make_unit("a2", ADEPT, "south", Vec2(60, 50))])
+    observation = look(world, hound)
+    trace.record(13, observation, decide(observation, NEUTRAL_BEHAVIOR))
+
+    assert trace.dropped == 1, "nothing was dropped, so the count proves nothing"
+    assert json.loads(render_json(trace.records, trace.dropped))["dropped"] == 1
