@@ -172,10 +172,13 @@ cd client && npm run lint && npm run typecheck && npm test
 │   │   ├── migrate.py        # the migration runner
 │   │   ├── config.py
 │   │   ├── sim/              # the battle sim — pure, deterministic, headless
+│   │   ├── match/            # plans, lock/reveal, casting, round outcomes
 │   │   └── scripts/
-│   │       └── battle_demo.py  # runs a battle, prints the event stream
+│   │       ├── battle_demo.py  # runs a battle, prints the event stream
+│   │       └── match_demo.py   # runs a whole match: plans, casts, outcome
 │   └── tests/                # outside the package, per Python convention
-│       └── sim/              # the sim's own suite, mirroring app/sim/
+│       ├── sim/              # the sim's own suite, mirroring app/sim/
+│       └── match/            # the match layer's suite
 ├── client/                   # Vite + React 18 game UI
 │   ├── Dockerfile            # static build served by nginx
 │   ├── nginx.conf            # SPA routing + the cache policy a deploy needs
@@ -325,6 +328,57 @@ stderr says who won.
 **Scope.** Slice A (JQ-286) ships the world model, the tick loop, map config, the
 event envelope, and move-and-fight. Orders, formations, and zone scoring are
 JQ-287; energy and abilities JQ-288; resummoning and resonance JQ-289.
+
+---
+
+## The match layer
+
+The sim runs a *battle*. [`api/app/match/`](api/app/match) runs a **match**: what
+a legal plan is, when the battle starts, what a cast costs, and which of two
+simultaneous endings wins. It is the server's whole opinion about a round — a
+client renders what it is told and asks for things it may not get — and it talks
+to no socket and no database, so JQ-309 can wrap it rather than edit it.
+
+A round goes **planning → battle → complete**. Each side picks three of five mage
+packages, gives each troop one of the map's legal orders, and locks in two
+spells. Plans stay hidden until both are locked, because a plan you can see is a
+plan you can answer. The reveal starts the battle, which then advances on the
+server's clock and consults nobody — which is what "the battle continues during
+disconnect" means in practice.
+
+Because a cast arrives *during* a battle, the controller steps
+[`BattleRunner`](api/app/sim/run_battle.py) a tick at a time rather than calling
+`run_battle`, and accepts casts between ticks. A cast is checked against the
+side's locked loadout, the map, the current tick and a server-owned energy pool;
+a refused cast spends nothing.
+
+| Round ends | Ends | Meaning |
+|---|---|---|
+| `scoreThreshold` | round | A side reached the profile's threshold |
+| `timeUp` | round | Ran its length; decided on zone score, then on base HP |
+| `annihilation` | round | A side has nothing left on the field |
+| `baseDestroyed` | **match** | A base fell — that side loses at once |
+| `mutualBaseDestroyed` | **match** | Both bases fell on one tick; a draw |
+
+Three policies are deliberately code rather than configuration, because a rule
+you can dial from a settings file is a rule nobody has decided: a missed plan
+auto-locks the suggested legal default rather than forfeiting, an exact score tie
+breaks on remaining base HP and is reported as a draw if that is level too, and a
+double base destruction is a draw under its own reason. The tuning numbers they
+read — battle length, score threshold, energy rates and costs — are all
+provisional and are recorded, with their reasoning, in
+[`app/match/profile.py`](api/app/match/profile.py).
+
+Watch a whole match:
+
+```bash
+cd api && python -m app.scripts.match_demo --miss-plan south
+```
+
+**Scope.** JQ-308 ships the single-round test profile — explicitly not production
+Starter. JQ-187 grows it into best-of-five with the reset and availability
+matrix; JQ-307 and JQ-297 replace the provisional packages and spells; JQ-309
+puts the Lobby contract and a realtime session around it.
 
 ---
 

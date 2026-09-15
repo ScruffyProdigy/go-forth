@@ -168,7 +168,8 @@ api/
 │   ├── main.py      # the FastAPI factory
 │   ├── server.py    # binds the port: `python -m app.server`
 │   ├── config.py    # environment, with defaults that run without a .env
-│   └── sim/         # the battle sim (JQ-286)
+│   ├── sim/         # the battle sim (JQ-286) — pure, deterministic
+│   └── match/       # the rules above the battle (JQ-308)
 ├── migrations/      # forward-only *.sql, applied in filename order
 └── tests/           # not co-located; the Python convention, unlike rpslr
 ```
