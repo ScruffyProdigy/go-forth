@@ -1,0 +1,485 @@
+/*
+ * The opening demo's screens (JQ-311).
+ *
+ * Two rules run through all of it, both from the ticket's last acceptance
+ * criterion — 44 px minimum on anything tappable, and no hover state carrying
+ * meaning, because a phone has no pointer to hover with. Where a control shows
+ * that it is chosen, it does so with `aria-pressed` and a border, which a thumb
+ * and a screen reader can both perceive.
+ *
+ * Art direction is still open (§10 #9). This is state and silhouette, matching
+ * the plan phase's palette, not a visual language.
+ */
+
+:root {
+  /* Your side is the ember the plan phase already uses; theirs is its cold
+     opposite. Shape carries the same distinction, so colour is never the only
+     signal. */
+  --them: #6fb3e0;
+  --danger: #e2725b;
+}
+
+/* ------------------------------------------------------------ tap targets -- */
+
+.cast-spell,
+.target-region,
+.scenario-option,
+.result-actions .primary-button,
+.result-actions .link-button {
+  min-height: 44px;
+}
+
+/* ------------------------------------------------------------ connecting -- */
+
+.connecting,
+.claim-failed,
+.left-match {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 2rem 0.25rem;
+}
+
+.connecting h1,
+.claim-failed h1,
+.left-match h1,
+.result-header h1,
+.battle-header h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+}
+
+.connecting-note,
+.claim-advice {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+
+.claim-reason {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+
+.stale-banner {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.5rem;
+  background: #3a2a1c;
+  color: var(--ink-1);
+  font-size: 0.75rem;
+}
+
+/* ---------------------------------------------------------------- battle -- */
+
+.battle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  flex: 1;
+}
+
+.battle-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.battle-zone-score {
+  font-size: 0.75rem;
+  color: var(--ink-2);
+}
+
+.battle-map {
+  position: relative;
+}
+
+.battle-map svg {
+  width: 100%;
+  height: auto;
+  border-radius: 0.6rem;
+  display: block;
+}
+
+/* Stale is dimmed, never hidden: the last real board beats a spinner. */
+.battle-map.is-stale svg {
+  opacity: 0.45;
+}
+
+.battle-band rect {
+  fill: #171322;
+  stroke: #241d31;
+  stroke-width: 1;
+}
+
+.zone-chip rect {
+  fill: #221b2e;
+}
+
+.zone-chip text {
+  font-size: 13px;
+  fill: var(--ink-2);
+}
+
+.zone-chip.held-you rect {
+  fill: #3a2f18;
+}
+
+.zone-chip.held-you text {
+  fill: var(--ember);
+}
+
+.zone-chip.held-them rect {
+  fill: #1c2e3c;
+}
+
+.zone-chip.held-them text {
+  fill: var(--them);
+}
+
+.base-band rect {
+  fill: #221a2c;
+}
+
+.base-band text {
+  fill: var(--ink-2);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.base-band .base-hp-value {
+  text-anchor: end;
+  letter-spacing: 0.04em;
+}
+
+.base-hp-track {
+  fill: #0e0b14;
+}
+
+.base-band.is-own .base-hp-fill {
+  fill: var(--ember);
+}
+
+.base-band.is-enemy .base-hp-fill {
+  fill: var(--them);
+}
+
+.unit.is-yours circle,
+.unit.is-yours rect {
+  fill: var(--ember);
+}
+
+.unit.is-theirs circle,
+.unit.is-theirs rect {
+  fill: var(--them);
+}
+
+.unit .unit-ring {
+  fill: none;
+  stroke-width: 2;
+  stroke-opacity: 0.4;
+}
+
+.unit.is-yours .unit-ring {
+  stroke: var(--ember);
+}
+
+.unit.is-theirs .unit-ring {
+  stroke: var(--them);
+}
+
+.unit .unit-hp {
+  fill: var(--danger);
+}
+
+.cast-mark {
+  fill: var(--them);
+  fill-opacity: 0.18;
+  stroke: var(--them);
+  stroke-opacity: 0.5;
+}
+
+.cast-mark.is-yours {
+  fill: var(--ember);
+  fill-opacity: 0.18;
+  stroke: var(--ember);
+}
+
+/*
+ * Every landing spot at once, faintly. There is no hover on a phone, so there is
+ * no "the one you are considering" to highlight — what a preview can honestly
+ * show before the second tap is the size of the blast and where it could go.
+ * Hence outlines, and a fill light enough to leave the board underneath legible.
+ */
+.target-preview {
+  fill: var(--ember);
+  fill-opacity: 0.05;
+  stroke: var(--ember);
+  stroke-opacity: 0.55;
+  stroke-dasharray: 4 4;
+}
+
+.targeting {
+  margin-top: 0.5rem;
+}
+
+.target-cancel {
+  min-height: 44px;
+  background: none;
+  border: 1px solid #4a4157;
+  border-radius: 0.5rem;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+}
+
+.target-regions {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.target-region {
+  background: #2b2436;
+  border: 1px solid var(--ember);
+  border-radius: 0.5rem;
+  color: var(--ink-1);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+}
+
+/* -------------------------------------------------------------- cast bar -- */
+
+.cast-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.cast-bar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cast-energy {
+  font-size: 0.75rem;
+  color: var(--ember);
+}
+
+.cast-prompt {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-1);
+}
+
+.cast-spells {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.cast-spells li {
+  flex: 1;
+}
+
+.cast-spell {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  color: inherit;
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cast-spell.is-armed {
+  border-color: var(--ember);
+}
+
+.cast-spell:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.cast-spell-name {
+  font-size: 0.85rem;
+}
+
+.cast-spell-cost {
+  font-size: 0.68rem;
+  color: var(--ember);
+}
+
+.cast-spell-cost.is-short {
+  color: var(--ink-2);
+}
+
+.cast-empty,
+.cast-feedback {
+  font-size: 0.72rem;
+  color: var(--ink-2);
+  margin: 0;
+  min-height: 1rem;
+}
+
+/* ---------------------------------------------------------------- result -- */
+
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 0.25rem;
+}
+
+.result-profile {
+  margin: 0 0 0.3rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.result-detail,
+.result-score,
+.result-rule {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+
+.result-rule {
+  padding: 0.6rem 0.75rem;
+  background: var(--surface-2);
+  border-radius: 0.6rem;
+}
+
+.result-bases {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.result-base {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+}
+
+.result-base dt {
+  width: 6.5rem;
+  color: var(--ink-2);
+}
+
+.result-base dd {
+  margin: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.result-base-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: #0e0b14;
+  overflow: hidden;
+}
+
+.result-base-fill {
+  display: block;
+  height: 100%;
+  background: var(--ember);
+}
+
+.result-base.is-destroyed dd {
+  color: var(--danger);
+}
+
+.result-base.is-destroyed .result-base-fill {
+  background: var(--danger);
+}
+
+.result-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.result-actions .primary-button {
+  width: 100%;
+}
+
+/* ------------------------------------------------------- fixture picker -- */
+
+.scenario-picker {
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed #332b42;
+}
+
+.scenario-picker h2 {
+  margin: 0 0 0.4rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.scenario-picker ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.scenario-option {
+  width: 100%;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  color: inherit;
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  cursor: pointer;
+}
+
+.scenario-option.is-current {
+  border-color: var(--ember);
+}
+
+.scenario-label {
+  font-size: 0.82rem;
+}
+
+.scenario-summary {
+  font-size: 0.68rem;
+  color: var(--ink-2);
+}

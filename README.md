@@ -86,8 +86,23 @@ cd api && source .venv/bin/activate && python -m app.server
 [uv](https://docs.astral.sh/uv/) reads the same `pyproject.toml` and is faster
 if you have it, but nothing requires it.
 
-Then open **http://localhost:5175**. Today that is a placeholder screen — the
-real client lands with JQ-190.
+Then open **http://localhost:5175**. That is the opening demo (JQ-311): plan a
+round, lock it in, watch the battle resolve, read the result. It runs on a
+**fixture session**, not the server — the Lobby contract and the authoritative
+realtime session are JQ-309, and until they land `client/src/match/fixtures/`
+stands in for both.
+
+Because it is a fixture, every state the demo has to make legible is reachable
+on purpose. Append `?scenario=` to pick one:
+
+| Scenario | What it runs |
+|---|---|
+| `zoneControl` (default) | An ordinary round, decided on zone control |
+| `baseDestruction` | The enemy commits everything to your base and takes it down |
+| `dropout` | The connection dies mid-battle and recovers to wherever the server got to |
+| `claimFailure` | The seat claim is refused, then succeeds on retry |
+
+The same four are listed at the bottom of the result screen.
 
 `dev.sh` leaves Postgres running when you Ctrl+C, so the next start is fast;
 `./scripts/db.sh down` stops it.
@@ -167,6 +182,9 @@ cd client && npm run lint && npm run typecheck && npm test
 │   ├── docker-entrypoint.d/  # writes /env.js from container env at startup
 │   ├── public/env.js         # the same config, with local dev defaults
 │   └── src/
+│       ├── plan/             # the plan phase (JQ-293)
+│       └── match/            # the match flow: session seam, battle, result
+│           └── fixtures/     # stands in for the server until JQ-309
 ├── k8s/
 │   ├── base/                 # namespace, api, client, postgres, ingress
 │   ├── env/                  # per-environment ConfigMaps, ingress, TLS certs
@@ -340,5 +358,12 @@ non-example secret is ever committed.
 
 ## Still out of scope
 
-No game logic beyond `/healthz`. The sim is JQ-286, the session layer and
-JoinQuest integration endpoints are JQ-188, the client is JQ-190/JQ-293.
+No game logic beyond `/healthz`: the client's opening demo talks to a fixture,
+not to this api. The session layer and JoinQuest integration endpoints are
+JQ-188 and JQ-309, and the battle the client renders will come from the sim's
+slices (JQ-287 onwards) rather than from `client/src/match/fixtures/`.
+
+Battle-map readability at density — occupancy chips, mage energy rings,
+tap-to-inspect, the twenty-a-side case — is **JQ-312**. The demo's renderer
+draws the authoritative state plainly and holds that seam open; it does not
+pre-empt that design.

@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { resolvePlanLocally } from '../match/fixtures/resolvePlan.ts';
 import { PlanScreen } from './PlanScreen.tsx';
 import { starterMirrorRound1 } from './fixtures/starterMirror.ts';
 import { planReducer } from './planReducer.ts';
@@ -203,5 +204,73 @@ describe('the opponent', () => {
     render(<PlanScreen initialPlan={withSighting} />);
 
     expect(screen.getByText('last seen 2m · 5s')).toBeInTheDocument();
+  });
+});
+
+/**
+ * JQ-311 adaptations. The plan screen stops being the authority on what a plan
+ * means and starts asking — and refuses to lock one in that the answer says is
+ * invalid.
+ */
+describe('a resolved plan', () => {
+  it('shows the resolved cost, effect and the mages making it so', async () => {
+    const user = userEvent.setup();
+    render(<PlanScreen resolve={resolvePlanLocally} />);
+
+    await user.click(screen.getByRole('button', { name: /Choose spells/ }));
+
+    // Emberwright and Pyre Magus are both Evocation, and Emberwright is also
+    // Reckless: three contributions, and the effect line says what they add to.
+    const contributors = screen.getByTestId('contributors-fireball');
+    expect(contributors).toHaveTextContent('Emberwright (Evocation)');
+    expect(contributors).toHaveTextContent('Emberwright (Reckless)');
+    expect(contributors).toHaveTextContent('Pyre Magus (Evocation)');
+    expect(screen.getByText(/At 63 — Evocation, Reckless from 3 fielded mages/)).toBeInTheDocument();
+  });
+
+  it('updates the moment the troops change', async () => {
+    const user = userEvent.setup();
+    render(<PlanScreen resolve={resolvePlanLocally} />);
+
+    await user.click(screen.getByRole('button', { name: /Choose troops/ }));
+    await unfield(user, 'pyreMagus');
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: /Choose spells/ }));
+
+    expect(screen.getByTestId('contributors-fireball')).not.toHaveTextContent('Pyre Magus');
+    expect(screen.getByText(/At 52 — Evocation, Reckless from 2 fielded mages/)).toBeInTheDocument();
+  });
+
+  it('refuses lock-in while a slot holds a spell the plan no longer grants', async () => {
+    const user = userEvent.setup();
+    render(<PlanScreen resolve={resolvePlanLocally} />);
+
+    expect(screen.getByRole('button', { name: 'Lock in' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: /Choose troops/ }));
+    await unfield(user, 'ashenWarden');
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+
+    // Refused here, on the screen that can fix it — not after lock-in at world
+    // creation, which is the shape of JQ-304.
+    expect(screen.getByRole('button', { name: 'Lock in' })).toBeDisabled();
+    expect(screen.getByTestId('lock-blockers')).toHaveTextContent(
+      'Spell 2 — Flame Ward needs Ashen Warden fielded.',
+    );
+  });
+
+  it('allows it again once the slot is cleared', async () => {
+    const user = userEvent.setup();
+    render(<PlanScreen resolve={resolvePlanLocally} />);
+
+    await user.click(screen.getByRole('button', { name: /Choose troops/ }));
+    await unfield(user, 'ashenWarden');
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: /Choose spells/ }));
+    await user.click(within(screen.getByTestId('spell-slot-1')).getByRole('button', { name: 'Clear' }));
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+
+    expect(screen.getByRole('button', { name: 'Lock in' })).toBeEnabled();
+    expect(screen.queryByTestId('lock-blockers')).not.toBeInTheDocument();
   });
 });

@@ -95,6 +95,7 @@ const spells: SpellOption[] = [
     cost: 3,
     text: 'Evocation sets the damage, Reckless the radius.',
     requires: { kind: 'signature', mageId: 'emberwright' },
+    reads: ['Evocation', 'Reckless'],
   },
   {
     id: 'flameWard',
@@ -102,6 +103,7 @@ const spells: SpellOption[] = [
     cost: 2,
     text: 'Guardian sets the protection, Disciplined the duration.',
     requires: { kind: 'signature', mageId: 'ashenWarden' },
+    reads: ['Guardian', 'Disciplined'],
   },
   {
     id: 'rekindle',
@@ -109,6 +111,7 @@ const spells: SpellOption[] = [
     cost: 2,
     text: 'Returns defeated summons; Summoner sets how many.',
     requires: { kind: 'signature', mageId: 'pyreMagus' },
+    reads: ['Summoner'],
   },
   {
     id: 'cinderVeil',
@@ -116,6 +119,7 @@ const spells: SpellOption[] = [
     cost: 2,
     text: 'Screens a troop as it crosses open ground.',
     requires: { kind: 'tag', tag: 'Guardian' },
+    reads: ['Guardian'],
   },
   {
     id: 'scorch',
@@ -123,6 +127,7 @@ const spells: SpellOption[] = [
     cost: 1,
     text: 'A small burst. The basic fallback — always available.',
     requires: { kind: 'always' },
+    reads: ['Evocation'],
   },
 ];
 

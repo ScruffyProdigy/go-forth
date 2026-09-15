@@ -71,6 +71,15 @@ export interface SpellOption {
   readonly cost: number;
   readonly text: string;
   readonly requires: SpellRequirement;
+  /**
+   * The tags whose *count among fielded mages* sets this spell's numbers (§4.8).
+   *
+   * Added by JQ-311: a spell's printed text says which tags matter, but nothing
+   * could say by how much, and the opening demo has to show "actual resolved
+   * costs/effects/contributors" rather than a card's printed ones. Resolution
+   * itself belongs to the server — this only names what it reads.
+   */
+  readonly reads?: readonly string[];
 }
 
 export interface Roster {

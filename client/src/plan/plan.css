@@ -489,6 +489,11 @@
   gap: 0.3rem;
 }
 
+/*
+ * 44 px tall even though the label is small (JQ-311's last AC). Five order
+ * choices sit side by side on a 375 px screen, which is exactly the row a thumb
+ * is most likely to mis-hit.
+ */
 .order-choice {
   background: #2b2436;
   border: 1px solid transparent;
@@ -497,6 +502,7 @@
   font: inherit;
   font-size: 0.72rem;
   padding: 0.3rem 0.5rem;
+  min-height: 44px;
   cursor: pointer;
 }
 
@@ -543,4 +549,34 @@
   margin: 0.2rem 0 0;
   font-size: 0.78rem;
   color: var(--ink-2);
+}
+
+/* ------------------------------------------------------- lock-in blockers -- */
+
+/*
+ * Why Lock In is refusing (JQ-311). Next to the button, in the player's words,
+ * naming the slot — a disabled control with no reason is a dead end.
+ */
+.lock-blockers {
+  list-style: none;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--ember);
+  color: var(--ember);
+  font-size: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.primary-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.spell-contributors {
+  margin: 0.2rem 0 0;
+  font-size: 0.68rem;
+  color: var(--ink-1);
 }
