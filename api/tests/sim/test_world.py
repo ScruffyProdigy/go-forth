@@ -6,7 +6,7 @@ import dataclasses
 
 import pytest
 
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.orders import PUSH_ENEMY_BASE
 from app.sim.rng import create_rng
 from app.sim.types import Side
@@ -42,7 +42,7 @@ def setup(armies: list[ArmySetup] | None = None) -> BattleSetup:
 
 
 def build(battle_state: BattleSetup | None = None, seed: int = 1) -> World:
-    return create_world(THREE_ZONE_MAP, battle_state or setup(), create_rng(seed))
+    return create_world(TWO_LANE_MAP, battle_state or setup(), create_rng(seed))
 
 
 def only_mage(side: Side) -> ArmySetup:
@@ -58,8 +58,8 @@ def test_starts_at_tick_zero() -> None:
 def test_opens_both_bases_at_full_hp() -> None:
     world = build()
 
-    assert world.bases["north"].hp == THREE_ZONE_MAP.bases["north"].max_hp
-    assert world.bases["south"].hp == THREE_ZONE_MAP.bases["south"].max_hp
+    assert world.bases["north"].hp == TWO_LANE_MAP.bases["north"].max_hp
+    assert world.bases["south"].hp == TWO_LANE_MAP.bases["south"].max_hp
 
 
 def test_opens_with_no_zone_score() -> None:
@@ -250,7 +250,7 @@ def test_places_every_unit_inside_its_own_deployment_strip() -> None:
     )
 
     for unit in world.units:
-        strip = THREE_ZONE_MAP.deployment[unit.side]
+        strip = TWO_LANE_MAP.deployment[unit.side]
         assert strip.lane.start <= unit.position.y <= strip.lane.end
         assert strip.extent.start <= unit.position.x <= strip.extent.end
 

@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 from app.sim.fixtures import placeholder_battle
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.run_battle import BattleResult, run_battle
 from app.sim.serialize import digest_battle, serialize_battle
 
@@ -23,7 +23,7 @@ FRESH_RUNS = 5
 
 
 def run(seed: int = SEED) -> BattleResult:
-    return run_battle(THREE_ZONE_MAP, [], placeholder_battle(), seed)
+    return run_battle(TWO_LANE_MAP, [], placeholder_battle(), seed)
 
 
 def demo_output(seed: int) -> str:

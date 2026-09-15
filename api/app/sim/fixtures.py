@@ -10,9 +10,11 @@ JQ-185/307 replace them with the selected packages.
 v1 is a Fire mirror (§7.4), and round 1 opens at the starting mage cap of three
 (§4.3): three troops, one mage each, with their summons.
 
-Each troop carries an order, because a troop without one cannot be built: two
-hold the near zones and one pushes, which is enough to put every derived
-formation and both endings — zone score and base damage — on screen in one run.
+Each troop carries an order, because a troop without one cannot be built. The
+two sides field **identical rosters under different orders** — north doubles up
+on the west lane while south splits — which is the decision two lanes exist to
+create, and which makes the demo produce a real score instead of the mirrored
+tie the old stacked bands produced on every seed.
 
 `PLACEHOLDER_UNIT_TYPES` carries no abilities, and the ability-bearing roster
 below is a separate army. That split is a convenience rather than a rule: a
@@ -46,7 +48,7 @@ from app.sim.effects import (
     EnergyRefill,
     Knockback,
 )
-from app.sim.orders import PUSH_ENEMY_BASE, hold
+from app.sim.orders import PUSH_ENEMY_BASE, Order, hold
 from app.sim.spells import Spell, SpellInjection
 from app.sim.types import Side
 from app.sim.units import UnitType
@@ -98,35 +100,41 @@ PLACEHOLDER_UNIT_TYPES: list[UnitType] = [
 ]
 
 
+#: Round 1 orders. Identical rosters, different plans: north commits two troops
+#: to the west lane and south takes one lane each, so west is a fight and east
+#: is south's to hold until someone contests it.
+OPENING_ORDERS: dict[Side, list[str]] = {
+    "north": ["W", "W", "push"],
+    "south": ["W", "E", "push"],
+}
+
+
+def _order(code: str) -> Order:
+    return PUSH_ENEMY_BASE if code == "push" else hold(code)
+
+
 def _fire_army(side: Side) -> ArmySetup:
-    # A geometric mirror on the three-zone map: each side holds the zone in front
-    # of its own base and contests the middle, and sends one troop at the wall.
-    near_zone = "A" if side == "north" else "C"
+    entourages = [
+        [RosterEntry("cinder-hound", 2)],
+        [RosterEntry("ash-ram"), RosterEntry("ember-sprite")],
+        [RosterEntry("ember-sprite", 2)],
+    ]
 
     return ArmySetup(
         side=side,
         troops=[
             TroopSetup(
-                order=hold(near_zone),
+                order=_order(code),
                 mages=[RosterEntry("ember-adept")],
-                summons=[RosterEntry("cinder-hound", 2)],
-            ),
-            TroopSetup(
-                order=hold("B"),
-                mages=[RosterEntry("ember-adept")],
-                summons=[RosterEntry("ash-ram"), RosterEntry("ember-sprite")],
-            ),
-            TroopSetup(
-                order=PUSH_ENEMY_BASE,
-                mages=[RosterEntry("ember-adept")],
-                summons=[RosterEntry("ember-sprite", 2)],
-            ),
+                summons=summons,
+            )
+            for code, summons in zip(OPENING_ORDERS[side], entourages, strict=True)
         ],
     )
 
 
 def placeholder_battle() -> BattleSetup:
-    """Two identical Fire armies — the v1 mirror match."""
+    """Two identical Fire armies under different plans — the v1 mirror match."""
     return BattleSetup(
         unit_types=PLACEHOLDER_UNIT_TYPES,
         armies=[_fire_army("north"), _fire_army("south")],
@@ -290,31 +298,38 @@ def _ability_army(side: Side) -> ArmySetup:
     #
     # Which card goes in which troop is what makes the demo demonstrate
     # anything, and it is decided by the order rather than by taste. The
-    # emplacement holds the near zone, because a barricade that walks away from
-    # the zone it is walling shows nothing. The hounds push, because Fire
+    # emplacement holds a lane, because a barricade that walks away from the
+    # ground it is walling shows nothing. The hounds push, because Fire
     # charges off damage dealt and a melee summon parked on a zone nobody
     # attacks never charges at all — measured, not guessed: on the holding
     # troop their gauges ended the battle at a flat zero and `pounce` never
     # fired, at any cost.
-    near_zone = "A" if side == "north" else "C"
-
+    #
+    # The ram pushes for the opposite reason, found when JQ-376 turned the
+    # zones into lanes and put it into permanent contact on one. `ram-charge`
+    # is a dash, and the default cast policy holds a dash while its target is
+    # already inside weapon range — correctly, since the dash would buy
+    # nothing. So the ram charged its gauge to 60 against a cost of 45 and
+    # still never fired: it had energy and no gap to close. A card that needs
+    # a gap belongs on a troop that is crossing ground, not holding it. No
+    # cost was touched; the arrangement was the wrong thing, not the number.
     return ArmySetup(
         side=side,
         troops=[
             TroopSetup(
-                order=hold(near_zone),
+                order=hold("W"),
                 mages=[RosterEntry("ember-adept")],
                 summons=[RosterEntry("slag-wall"), RosterEntry("ember-sprite")],
             ),
             TroopSetup(
-                order=hold("B"),
+                order=hold("E"),
                 mages=[RosterEntry("ember-adept")],
-                summons=[RosterEntry("ash-ram"), RosterEntry("ember-sprite")],
+                summons=[RosterEntry("cinder-hound"), RosterEntry("ember-sprite")],
             ),
             TroopSetup(
                 order=PUSH_ENEMY_BASE,
                 mages=[RosterEntry("ember-adept")],
-                summons=[RosterEntry("cinder-hound", 2)],
+                summons=[RosterEntry("ash-ram"), RosterEntry("cinder-hound")],
             ),
         ],
     )

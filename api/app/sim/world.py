@@ -307,6 +307,27 @@ def _carried_base_hp(config: MapConfig, side: Side, carried: dict[Side, float]) 
     return float(hp)
 
 
+def _band_shares(orders: Sequence[Order]) -> list[tuple[int, int]]:
+    """For each troop, its place among the troops that share its deployment band.
+
+    Troops under the same order start side by side in the part of the strip that
+    order points at, rather than stacked on one spot. Keyed by order and only
+    ever looked up, never iterated — see the note in `rng.py`.
+    """
+    totals: dict[Order, int] = {}
+    for order in orders:
+        totals[order] = totals.get(order, 0) + 1
+
+    placed: dict[Order, int] = {}
+    shares: list[tuple[int, int]] = []
+    for order in orders:
+        index = placed.get(order, 0)
+        placed[order] = index + 1
+        shares.append((index, totals[order]))
+
+    return shares
+
+
 def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> World:
     """Builds the opening state of a battle. Pure: same inputs, same world."""
     validate_map_config(config)
@@ -325,6 +346,8 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
     seen_ids: set[UnitId] = set()
 
     for army in battle_state.armies:
+        shares = _band_shares([troop.order for troop in army.troops])
+
         for troop_index, troop_setup in enumerate(army.troops):
             troop_id = troop_setup.id or f"{army.side}-t{troop_index}"
             order = troop_setup.order
@@ -334,7 +357,7 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
             summon_types = _expand(troop_setup.summons, catalog, "summon")
             _assert_supported(mage_types, summon_types, troop_id)
 
-            band = deployment_band(config, army.side, troop_index, len(army.troops))
+            band = deployment_band(config, army.side, order, *shares[troop_index])
             formation: Formation = derive_formation(
                 order,
                 army.side,

@@ -6,7 +6,7 @@ import pytest
 
 from app.sim.effects import AreaDamage, BurningGround, DamageProfile, DashToTarget
 from app.sim.fixtures import ability_battle
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.run_battle import run_battle
 from app.sim.spells import Spell, SpellInjection, build_spell_catalog, schedule_injections
 from app.sim.types import Vec2
@@ -163,7 +163,7 @@ def test_a_spell_injected_mid_battle_resolves_at_the_correct_tick() -> None:
     """The acceptance criterion, run through a whole battle rather than a
     staged field: the event lands on the tick the injection named."""
     injection = SpellInjection(tick=40, spell_id="meteor", location=Vec2(187.5, 290), side="north")
-    result = run_battle(THREE_ZONE_MAP, [], ability_battle([injection]), 7)
+    result = run_battle(TWO_LANE_MAP, [], ability_battle([injection]), 7)
 
     spells = [event for event in result.events if event.type == "spell"]
     assert [(event.tick, event.label) for event in spells] == [(40, "meteor")]

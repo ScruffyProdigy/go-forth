@@ -17,7 +17,7 @@ import pytest
 
 from app.sim.config import DEFAULT_SIM_CONFIG, to_ticks
 from app.sim.context import TickContext, create_tick_context
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.orders import PUSH_ENEMY_BASE
 from app.sim.phases.resummon import resummon_pace_ticks
 from app.sim.resonance import STAT_AXES, SideResonanceCounts, count_resonance
@@ -62,7 +62,7 @@ def battle(
 
 
 def world_of(setup: BattleSetup) -> World:
-    return create_world(THREE_ZONE_MAP, setup, create_rng(5))
+    return create_world(TWO_LANE_MAP, setup, create_rng(5))
 
 
 # --- counting ----------------------------------------------------------------
@@ -204,7 +204,7 @@ def context_for(setup: BattleSetup) -> tuple[World, TickContext]:
     resonance = count_resonance(world)
     ctx = create_tick_context(
         config=DEFAULT_SIM_CONFIG,
-        map_config=THREE_ZONE_MAP,
+        map_config=TWO_LANE_MAP,
         multipliers=resolve_side_multipliers([], resonance),
         rng=create_rng(5),
         resonance=resonance,
@@ -263,8 +263,8 @@ def test_resonance_does_not_silently_rescale_the_units_on_the_field() -> None:
     this Ember Adept hits for 8.8 — and it silently reaches every future effect.
     So a unit fields the stat block on its card, whatever its school's resonance.
     """
-    weak = run_battle(THREE_ZONE_MAP, [], battle([troop("kindler")], [troop("kindler", 4)]), 1)
-    strong = run_battle(THREE_ZONE_MAP, [], battle([troop("kindler", 4)], [troop("kindler")]), 1)
+    weak = run_battle(TWO_LANE_MAP, [], battle([troop("kindler")], [troop("kindler", 4)]), 1)
+    strong = run_battle(TWO_LANE_MAP, [], battle([troop("kindler", 4)], [troop("kindler")]), 1)
 
     for result in (weak, strong):
         for unit in result.ticks[0].state.units:
@@ -286,7 +286,7 @@ def test_a_dual_school_unit_has_an_axis_per_school_each_on_its_own_count() -> No
     of its schools and hits harder from the other, each on that school's own
     resonance rather than on a single blended number."""
     setup = battle([troop("ember-machinist"), troop("clockwork-artificer", 3)], [troop("kindler", 3)])
-    result = run_battle(THREE_ZONE_MAP, [], setup, 1)
+    result = run_battle(TWO_LANE_MAP, [], setup, 1)
     table = result.multipliers["north"]
 
     # Fire 1 from the machinist itself; Artifice 4 with the three artificers.
@@ -327,7 +327,7 @@ def test_resonance_is_counted_exactly_once_for_a_whole_battle(monkeypatch: pytes
         return original(world)
 
     monkeypatch.setattr(module, "count_resonance", spy)
-    result = run_battle(THREE_ZONE_MAP, [], battle([troop("kindler", 3)], [troop("kindler", 3)]), 1)
+    result = run_battle(TWO_LANE_MAP, [], battle([troop("kindler", 3)], [troop("kindler", 3)]), 1)
 
     assert calls == [0], "counted somewhere other than exactly once, on the opening world"
     assert result.final_state.tick > 1, "the battle has to have actually run for that to mean anything"
@@ -335,7 +335,7 @@ def test_resonance_is_counted_exactly_once_for_a_whole_battle(monkeypatch: pytes
 
 def test_a_mage_dying_does_not_weaken_its_school() -> None:
     setup = battle([troop("kindler", 3)], [troop("kindler", 3)])
-    result = run_battle(THREE_ZONE_MAP, [], setup, 1)
+    result = run_battle(TWO_LANE_MAP, [], setup, 1)
 
     assert result.multipliers["north"]["fire"] == PAR
     assert count_resonance(result.ticks[0].state)["north"]["fire"] == 3

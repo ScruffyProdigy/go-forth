@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 from app.sim.fixtures import ABILITY_UNIT_TYPES, ability_battle
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.run_battle import BattleResult, run_battle
 from app.sim.serialize import digest_battle, serialize_battle
 from app.sim.spells import SpellInjection
@@ -24,7 +24,7 @@ INJECTION = SpellInjection(tick=200, spell_id="meteor", location=Vec2(187.5, 290
 
 
 def run(seed: int = SEED) -> BattleResult:
-    return run_battle(THREE_ZONE_MAP, [], ability_battle([INJECTION]), seed)
+    return run_battle(TWO_LANE_MAP, [], ability_battle([INJECTION]), seed)
 
 
 def demo_output(seed: int) -> str:

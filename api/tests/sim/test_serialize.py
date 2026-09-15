@@ -3,13 +3,13 @@
 import json
 
 from app.sim.fixtures import PLACEHOLDER_UNIT_TYPES, placeholder_battle
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.run_battle import BattleResult, run_battle
 from app.sim.serialize import digest_battle, serialize_battle
 
 
 def run(seed: int = 7) -> BattleResult:
-    return run_battle(THREE_ZONE_MAP, [], placeholder_battle(), seed)
+    return run_battle(TWO_LANE_MAP, [], placeholder_battle(), seed)
 
 
 def test_is_stable_for_the_same_battle() -> None:
@@ -20,7 +20,7 @@ def test_opens_with_a_header_naming_the_seed_and_outcome() -> None:
     header = json.loads(serialize_battle(run()).split("\n")[0])
 
     assert header["seed"] == 7
-    assert header["map"] == THREE_ZONE_MAP.id
+    assert header["map"] == TWO_LANE_MAP.id
     assert header["outcome"]
 
 
@@ -68,7 +68,7 @@ def test_the_placeholder_armies_open_at_the_starting_mage_cap_of_three() -> None
 
 def test_the_placeholder_cards_pass_catalog_validation() -> None:
     assert PLACEHOLDER_UNIT_TYPES
-    run_battle(THREE_ZONE_MAP, [], placeholder_battle(), 1)
+    run_battle(TWO_LANE_MAP, [], placeholder_battle(), 1)
 
 
 def test_the_header_says_whose_base_fell_when_one_did() -> None:
@@ -81,7 +81,7 @@ def test_the_footer_says_who_holds_each_zone_in_map_order() -> None:
     result = run()
     last = json.loads(serialize_battle(result).split("\n")[-1])
 
-    assert list(last["zoneHolders"]) == [zone.id for zone in THREE_ZONE_MAP.zones]
+    assert list(last["zoneHolders"]) == [zone.id for zone in TWO_LANE_MAP.zones]
     assert last["zoneHolders"] == result.final_state.zone_holders
 
 
@@ -92,7 +92,7 @@ def test_a_zone_flip_line_names_the_zone_that_flipped() -> None:
     ]
 
     assert flips
-    assert all(flip["zone"] in [zone.id for zone in THREE_ZONE_MAP.zones] for flip in flips)
+    assert all(flip["zone"] in [zone.id for zone in TWO_LANE_MAP.zones] for flip in flips)
 
 
 def test_the_placeholder_armies_are_each_under_an_order() -> None:
