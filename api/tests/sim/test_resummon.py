@@ -512,12 +512,19 @@ def test_a_dissolve_reports_no_units_defeated() -> None:
     assert "north-t0-u2" not in defeated
 
 
+#: Enough seeds that the claim below is about the fixture rather than about one
+#: battle. A single seed would pass today and could be silently gutted by any
+#: change to the map or the movement rule — the assertion would still be green
+#: while testing nothing, which is worse than failing.
+DEMO_SEEDS = (7, 11, 42, 99, 20260911)
+
+
 def test_the_shipped_placeholder_mirror_rebuilds_its_losses() -> None:
     """End to end on the real fixture: the mirror the headless demo runs."""
-    result = run_battle(THREE_ZONE_MAP, [], placeholder_battle(), 20260911)
+    results = [run_battle(THREE_ZONE_MAP, [], placeholder_battle(), seed) for seed in DEMO_SEEDS]
+    rebuilds = [event for result in results for event in result.events if event.type == "resummon"]
 
-    rebuilds = [event for event in result.events if event.type == "resummon"]
-    assert rebuilds, "three Fire mages a side should have rebuilt something in 90 s"
+    assert rebuilds, "three Fire mages a side should have rebuilt something across five battles"
     for event in rebuilds:
         source = event.actors.source
         assert source is not None, "a rebuild always names the mage that made it"
