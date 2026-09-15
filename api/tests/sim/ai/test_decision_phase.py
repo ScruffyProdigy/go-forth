@@ -168,18 +168,39 @@ def test_combat_swings_at_the_chosen_target_rather_than_the_nearest_one() -> Non
     assert nearest.hp == HOUND.max_hp
 
 
-def test_a_chosen_target_that_walked_out_of_reach_falls_back_to_the_nearest() -> None:
+def test_a_chosen_target_that_left_reach_falls_back_to_the_nearest() -> None:
+    """A commitment is preferred, not obeyed off the end of the world.
+
+    The wounded one is chosen for its suitability, then walks out of reach
+    between the decision and the swing. Combat must fall back to the enemy still
+    standing in front of the adept rather than swinging at nothing.
+    """
     adept = make_unit("a", ADEPT, "north", MIDFIELD)
-    enemy = make_unit("e", HOUND, "south", Vec2(MIDFIELD.x + 5, MIDFIELD.y))
-    world = make_world([adept, enemy])
-    attach(world, library(CreatureProfile("ember-adept", {"target_suitability": 4.0})), TYPES)
+    chosen = make_unit("e-chosen", HOUND, "south", Vec2(MIDFIELD.x + 50, MIDFIELD.y), hp=1)
+    bystander = make_unit("e-near", HOUND, "south", Vec2(MIDFIELD.x + 5, MIDFIELD.y))
+    world = make_world([adept, chosen, bystander])
+    at_station(world)
+    attach(
+        world,
+        library(
+            CreatureProfile(
+                "ember-adept",
+                {"objective_progress": 0.0, "target_suitability": 4.0, "danger": 0.0, "ally_support": 0.0},
+            )
+        ),
+        TYPES,
+    )
     ctx = context()
     decision_phase.run(world, ctx)
+    assert adept.ai is not None and adept.ai.intent is not None
+    assert adept.ai.intent.target_id == "e-chosen"
 
-    enemy.position = Vec2(MIDFIELD.x + 5, MIDFIELD.y)
+    # Out past the adept's 90-unit reach, after the decision was made.
+    chosen.position = Vec2(MIDFIELD.x + 400, MIDFIELD.y)
     combat_phase.run(world, ctx)
 
-    assert enemy.hp < HOUND.max_hp
+    assert chosen.hp == 1
+    assert bystander.hp < HOUND.max_hp
 
 
 # --- the ticket's scenario: same stats, different data -----------------------

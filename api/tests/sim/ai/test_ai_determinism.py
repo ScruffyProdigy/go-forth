@@ -120,3 +120,34 @@ def test_behavior_data_changes_the_battle() -> None:
     plain = run_battle(THREE_ZONE_MAP, [], placeholder_battle(), SEED, SHORT)
 
     assert digest_battle(plain) != digest_battle(battle_with_behavior())
+
+
+def test_the_sample_battle_actually_engages() -> None:
+    """Every check above would still pass on a battle where nothing happened.
+
+    Five interpreters agreeing on an empty battle is five interpreters agreeing.
+    The fixture stations are hand-placed coordinates on one particular map, so a
+    map reshape — the lane change is in flight — could put two armies somewhere
+    they never meet, and every determinism test here would stay green while the
+    thing they are meant to be checking quietly stopped happening.
+
+    So: across several seeds, the armies must actually fight, and all three
+    verbs must be exercised somewhere in the battle. Sampled rather than pinned
+    to one seed, because a single-seed assertion is the same trap one layer down.
+    """
+    for seed in (SEED, SEED + 1, SEED + 2, 1, 7):
+        battle = placeholder_battle()
+        battle.behavior = placeholder_behavior()
+        battle.objectives = placeholder_objectives()
+        result = run_battle(THREE_ZONE_MAP, [], battle, seed, SHORT)
+
+        defeats = [event for event in result.events if event.type == "unitDefeated"]
+        verbs = {
+            unit.ai.intent.kind
+            for tick in result.ticks
+            for unit in tick.state.units
+            if unit.ai is not None and unit.ai.intent is not None
+        }
+
+        assert defeats, f"seed {seed}: the two armies never engaged"
+        assert verbs == {"advance", "attack", "hold"}, f"seed {seed}: only {sorted(verbs)} were ever chosen"
