@@ -113,13 +113,16 @@ def test_an_unreachable_enemy_is_never_offered_as_an_attack_candidate() -> None:
 
     assert records, "the hunter never decided anything"
     for record in records:
+        # The kind check below only sees the candidates the record kept, so it
+        # is a proof about all of them only if the record kept all of them.
+        # Asserted as a relationship rather than as a count: how many positional
+        # candidates a unit generates is JQ-329's business and grows as
+        # positioning gets richer, but "the rivals are every loser" stays true.
+        assert len(record.rivals) == record.candidate_count - 1, (
+            f"tick {record.tick}: {record.candidate_count - len(record.rivals) - 1} candidates unchecked"
+        )
         for candidate in (record.chosen, *record.rivals):
             assert candidate.kind != "attack", f"tick {record.tick}: attack on an unreachable enemy"
-        # Exactly three are legal: hold, advance on the station the orders phase
-        # rewrote onto this unit, and advance on the enemy. An attack candidate
-        # would make it four — pinned as a number because the kind check above
-        # only sees the rivals the record kept, and the count sees all of them.
-        assert record.candidate_count == 3, record.candidate_count
 
 
 def test_every_traced_decision_has_a_candidate_behind_it() -> None:
