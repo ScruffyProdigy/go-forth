@@ -214,27 +214,41 @@ def _approach_candidates(observation: Observation, target: Unit) -> list[Candida
     unit with no attack interposes its body and nothing else, which is a way of
     dying rather than a way of screening.
 
-    **Neither is offered from inside the useful range, and that guard is the
-    whole safety of this function.** Both positions sit exactly `gap` from the
-    target, and `point_along` does not clamp — so asking for them while already
-    nearer than `gap` hands back a point *behind* the unit. An `advance` onto it
-    walks backwards at full speed, silently, scoring as a retreat that nobody
-    named, and winning ties against the two verbs that are honest about it since
-    `advance` is declared first. Measured before the guard: a five-hit
-    ember-sprite with an ash-ram closing preferred a "screen" forty map units to
-    its rear.
+    **Neither is offered to a unit that can already fight the target**, and that
+    guard is doing two jobs.
 
-    Requiring the unit to be outside `gap` makes "the destination is nearer the
-    target than the unit is" true by construction rather than by a second check
-    that has to be kept in step. It also says something true: a unit that can
-    already fight the threat from where it stands does not need to move to screen
-    it — standing and shooting *is* the screen, and `hold` covers that.
+    The safety one: both positions sit exactly `gap` from the target, and
+    `point_along` does not clamp, so asking for them from nearer than `gap` hands
+    back a point *behind* the unit. An `advance` onto it walks backwards at full
+    speed, silently, scoring as a retreat that nobody named and winning ties
+    against the two verbs that are honest about it, since `advance` is declared
+    first. Measured before the guard: a five-hit ember-sprite with an ash-ram
+    closing preferred a "screen" forty map units to its rear. Refusing to offer
+    either from inside weapon reach makes "the destination is nearer the target
+    than the unit is" true by construction — reach is never below `gap`, which is
+    nine tenths of it.
+
+    The behavioural one: **a unit that can already fight from where it stands
+    does not need to move to screen.** Standing and shooting *is* the screen, and
+    `hold` covers it. An earlier version tested against `gap` rather than reach,
+    which left a band a tenth of a reach wide where a unit could hit a target and
+    was *still* offered a step toward it. JQ-330 measured the consequence on a
+    merged branch: an archer sixty-three units from a mortar it could shoot at
+    sixty-five preferred, by 0.0244, to walk four units closer and call it
+    screening. It kept firing throughout — only `retreat` suppresses an attack,
+    so nothing was given up — but it was fine-tuning its spacing rather than
+    responding to anything, which is the same fussiness `_withdraw_candidates`
+    already refuses on the other side of the weapon.
+
+    So the three cases partition cleanly now. Nearer than useful range with
+    something closing in: `withdraw`. Inside reach: `attack`. Outside reach:
+    these.
     """
     gap = useful_range(observation.capabilities)
     position = observation.unit.position
     reason = _closing_reason(observation, target)
 
-    if distance(position, target.position) <= gap:
+    if can_engage(observation.capabilities, distance(position, target.position)):
         return []
 
     candidates = []
