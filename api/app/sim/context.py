@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 from app.sim.abilities import EMPTY_ABILITY_CATALOG, AbilityCatalog
 from app.sim.casting import DEFAULT_CAST_POLICY, CastPolicy
@@ -22,6 +23,14 @@ from app.sim.rng import Rng
 from app.sim.schools import SideMultiplierTable
 from app.sim.spells import EMPTY_SPELL_CATALOG, SpellCatalog
 from app.sim.units import UnitType, UnitTypeCatalog, build_unit_type_catalog
+
+if TYPE_CHECKING:
+    # Imported for the annotation only. At runtime this module must not reach
+    # `ai.inspect`, which reaches `ai.decide` and from there back through
+    # `ai.observe` into `world` — and `world` is imported by the phases that
+    # import this. `from __future__ import annotations` keeps the field's type
+    # a string, so the cycle never has to exist.
+    from app.sim.ai.inspect.record import DecisionTrace
 
 
 @dataclass(frozen=True)
@@ -60,6 +69,13 @@ class TickContext:
     unit_types: UnitTypeCatalog
     #: Cached, because every phase that moves anything needs it.
     seconds_per_tick: float
+    #: Where the decision phase reports what it decided, when anyone is asking
+    #: (JQ-331). None in every real match, and the one thing on this context
+    #: that is mutable — which is why it lives here rather than on `World`, the
+    #: whole of which is deep-copied every tick.
+    #:
+    #: Nothing reads it back. A phase may write to it; no phase may branch on it.
+    trace: DecisionTrace | None = None
 
 
 def create_tick_context(
@@ -75,6 +91,7 @@ def create_tick_context(
     abilities: AbilityCatalog | None = None,
     spells: SpellCatalog | None = None,
     cast_policy: CastPolicy | None = None,
+    trace: DecisionTrace | None = None,
 ) -> TickContext:
     validate_sim_config(config)
 
@@ -93,4 +110,5 @@ def create_tick_context(
         rng=rng,
         unit_types=catalog,
         seconds_per_tick=seconds_per_tick(config),
+        trace=trace,
     )
