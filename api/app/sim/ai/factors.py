@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, get_args
 
+from app.sim.ai.vocabulary import Context, PersonalityTag
+
 FactorName = Literal[
     "objective_progress",
     "target_suitability",
@@ -111,3 +113,27 @@ class FactorContribution:
     @property
     def contribution(self) -> float:
         return self.raw * self.weight
+
+
+@dataclass(frozen=True)
+class PersonalityInfluence:
+    """One personality tag's say in one candidate's *weights*, and why.
+
+    The other half of explaining a decision. `FactorContribution` says what the
+    unit weighed; this says which authored tag put that weight there and which
+    situation woke it up — "reckless, at strength 1.5, took 1.13 off how much
+    danger counted, because this candidate was a commitment".
+
+    Recorded per candidate rather than per unit because that is the whole point
+    of a contextual rule: the same tag is loud on one candidate and silent on
+    the next, and a record that collapsed them could not show it. An empty tuple
+    on a candidate means no tag had anything to say about it.
+    """
+
+    tag: PersonalityTag
+    #: The situation that activated the rule. One per rule, so the record is
+    #: unambiguous — a rule that speaks to two situations is two rules.
+    context: Context
+    factor: FactorName
+    #: The weight delta, after strength scaling and before the final clamp.
+    delta: float

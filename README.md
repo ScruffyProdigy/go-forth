@@ -87,10 +87,12 @@ cd api && source .venv/bin/activate && python -m app.server
 if you have it, but nothing requires it.
 
 Then open **http://localhost:5175**. That is the opening demo (JQ-311): plan a
-round, lock it in, watch the battle resolve, read the result. It runs on a
-**fixture session**, not the server — the Lobby contract and the authoritative
-realtime session are JQ-309, and until they land `client/src/match/fixtures/`
-stands in for both.
+round, lock it in, watch the battle resolve, read the result. It still runs on a
+**fixture session** rather than the server. JQ-309 built the server side — the
+Lobby contract, the wire schema and the authoritative realtime session over
+`/api/v1/ws` — and pointing the client at it is JQ-311's follow-up. To drive the
+real thing today, use the stub Lobby (below); the Lobby contract has its own
+suite in `api/tests/lobby/`.
 
 Because it is a fixture, every state the demo has to make legible is reachable
 on purpose. Append `?scenario=` to pick one:
@@ -138,9 +140,26 @@ The game is playable standalone, with a stub in place of JoinQuest:
 The JWKS half is real — an RS256 keypair, a well-formed
 `/.well-known/jwks.json`, and tokens that verify against it. The signing key is
 cached in `.stub-lobby/` (gitignored) so tokens keep verifying across restarts.
-`stub-lobby.sh provision` pushes a match assignment at `POST /api/v1/matches`,
-which JQ-188 builds — until then it reports the 404 and prints the payload it
-would have sent.
+
+`provision` pushes a real match assignment and prints a ready-to-open URL per
+seat — the game's own launch base with `token=` appended exactly as the Lobby
+appends it:
+
+```bash
+./scripts/stub-lobby.sh serve       # leave this running: JWKS + token endpoint
+./scripts/stub-lobby.sh provision   # prints two launch URLs
+```
+
+Open one in each of two browsers and that is the two-phone demo, locally, with
+no platform in front of it.
+
+**No database needed either.** `GAME_IN_MEMORY=1` swaps the Postgres repository
+for an in-memory one, so a fresh checkout is playable with nothing installed but
+Python:
+
+```bash
+GAME_IN_MEMORY=1 ./scripts/dev.sh
+```
 
 ### Run the tests
 
@@ -171,14 +190,20 @@ cd client && npm run lint && npm run typecheck && npm test
 │   │   ├── server.py         # binds the port
 │   │   ├── migrate.py        # the migration runner
 │   │   ├── config.py
+│   │   ├── routes.py         # the HTTP surface
+│   │   ├── ws.py             # the realtime transport
+│   │   ├── service.py        # what routes and sockets both go through
+│   │   ├── repository.py     # + pg_repository.py — identity, seating, results
+│   │   ├── lobby/            # the JoinQuest contract — fixed, shared with rpslr
+│   │   ├── match/            # this game: wire, plan, round, session, clock
 │   │   ├── sim/              # the battle sim — pure, deterministic, headless
-│   │   ├── match/            # plans, lock/reveal, casting, round outcomes
 │   │   └── scripts/
 │   │       ├── battle_demo.py  # runs a battle, prints the event stream
 │   │       └── match_demo.py   # runs a whole match: plans, casts, outcome
 │   └── tests/                # outside the package, per Python convention
-│       ├── sim/              # the sim's own suite, mirroring app/sim/
-│       └── match/            # the match layer's suite
+│       ├── lobby/            # one module per integration-guide §8 row
+│       ├── match/            # wire, plan, round, session, clock, realtime
+│       └── sim/              # the sim's own suite, mirroring app/sim/
 ├── client/                   # Vite + React 18 game UI
 │   ├── Dockerfile            # static build served by nginx
 │   ├── nginx.conf            # SPA routing + the cache policy a deploy needs
@@ -187,11 +212,13 @@ cd client && npm run lint && npm run typecheck && npm test
 │   └── src/
 │       ├── plan/             # the plan phase (JQ-293)
 │       └── match/            # the match flow: session seam, battle, result
-│           └── fixtures/     # stands in for the server until JQ-309
+│           └── fixtures/     # still the client's transport; JQ-311 swaps it
 ├── k8s/
 │   ├── base/                 # namespace, api, client, postgres, ingress
 │   ├── env/                  # per-environment ConfigMaps, ingress, TLS certs
 │   └── secrets/              # *.example.yaml only; real ones are gitignored
+├── docs/
+│   └── python-vs-typescript.md  # reading this next to rpslr, module by module
 ├── scripts/                  # setup, dev, db, test, stub-lobby, build, deploy
 └── .github/workflows/        # api-tests, client-tests, environment-config-test
 ```
@@ -200,12 +227,49 @@ cd client && npm run lint && npm run typecheck && npm test
 
 ## Game API
 
-| Method | Path       | Description        |
-|--------|------------|--------------------|
-| GET    | `/healthz` | returns `200 ok`   |
+| Method | Path                                    | Description                                    |
+|--------|-----------------------------------------|------------------------------------------------|
+| GET    | `/healthz`                              | returns `200 ok` — no database, no outbound calls |
+| GET    | `/api/v1/status`                        | catalog sync: `launchUrlsOnProvision: true`    |
+| GET    | `/api/v1/game-modes`                    | the two modes and their 2-seat templates       |
+| POST   | `/api/v1/matches`                       | Lobby provision (or a standalone self-serve)   |
+| GET    | `/api/v1/matches/{ref}`                 | seating, for a link preview                    |
+| POST   | `/api/v1/matches/{ref}/claim`           | take a seat with a Lobby seat JWT              |
+| GET    | `/api/v1/resume`                        | recovery path 1 — this browser's own binding   |
+| GET    | `/api/v1/players/{lobbyUserId}/history` | what this person has played                    |
+| WS     | `/api/v1/ws`                            | authoritative state out, seat commands in      |
 
-That is the whole surface for now, on purpose. Session and integration endpoints
-are JQ-188.
+### Two modes, and why the demo is one of them
+
+The production match is **first to three round wins**, with a base destroyed
+ending the match on the spot and no base recovery between rounds. That is
+`starter`.
+
+The opening demo plays exactly **one round**, and it is its own mode —
+`opening-round` — rather than a flag on `starter`. A single round reported
+through the production mode would be indistinguishable, in every downstream
+rating and standings table, from a best-of-five somebody actually won. So the
+demo reports a `testComplete` ending on the wire and `CANCELLED` — unrated — to
+the Lobby, with the round winner carried in metadata so the run is still legible.
+
+A destroyed base is the exception: it is a real terminal outcome even in a demo,
+and is reported as `baseDestroyed` with the remaining base HP, rather than as
+"the test finished".
+
+### The wire contract
+
+[`api/app/match/wire.py`](api/app/match/wire.py) is every byte that crosses
+between server and client, and it is deliberately **not** `sim/serialize.py`.
+That module renders a finished battle as canonical text so two runs can be
+compared byte for byte; it is total (it carries the opponent's energy and
+unlocked plan), it is frozen for a different reason, and it describes a whole
+battle rather than a tick. `tests/match/test_wire.py` asserts on the import graph
+that nothing outside the sim and the headless demo reaches for it.
+
+Reading this next to the TypeScript references: see
+[`docs/python-vs-typescript.md`](docs/python-vs-typescript.md), which maps every
+module to its rpslr counterpart and names the handful of genuine language
+differences.
 
 ---
 
@@ -325,60 +389,106 @@ cd api && python -m app.scripts.battle_demo --seed 7
 stdout is the canonical event stream (so two runs can be diffed); the summary on
 stderr says who won.
 
+### Behaviour: what a creature wants, and who its mage asks
+
+Every unit runs one shared loop — observe, generate legal candidates, score,
+select — and the decision phase commits an intent that the existing movement and
+combat phases carry out. Adding a creature that uses existing mechanics costs
+data, not code: nothing in [`app/sim/ai/`](api/app/sim/ai) branches on a creature
+id.
+
+A unit's weights come from three places, summed and clamped: its stat block's
+own **contour** (tough and slow absorbs; quick and frail evades), any authored
+**creature profile and traits**, and the **personalities** of its troop's mages.
+
+**Personalities are contextual, not one aggression slider.** A tag is a set of
+rules, each naming the situation it speaks to, the actions it is eligible on,
+the priorities it moves, how far it looks, and its exceptions:
+
+```python
+PersonalityRule(when="ally-threatened", weights={"target_suitability": 1.0, "danger": -0.5})
+```
+
+That shape exists because the flat one has a failure it cannot be tuned out of.
+`reckless` discounting danger and `protective` pricing it add to zero, so a mage
+that is both comes out identical to a mage that is neither — and "willingness to
+take risks defending allies" is exactly what the pair is supposed to mean. Rules
+fix it twice over: the two tags speak in different moments, and `protective`'s
+danger delta is *negative* where an ally is being hurt, because caring about
+allies is not the same idea as fearing for yourself. Strength scales what a tag
+contributes and nothing else; zero means no opinion, never the opposite one.
+
+**A lightweight troop coordinator** allocates. It looks for enemies hurting its
+own, and asks one unit — the nearest eligible, deterministically — to answer
+each. That is its whole output: a target, never a position, so a melee guard and
+an archer answer the same assignment in the only ways each of them can. It never
+writes a destination, never overrides a capability, never commits more than half
+a troop, and releases the moment the defender, the target or the ally it was
+protecting dies or moves out of eligibility. A troop that has lost its last mage
+coordinates nothing, which is JQ-289's dissolve arriving where it should.
+
+```bash
+cd api && python -m app.scripts.battle_demo --seed 7   # both sides are led differently
+```
+
 **Scope.** Slice A (JQ-286) ships the world model, the tick loop, map config, the
 event envelope, and move-and-fight. Orders, formations, and zone scoring are
 JQ-287; energy and abilities JQ-288; resummoning and resonance JQ-289.
 
 ---
 
-## The match layer
+## Round rules and outcomes
 
-The sim runs a *battle*. [`api/app/match/`](api/app/match) runs a **match**: what
-a legal plan is, when the battle starts, what a cast costs, and which of two
-simultaneous endings wins. It is the server's whole opinion about a round — a
-client renders what it is told and asks for things it may not get — and it talks
-to no socket and no database, so JQ-309 can wrap it rather than edit it.
+JQ-309 built the match layer — `wire`, `plan`, `round`, `session`, `clock`. JQ-308
+is the depth underneath it: *which* ending wins when two land on the same tick,
+and what the server does with a round nobody can win.
 
-A round goes **planning → battle → complete**. Each side picks three of five mage
-packages, gives each troop one of the map's legal orders, and locks in two
-spells. Plans stay hidden until both are locked, because a plan you can see is a
-plan you can answer. The reveal starts the battle, which then advances on the
-server's clock and consults nobody — which is what "the battle continues during
-disconnect" means in practice.
+`AuthoritativeRound` drives the sim a tick at a time, because a round the server
+has already finished cannot accept a cast at tick 400. It builds that battle with
+the sim's own [`create_runner`](api/app/sim/run_battle.py) rather than assembling
+one itself: the rng, the resonance count, the multipliers, the catalogues and the
+tick context are `run_battle`'s opening sequence, and a second copy of it could
+drift silently. It already had — the copy left `cast_policy` at its default, so a
+unit in a live round decided its casts by a different rule from the same unit in
+a headless replay of the same battle.
 
-Because a cast arrives *during* a battle, the controller steps
-[`BattleRunner`](api/app/sim/run_battle.py) a tick at a time rather than calling
-`run_battle`, and accepts casts between ticks. A cast is checked against the
-side's locked loadout, the map, the current tick and a server-owned energy pool;
-a refused cast spends nothing.
+A cast is inserted into the already-sorted injection queue rather than re-sorting
+it, so a cast taken live lands exactly where a pre-scheduled one would. Two spells
+on one tick must not resolve differently depending on how they arrived.
 
-| Round ends | Ends | Meaning |
+**How a round ends**, in precedence order — the order *is* the policy:
+
+| | Ends | |
 |---|---|---|
-| `scoreThreshold` | round | A side reached the profile's threshold |
-| `timeUp` | round | Ran its length; decided on zone score, then on base HP |
-| `annihilation` | round | A side has nothing left on the field |
-| `baseDestroyed` | **match** | A base fell — that side loses at once |
-| `mutualBaseDestroyed` | **match** | Both bases fell on one tick; a draw |
+| Both bases at zero | **match** | A draw, still under `baseDestroyed` |
+| One base at zero | **match** | That side loses on the spot |
+| A side wiped out | round | `annihilation` |
+| Score threshold | round | `zoneControl` |
+| The backstop | round | `timeUp` — zone score, then base HP, then a draw |
 
-Three policies are deliberately code rather than configuration, because a rule
-you can dial from a settings file is a rule nobody has decided: a missed plan
-auto-locks the suggested legal default rather than forfeiting, an exact score tie
-breaks on remaining base HP and is reported as a draw if that is level too, and a
-double base destruction is a draw under its own reason. The tuning numbers they
-read — battle length, score threshold, energy rates and costs — are all
-provisional and are recorded, with their reasoning, in
-[`app/match/profile.py`](api/app/match/profile.py).
+Two of those are JQ-308's corrections to a rule that looked right and was not.
+Both bases can fall on one tick — two spells land with nothing serialising them —
+and the loop that walked `SIDES` and returned on the first awarded that match to
+south, which is an accident of iteration order rather than a rule anyone chose.
+And an exact score tie at the backstop is reachable, because the demo is a mirror
+match on a symmetric map; it breaks on the base each side has left, which rewards
+chip damage a pure zone comparison throws away. Level on both is a genuine draw
+and is reported as one.
 
-Watch a whole match:
+Seat energy is kept as two ledgers — `start + generated - spent` — rather than a
+running total. At 4 a second on a 20 Hz tick the increment is 0.2, which is not
+representable in binary, and a balance mutated 1800 times over a round drifts
+away from its own history.
+
+Play one headlessly:
 
 ```bash
-cd api && python -m app.scripts.match_demo --miss-plan south
+cd api && python -m app.scripts.match_demo --seconds 12
 ```
 
-**Scope.** JQ-308 ships the single-round test profile — explicitly not production
-Starter. JQ-187 grows it into best-of-five with the reset and availability
-matrix; JQ-307 and JQ-297 replace the provisional packages and spells; JQ-309
-puts the Lobby contract and a realtime session around it.
+**Scope.** The five-choose-three package draw is *not* here: the plan phase
+currently composes freely from a roster, and packages are JQ-307's to define.
+JQ-187 grows this into best-of-five with the reset and availability matrix.
 
 ---
 
@@ -434,10 +544,17 @@ non-example secret is ever committed.
 
 ## Still out of scope
 
-No game logic beyond `/healthz`: the client's opening demo talks to a fixture,
-not to this api. The session layer and JoinQuest integration endpoints are
-JQ-188 and JQ-309, and the battle the client renders will come from the sim's
-slices (JQ-287 onwards) rather than from `client/src/match/fixtures/`.
+**The client still talks to its own fixture.** JQ-309 built the server side of
+the transport — the contract endpoints, the wire schema and the authoritative
+session over WebSocket — and `client/src/match/session.ts` has not been pointed
+at it yet. That swap is JQ-311's, and it carries two renames with it: the client
+was written against a three-zone map (`A`/`B`/`C`) before JQ-376 made it two
+lanes (`W`/`E`), and it spells the hold order `hold` where the sim spells it
+`holdZone`. The server's names are authoritative.
+
+Reclaim, command deduplication and reproducible diagnostics are **JQ-310**; live
+state is held in memory and is not restored from a row if the process restarts.
+Green dashboard checks and the integrated two-phone smoke test are **JQ-313**.
 
 Battle-map readability at density — occupancy chips, mage energy rings,
 tap-to-inspect, the twenty-a-side case — is **JQ-312**. The demo's renderer

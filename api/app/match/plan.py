@@ -1,206 +1,304 @@
-"""A plan, what makes one legal, and what the server does when none arrives.
+"""A submitted plan: reading it, refusing it, and turning it into an army.
 
-The plan is the whole of what a player gives the server for a round: which three
-packages they field, where each troop is sent, and which spells they carry. It
-is validated *here*, before a battle exists, so that an illegal plan is a
-rejection with a reason rather than a `ValueError` out of `create_world` — the
-sim builds worlds, it does not police clients.
+**The server owns validation and the energy spend.** A plan arrives from a phone
+over a socket, so nothing about it is trusted: not the mage ids, not the summon
+counts, not the orders, and above all not the spell costs. The client's
+`plan/derive.ts` answers the same questions to grey out a button; this answers
+them to decide what happens.
 
-Every rule below has a reason code, and the codes are the contract: a client
-renders them, and the tests assert on them rather than on message text.
+JQ-308 owns the *depth* of these rules — availability across rounds, the
+five-choose-three package draw, the missed-plan and abandonment policy. What is
+here is the shape they will deepen: a plan is legal or it is refused with a
+reason naming what is wrong, and an illegal one never becomes an army.
 
-**Suggested legal defaults are not a nicety.** JQ-308 asks for them twice — once
-as something to show a player who has not decided, and once as the answer to a
-player who never decides at all. They are the same object, which is why
-`suggested_plan` is the only place either comes from: a default that could be
-illegal would turn a missed plan into a crash at the worst possible moment.
+`to_army_setup` is the only place a plan becomes sim input, and it supplies no
+positions. Placement is derived from the order by `sim/formation.py` — the
+design's central constraint (§6.1) — so a field that amounted to a placement
+could not be added here even if a plan carried one.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
 
-from app.match.packages import PackageCatalog
-from app.match.profile import MatchProfile
-from app.sim import MapConfig, Order, Side, UnitType, legal_orders
-
-#: Why a plan was refused. The wire contract; message text is for humans.
-PlanRejection = Literal[
-    "wrongPhase",
-    "alreadyLocked",
-    "wrongTroopCount",
-    "duplicatePackage",
-    "unknownPackage",
-    "illegalOrder",
-    "overCapacity",
-    "unsupportedSummon",
-    "wrongSpellCount",
-    "duplicateSpell",
-    "ineligibleSpell",
-]
+from app.match import fixtures
+from app.match.wire import LoadoutSpell
+from app.sim.map import MapConfig
+from app.sim.orders import Order, validate_order
+from app.sim.types import Side
+from app.sim.world import ArmySetup, RosterEntry, TroopSetup
 
 
-class PlanRejected(Exception):
-    """An illegal plan. Carries the code a client keys off."""
-
-    def __init__(self, reason: PlanRejection, detail: str) -> None:
-        super().__init__(detail)
-        self.reason: PlanRejection = reason
-        self.detail = detail
+class PlanError(Exception):
+    """A plan this server will not field. Always answered to the seat that sent it."""
 
 
-@dataclass(frozen=True)
-class TroopPlan:
-    """One troop: which package, and the one order it is under."""
-
-    package_id: str
+@dataclass(frozen=True, slots=True)
+class PlannedTroop:
+    mage_id: str
+    summon_ids: tuple[str, ...]
     order: Order
 
 
-@dataclass(frozen=True)
-class Plan:
-    """A side's whole round.
-
-    `spell_ids` is JQ-297's round loadout snapshot: chosen during planning,
-    fixed at lock, and the only spells the side may cast all round. Snapshotting
-    it here rather than checking a live menu mid-battle is what makes a cast
-    cheap to validate and impossible to widen after the reveal.
-    """
-
-    troops: tuple[TroopPlan, ...] = field(default_factory=tuple)
-    spell_ids: tuple[str, ...] = field(default_factory=tuple)
-
-    @property
-    def package_ids(self) -> tuple[str, ...]:
-        return tuple(troop.package_id for troop in self.troops)
+@dataclass(frozen=True, slots=True)
+class SubmittedPlan:
+    troops: tuple[PlannedTroop, ...]
+    #: Slots in screen order; `None` is a legal empty slot.
+    spell_slots: tuple[str | None, ...]
 
 
-def _entourage_size(catalog: PackageCatalog, package_id: str) -> int:
-    package = catalog.by_id[package_id]
-    return sum(entry.count for entry in package.entourage)
+# ------------------------------------------------------------------- parsing --
 
 
-def _capacity_of(mage: UnitType) -> int:
-    return mage.support_capacity or 0
+def _parse_order(raw: Any) -> Order:
+    if not isinstance(raw, dict):
+        raise PlanError("each troop needs an order")
+    kind = raw.get("kind")
+    if kind == "holdZone":
+        zone_id = raw.get("zoneId")
+        if not isinstance(zone_id, str) or not zone_id.strip():
+            raise PlanError("a hold order must name the zone it holds")
+        return Order("holdZone", zone_id.strip())
+    if kind in ("defendBase", "pushEnemyBase"):
+        return Order(kind)
+    raise PlanError(f"{kind!r} is not an order")
 
 
-def validate_plan(
-    plan: Plan,
-    catalog: PackageCatalog,
-    map_config: MapConfig,
-    profile: MatchProfile,
-) -> None:
-    """Raises `PlanRejected` unless every rule the ticket lists is satisfied.
+def parse_plan(raw: Any) -> SubmittedPlan:
+    """Read a plan off the wire, or raise `PlanError` naming the first fault."""
+    if not isinstance(raw, dict):
+        raise PlanError("plan is required")
 
-    Order matters only for which reason a doubly-illegal plan reports; the
-    sequence runs cheapest and most structural first, so that a plan with the
-    wrong number of troops is told *that* rather than something about a spell.
-    """
-    by_id = catalog.by_id
-    types = catalog.types
+    raw_troops = raw.get("troops")
+    if not isinstance(raw_troops, list):
+        raise PlanError("plan.troops must be an array")
 
-    if len(plan.troops) != profile.packages_chosen:
-        raise PlanRejected(
-            "wrongTroopCount",
-            f"a plan fields {profile.packages_chosen} troops, got {len(plan.troops)}",
+    troops: list[PlannedTroop] = []
+    for entry in raw_troops:
+        if not isinstance(entry, dict):
+            raise PlanError("each plan.troops entry must be an object")
+        mage_id = entry.get("mageId")
+        if not isinstance(mage_id, str) or not mage_id.strip():
+            raise PlanError("each troop needs a mageId")
+        raw_summons = entry.get("summonIds", [])
+        if not isinstance(raw_summons, list):
+            raise PlanError("troop.summonIds must be an array")
+        summon_ids: list[str] = []
+        for summon_id in raw_summons:
+            if not isinstance(summon_id, str) or not summon_id.strip():
+                raise PlanError("troop.summonIds must be non-empty strings")
+            summon_ids.append(summon_id.strip())
+        troops.append(
+            PlannedTroop(
+                mage_id=mage_id.strip(),
+                summon_ids=tuple(summon_ids),
+                order=_parse_order(entry.get("order")),
+            )
         )
 
-    seen: list[str] = []
-    for troop in plan.troops:
-        if troop.package_id not in by_id:
-            raise PlanRejected("unknownPackage", f"{troop.package_id} is not on the menu")
-        if troop.package_id in seen:
-            # Each package is one instance. Two troops of the same package would
-            # be a roster the fixed-entourage rule exists to prevent.
-            raise PlanRejected("duplicatePackage", f"{troop.package_id} is chosen twice")
-        seen.append(troop.package_id)
+    raw_slots = raw.get("spellSlots", [])
+    if not isinstance(raw_slots, list):
+        raise PlanError("plan.spellSlots must be an array")
+    if len(raw_slots) > fixtures.SPELL_SLOTS:
+        raise PlanError(f"a plan carries at most {fixtures.SPELL_SLOTS} spells")
+    slots: list[str | None] = []
+    for slot in raw_slots:
+        if slot is None:
+            slots.append(None)
+        elif isinstance(slot, str) and slot.strip():
+            slots.append(slot.strip())
+        else:
+            raise PlanError("each spell slot is a spell id or null")
 
-    allowed = legal_orders(map_config)
-    for troop in plan.troops:
-        if troop.order not in allowed:
-            raise PlanRejected(
-                "illegalOrder",
-                f"{troop.order} is not an order this map offers",
-            )
-
-    for troop in plan.troops:
-        package = by_id[troop.package_id]
-        mage = types[package.mage_type_id]
-        size = _entourage_size(catalog, troop.package_id)
-        if size > _capacity_of(mage):
-            raise PlanRejected(
-                "overCapacity",
-                f"{package.id} fields {size} summons behind a mage supporting {_capacity_of(mage)}",
-            )
-
-        # The same rule `world._assert_supported` applies at build time, applied
-        # early so that an unsupportable package is a rejection rather than a
-        # crash three calls later. Support is mandatory and local (§4.2).
-        supported = set(mage.schools)
-        for entry in package.entourage:
-            summon = types[entry.type_id]
-            if not any(school in supported for school in summon.schools):
-                raise PlanRejected(
-                    "unsupportedSummon",
-                    f"{package.id} has no mage able to support {entry.type_id} ({'/'.join(summon.schools)})",
-                )
-
-    if len(plan.spell_ids) != profile.spells_per_round:
-        raise PlanRejected(
-            "wrongSpellCount",
-            f"a round loadout carries {profile.spells_per_round} spells, got {len(plan.spell_ids)}",
-        )
-    if len(set(plan.spell_ids)) != len(plan.spell_ids):
-        raise PlanRejected("duplicateSpell", "a spell is carried twice")
-
-    eligible = catalog.eligible_spells(plan.package_ids)
-    for spell_id in plan.spell_ids:
-        if spell_id not in eligible:
-            raise PlanRejected(
-                "ineligibleSpell",
-                f"{spell_id} is not offered by any package this plan chose",
-            )
+    return SubmittedPlan(troops=tuple(troops), spell_slots=tuple(slots))
 
 
-def suggested_plan(
-    side: Side,
-    catalog: PackageCatalog,
-    map_config: MapConfig,
-    profile: MatchProfile,
-) -> Plan:
-    """A legal plan, for a player who has not made one.
+# ---------------------------------------------------------------- validation --
 
-    Shown as the starting state of the plan screen, and submitted on that
-    player's behalf if the backstop expires (Ryan, 2026-09-15: auto-lock the
-    suggested default rather than forfeit, so an idle player loses on the field
-    rather than on a technicality).
 
-    Deliberately *unremarkable* rather than good: the first packages on the
-    menu, spread across the map's lanes and then told to push. A default that
-    tried to be strong would be a strategy the server plays for you, and a
-    player who never edits it should lose to one who did.
+def fielded_mages(plan: SubmittedPlan) -> list[fixtures.MageOption]:
+    """The mages this plan actually puts on the field, in troop order.
 
-    Identical for both sides. The map is symmetric, and a default that differed
-    by side would hand one of them an opening the other has to find.
+    In troop order rather than sorted, and a list rather than a set, because
+    what reads this is spell resolution — and a resolved sentence that changed
+    wording between two interpreters would be the hash-ordering bug the
+    conventions file is about.
     """
-    chosen = catalog.packages[: profile.packages_chosen]
-    holds = [order for order in legal_orders(map_config) if order.kind == "holdZone"]
-    push = next(order for order in legal_orders(map_config) if order.kind == "pushEnemyBase")
+    found: list[fixtures.MageOption] = []
+    for troop in plan.troops:
+        mage = fixtures.mage_by_id(troop.mage_id)
+        if mage is not None:
+            found.append(mage)
+    return found
 
-    orders: list[Order] = []
-    for index in range(len(chosen)):
-        # One troop to each lane, and anything left over goes forward. With two
-        # lanes and three troops that is hold/hold/push.
-        orders.append(holds[index] if index < len(holds) else push)
 
-    package_ids = tuple(package.id for package in chosen)
-    eligible = catalog.eligible_spells(package_ids)
+def _spell_is_eligible(spell: fixtures.SpellOption, plan: SubmittedPlan) -> str | None:
+    """The reason this spell cannot be equipped, or None if it can."""
+    requires = spell.requires
+    kind = requires.get("kind")
+    if kind == "always":
+        return None
+    mages = fielded_mages(plan)
+    if kind == "signature":
+        mage_id = requires.get("mageId")
+        if any(mage.id == mage_id for mage in mages):
+            return None
+        option = fixtures.mage_by_id(str(mage_id))
+        name = option.name if option else str(mage_id)
+        return f"needs {name} on the field"
+    if kind == "tag":
+        tag = str(requires.get("tag"))
+        if any(tag in mage.tags for mage in mages):
+            return None
+        return f"needs a fielded mage tagged {tag}"
+    return f"has an unreadable requirement ({kind!r})"
 
-    return Plan(
-        troops=tuple(
-            TroopPlan(package_id=package.id, order=order)
-            for package, order in zip(chosen, orders, strict=True)
-        ),
-        spell_ids=eligible[: profile.spells_per_round],
-    )
+
+def validate_plan(plan: SubmittedPlan, map_config: MapConfig) -> None:
+    """Raise `PlanError` unless this plan is one the server will field."""
+    if not plan.troops:
+        raise PlanError("field at least one troop before locking in")
+    if len(plan.troops) > fixtures.MAGE_CAP:
+        raise PlanError(f"at most {fixtures.MAGE_CAP} mages may be fielded this round")
+
+    # The roster is a multiset owned by the side, so the same summon fielded by
+    # two troops draws on one pool. Counted across the whole plan rather than
+    # per troop, which is the check a per-troop loop quietly misses.
+    used: dict[str, int] = {}
+
+    for troop in plan.troops:
+        mage = fixtures.mage_by_id(troop.mage_id)
+        if mage is None:
+            raise PlanError(f"{troop.mage_id!r} is not a mage on this roster")
+
+        try:
+            validate_order(troop.order, map_config)
+        except ValueError as err:
+            raise PlanError(str(err)) from err
+
+        capacity_used = 0
+        for summon_id in troop.summon_ids:
+            summon = fixtures.summon_by_id(summon_id)
+            if summon is None:
+                raise PlanError(f"{summon_id!r} is not a summon on this roster")
+
+            capacity_used += summon.capacity_cost
+            used[summon_id] = used.get(summon_id, 0) + 1
+            owned = fixtures.SUMMON_COUNTS.get(summon_id, 0)
+            if used[summon_id] > owned:
+                raise PlanError(f"only {owned} {summon.name} available this round")
+
+            # Support is mandatory and *local*: a mage in another troop is too
+            # far away to help (§4.2). The sim rejects this too, at build time —
+            # checked here so the player is told in the plan phase rather than
+            # having the round fail to start.
+            if not any(school in mage.schools for school in summon.schools):
+                raise PlanError(f"{mage.name} cannot support {summon.name}")
+
+        if capacity_used > mage.support_capacity:
+            raise PlanError(
+                f"{mage.name} supports {mage.support_capacity} points of summon, "
+                f"and this troop asks for {capacity_used}"
+            )
+
+    for index, spell_id in enumerate(plan.spell_slots):
+        if spell_id is None:
+            continue
+        spell = fixtures.spell_by_id(spell_id)
+        if spell is None:
+            raise PlanError(f"{spell_id!r} is not a spell on this roster")
+        reason = _spell_is_eligible(spell, plan)
+        if reason is not None:
+            raise PlanError(f"spell {index + 1} — {spell.name} {reason}")
+
+
+# ---------------------------------------------------------------- resolution --
+
+
+def _contributors(plan: SubmittedPlan, spell: fixtures.SpellOption) -> list[tuple[str, str]]:
+    """(mage name, tag) for each fielded mage carrying a tag the spell reads.
+
+    Mage order, then tag order as the spell lists them. No set iteration, so the
+    same plan resolves to the same sentence in every process.
+    """
+    found: list[tuple[str, str]] = []
+    for mage in fielded_mages(plan):
+        for tag in spell.reads:
+            if tag in mage.tags:
+                found.append((mage.name, tag))
+    return found
+
+
+def _effect_text(spell: fixtures.SpellOption, contributors: Sequence[tuple[str, str]]) -> str:
+    magnitude = fixtures.BASE_MAGNITUDE + fixtures.PER_CONTRIBUTOR * len(contributors)
+    if not contributors:
+        return f"{spell.text} At {magnitude:g}, with nothing fielded to raise it."
+    tags: list[str] = []
+    for _, tag in contributors:
+        if tag not in tags:
+            tags.append(tag)
+    count = len(contributors)
+    plural = "" if count == 1 else "s"
+    return f"{spell.text} At {magnitude:g} — {', '.join(tags)} from {count} fielded mage{plural}."
+
+
+def resolve_loadout(plan: SubmittedPlan) -> list[LoadoutSpell]:
+    """The spells this plan takes into the round, with **resolved** costs.
+
+    Resolved rather than printed: what a fielded mage's tags do to a spell is
+    the server's answer, and the client pricing off the card would let a player
+    spend energy they do not have. `LoadoutSpell` is a wire type, so this is
+    where the plan layer stops and the contract begins.
+    """
+    loadout: list[LoadoutSpell] = []
+    for spell_id in plan.spell_slots:
+        if spell_id is None:
+            continue
+        spell = fixtures.spell_by_id(spell_id)
+        if spell is None:
+            continue
+        contributors = _contributors(plan, spell)
+        loadout.append(
+            LoadoutSpell(
+                spell_id=spell.id,
+                name=spell.name,
+                cost=spell.cost,
+                effect=_effect_text(spell, contributors),
+            )
+        )
+    return loadout
+
+
+# ----------------------------------------------------------------- sim input --
+
+
+def to_army_setup(plan: SubmittedPlan, side: Side) -> ArmySetup:
+    """The plan as the sim wants it.
+
+    No positions, no stances, no facings — the order is the whole of what a
+    troop is given, and `sim/formation.py` derives the rest (§6.1).
+    """
+    troops = [
+        TroopSetup(
+            order=troop.order,
+            mages=[RosterEntry(troop.mage_id)],
+            summons=[RosterEntry(summon_id) for summon_id in troop.summon_ids],
+            id=f"{side}-{index + 1}",
+        )
+        for index, troop in enumerate(plan.troops)
+    ]
+    return ArmySetup(side=side, troops=troops)
+
+
+def default_plan(map_config: MapConfig) -> SubmittedPlan:
+    """The legal suggested default, parsed from the same fixture the client is sent.
+
+    Round-tripped through `parse_plan` rather than constructed directly, so a
+    fixture the parser would reject fails a test here instead of stranding a
+    player who locked in without touching anything.
+    """
+    plan = parse_plan(fixtures.opening_plan_json(1, map_config))
+    validate_plan(plan, map_config)
+    return plan

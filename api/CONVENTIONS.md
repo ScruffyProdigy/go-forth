@@ -168,14 +168,55 @@ api/
 │   ├── main.py      # the FastAPI factory
 │   ├── server.py    # binds the port: `python -m app.server`
 │   ├── config.py    # environment, with defaults that run without a .env
-│   ├── sim/         # the battle sim (JQ-286) — pure, deterministic
-│   └── match/       # the rules above the battle (JQ-308)
+│   ├── routes.py    # the HTTP surface
+│   ├── ws.py        # the realtime transport
+│   ├── service.py   # what routes and sockets both go through
+│   ├── repository.py / pg_repository.py
+│   ├── lobby/       # the JoinQuest contract (JQ-309) — fixed, shared with rpslr
+│   ├── match/       # this game: wire schema, plan, round, session, clock
+│   └── sim/         # the battle sim (JQ-286) — pure, deterministic
 ├── migrations/      # forward-only *.sql, applied in filename order
 └── tests/           # not co-located; the Python convention, unlike rpslr
 ```
 
 `tests/` sits outside the package, so `pyproject.toml` puts `.` on the path via
 `[tool.pytest.ini_options] pythonpath`.
+
+**`lobby/` and `match/` are separated on purpose.** `lobby/` speaks a contract
+the platform fixes and rpslr shares; `match/` is Go Forth! and nothing else. A
+change in one cannot break the other's tests, which is the property that keeps
+the integration checks meaningful. `docs/python-vs-typescript.md` maps every
+module here to its rpslr counterpart.
+
+## The wire format is not the determinism serializer
+
+`sim/serialize.py` renders a battle as canonical text so two runs can be
+compared byte for byte. `match/wire.py` is what crosses a socket. **They must
+never be the same thing**, for three separate reasons:
+
+1. The serializer is *total* — it carries every unit, both bases, the whole
+   event stream. A client must not be sent the opponent's energy or an unlocked
+   plan; those are hidden information, and a snapshot containing them leaks them
+   to anyone with the network tab open, whatever the UI draws.
+2. They are frozen for different reasons. The serializer's shape may not change
+   without invalidating saved comparisons; the wire's may not change without
+   breaking deployed clients. Tying them together makes every rendering tweak a
+   determinism event.
+3. The serializer describes a *finished battle*. A live session sends a tick.
+
+The failure mode is not that someone decides to use it — it is that
+`serialize_battle(result)` is right there, produces plausible JSON, and saves an
+afternoon. `tests/match/test_wire.py` asserts on the import graph that nothing
+outside `sim/` and the headless demo reaches for it.
+
+## Running without a database
+
+`GAME_IN_MEMORY=1` swaps `PgRepository` for `MemoryRepository`, so a fresh
+checkout is playable with nothing installed but Python — the first thing anyone
+reading a reference implementation tries, and the thing they give up at if it
+needs Postgres. It is also what lets the whole contract suite run in CI, which
+has no Postgres service. Anything that can only be wrong against real Postgres
+belongs in a `*.pg.py` test that skips without a database.
 
 ## Toolchain
 
