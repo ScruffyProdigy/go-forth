@@ -12,6 +12,21 @@ anything illegal — only which of the possible things this unit likes. Danger
 carries its own sign so that caring about danger and ignoring it are a large
 weight and a small one; see `factors.py` on why weights stay non-negative.
 
+**Weights arrive per candidate, not per unit.** A unit's standing weights are
+composed once at battle start, but a personality's contextual rules (JQ-330) can
+only be resolved against a particular thing it could do — whether an ally is
+under threat is a fact about this tick. So each candidate is scored against the
+standing weights plus whatever rules matched *it*, clamped again. Two
+consequences worth knowing before reading a surprising score:
+
+* The denominator differs between candidates, since it is the sum of that
+  candidate's weights. The total stays inside `[-1, 1]` either way, because it
+  is still a weighted mean of values that are.
+* Raising the weight on a factor whose raw value sits below a candidate's mean
+  *lowers* that candidate's score. That is correct and load-bearing: it is how
+  "care more about staying with your troop" removes a pursuit from contention
+  without anyone having to price danger differently.
+
 Every factor's raw value and weight are kept on the result. Nothing in the sim
 reads them, and that is the point: JQ-331 explains a decision by reading them
 back rather than by re-running it with instrumentation.
@@ -22,8 +37,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.sim.ai.candidates import Candidate
-from app.sim.ai.factors import FACTORS, FactorContribution, FactorName, FactorWeights, clamp_score
+from app.sim.ai.factors import (
+    FACTORS,
+    FactorContribution,
+    FactorName,
+    FactorWeights,
+    PersonalityInfluence,
+    clamp_score,
+    clamp_weight,
+    freeze_weights,
+)
 from app.sim.ai.observe import Observation
+from app.sim.ai.profiles import PersonalityRule, ResolvedPersonality
+from app.sim.ai.situation import holds
 from app.sim.effects import AreaDamage, DashToTarget
 from app.sim.geometry import distance, move_toward
 from app.sim.types import Vec2
@@ -77,6 +103,10 @@ class ScoredCandidate:
     #: The weighted mean of the contributions, in `[-1, 1]`.
     score: float
     contributions: tuple[FactorContribution, ...]
+    #: Which personality tags spoke to this candidate, in which situation, and
+    #: by how much. Empty when none did — including when every one of them was
+    #: dialled to zero. Diagnostics only; nothing branches on it.
+    influences: tuple[PersonalityInfluence, ...] = ()
 
 
 def _dash_of(observation: Observation) -> DashToTarget | None:
@@ -284,12 +314,96 @@ def _raw(observation: Observation, candidate: Candidate, factor: FactorName, pos
     raise ValueError(f"{factor!r} is not a factor; expected one of {FACTORS}")
 
 
+def _matches(
+    rule: PersonalityRule,
+    observation: Observation,
+    candidate: Candidate,
+    position: Vec2,
+) -> bool:
+    """All four of a rule's dimensions, in the cheapest order.
+
+    Actions first because it is a tuple membership test and rules are commonly
+    scoped to one verb; the situation next; the exceptions last, since they are
+    only reached by a rule that was otherwise about to fire. Every exception is
+    read at the same influence range as the rule itself — an exception that
+    looked further than the rule it guards could silence something the rule
+    could not see in the first place.
+    """
+    if rule.actions and candidate.kind not in rule.actions:
+        return False
+    if not holds(rule.when, observation, candidate, position, rule.influence):
+        return False
+    return not any(
+        holds(exception, observation, candidate, position, rule.influence) for exception in rule.unless
+    )
+
+
+def contextual_weights(
+    observation: Observation,
+    candidate: Candidate,
+    position: Vec2,
+    weights: FactorWeights,
+    personalities: tuple[ResolvedPersonality, ...],
+) -> tuple[FactorWeights, tuple[PersonalityInfluence, ...]]:
+    """The standing weights, plus whatever this candidate's situation woke up.
+
+    Deltas **sum**. Two tags that both speak to a candidate both apply, and
+    neither wins for having been authored first — the same rule composition
+    follows everywhere else, and the reason it matters most here is that this is
+    where a mage gets to be two things at once. A reckless, protective mage
+    intercepting a threat to an ally has both tags pushing the same way, because
+    each is speaking to a different part of the same moment.
+
+    Walks personalities in tag order and rules in authored order, both fixed, so
+    the additions happen in the same sequence in every process.
+    """
+    if not personalities:
+        return weights, ()
+
+    adjusted: dict[FactorName, float] = {factor: weights[factor] for factor in FACTORS}
+    influences: list[PersonalityInfluence] = []
+
+    for personality in personalities:
+        for rule in personality.rules:
+            if not _matches(rule, observation, candidate, position):
+                continue
+            for factor in FACTORS:
+                # `.get` rather than indexing: a resolved rule carries all four
+                # factors, but an author's raw rule carries only what it names,
+                # and a KeyError from inside the scoring loop is a miserable way
+                # to learn that. A factor a rule does not mention is no delta.
+                delta = rule.weights.get(factor, 0.0)
+                if delta == 0.0:
+                    # Includes every rule of a tag dialled to zero: it matched,
+                    # and it had nothing to say. Recording that as an influence
+                    # would fill a decision trace with silence.
+                    continue
+                adjusted[factor] += delta
+                influences.append(
+                    # `rule.when` is the whole answer to "which situation woke
+                    # this", which is why a rule carries exactly one.
+                    PersonalityInfluence(
+                        tag=personality.tag,
+                        context=rule.when,
+                        factor=factor,
+                        delta=delta,
+                    )
+                )
+
+    return (
+        freeze_weights({factor: clamp_weight(adjusted[factor]) for factor in FACTORS}),
+        tuple(influences),
+    )
+
+
 def score_candidate(
     observation: Observation,
     candidate: Candidate,
     weights: FactorWeights,
+    personalities: tuple[ResolvedPersonality, ...] = (),
 ) -> ScoredCandidate:
     position = _position_after(observation, candidate)
+    weights, influences = contextual_weights(observation, candidate, position, weights, personalities)
 
     # Walks FACTORS, never the weights mapping: declared order, not hash order.
     contributions = tuple(
@@ -308,16 +422,22 @@ def score_candidate(
         else 0.0
     )
 
-    return ScoredCandidate(candidate=candidate, score=score, contributions=contributions)
+    return ScoredCandidate(
+        candidate=candidate,
+        score=score,
+        contributions=contributions,
+        influences=influences,
+    )
 
 
 def score_candidates(
     observation: Observation,
     candidates: tuple[Candidate, ...],
     weights: FactorWeights,
+    personalities: tuple[ResolvedPersonality, ...] = (),
 ) -> tuple[ScoredCandidate, ...]:
     """Scores in the order given, which `candidates.py` has already made stable."""
-    return tuple(score_candidate(observation, candidate, weights) for candidate in candidates)
+    return tuple(score_candidate(observation, candidate, weights, personalities) for candidate in candidates)
 
 
 def _ability_multiplier(observation: Observation, candidate: Candidate) -> float:

@@ -20,6 +20,7 @@ from app.sim.ai.profiles import (
     TraitDefinition,
     TraitTag,
     UnitBehavior,
+    defaulted,
     index_library,
     personality_refs_for_troop,
     resolve_behavior,
@@ -257,7 +258,12 @@ def test_two_mages_with_the_same_tag_sum_their_strength_and_then_clamp() -> None
 
     resolved = resolve_behavior(unit, capabilities_of(unit), index, refs)
 
-    assert resolved.personalities == ((CAREFUL, MAX_STRENGTH),)
+    assert [(p.tag, p.strength) for p in resolved.personalities] == [(CAREFUL, MAX_STRENGTH)]
+    # Both references survive the summation, each with its own strength.
+    assert [(s.mage_id, s.strength) for s in resolved.personalities[0].sources] == [
+        ("m0", 1.5),
+        ("m1", 1.5),
+    ]
 
 
 def test_resolved_personalities_are_reported_for_diagnostics() -> None:
@@ -271,7 +277,9 @@ def test_resolved_personalities_are_reported_for_diagnostics() -> None:
     )
 
     assert world.units[0].ai is not None
-    assert world.units[0].ai.behavior.personalities == ((RECKLESS, 1.25),)
+    resolved = world.units[0].ai.behavior.personalities
+    assert [(p.tag, p.strength) for p in resolved] == [(RECKLESS, 1.25)]
+    assert not defaulted(resolved[0])
 
 
 # --- validation -------------------------------------------------------------
