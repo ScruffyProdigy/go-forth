@@ -261,7 +261,13 @@ def _approach_candidates(observation: Observation, target: Unit) -> list[Candida
         candidates.append(Candidate(kind="advance", target_id=target.id, destination=approach, reason=reason))
 
     if observation.capabilities.can_attack:
-        covered = protected_by(observation.unit, observation.allies, target, observation.objective.station)
+        covered = protected_by(
+            observation.unit,
+            observation.allies,
+            target,
+            observation.objective.station,
+            observation.protecting_id,
+        )
         screen = screen_position(target.position, covered.position, gap)
         if distance(position, screen) > ARRIVAL_EPSILON and not _base_is_off_limits(observation, screen):
             candidates.append(

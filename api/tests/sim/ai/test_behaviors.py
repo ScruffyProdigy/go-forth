@@ -19,7 +19,7 @@ from collections.abc import Mapping, Sequence
 import pytest
 
 from app.sim.ai.attach import attach_behavior
-from app.sim.ai.candidates import generate_candidates
+from app.sim.ai.candidates import Candidate, generate_candidates
 from app.sim.ai.capabilities import capabilities_of
 from app.sim.ai.fixtures import sample_library
 from app.sim.ai.intent import (
@@ -526,6 +526,54 @@ def test_useful_range_is_not_inside_the_walking_standoff() -> None:
     for card in ROSTER:
         unit = make_unit("u", card, "north", HERE)
         assert useful_range(capabilities_of(unit)) >= engagement_standoff(unit)
+
+
+def test_a_named_ally_reaches_the_screen_candidate_and_not_just_the_helper() -> None:
+    """The assigned branch has to be reachable from a decision, not only unit-tested.
+
+    `protected_by` grew a `protecting_id` so that consuming JQ-330's assignment
+    would be a wire-up rather than a redesign — and then nothing threaded it to
+    the call site, so `_approach_candidates` always called the helper without
+    one. The assigned half of
+
+        reason=SCREENING if covered.assigned else SCREENING_INFERRED
+
+    was unreachable from production code entirely: not merely untested, but
+    impossible to produce. Found by mutating it to a sentinel and watching the
+    whole suite pass, after JQ-331 found the mirror image of it pointed at their
+    renderer by this branch's `Intent.reason`.
+
+    A parameter added for a future caller, with no present caller, is the same
+    unwired seam as a consumer waiting on a producer — and it is worse, because
+    it looks wired. The helper's own test passes and reads like coverage.
+    """
+    threat_at = Vec2(HERE.x + 100, HERE.y)
+    screener = make_unit("s", HOUND, "north", HERE, destination=HERE)
+    near = make_unit("near", WISP, "north", Vec2(HERE.x + 80, HERE.y + 30))
+    far = make_unit("far", WISP, "north", Vec2(HERE.x - 60, HERE.y + 20))
+    world = make_world([screener, near, far, make_unit("t", RAM, "south", threat_at)])
+
+    def screen_for(protecting: str | None) -> Candidate:
+        observation = observe(
+            world,
+            screener,
+            TWO_LANE_MAP,
+            SECONDS_PER_TICK,
+            nominated_target_ids=["t"],
+            protecting_id=protecting,
+        )
+        return next(c for c in generate_candidates(observation) if c.reason in SCREEN_REASONS)
+
+    inferred = screen_for(None)
+    assert inferred.reason == SCREENING_INFERRED
+    assert inferred.protecting_id == "near", "the guess is the ally nearest the threat"
+
+    assigned = screen_for("far")
+    assert assigned.reason == SCREENING, "a named ally did not reach the candidate"
+    assert assigned.protecting_id == "far"
+    assert assigned.destination != inferred.destination, (
+        "the assignment changed who is covered but not where the unit stands"
+    )
 
 
 def test_a_named_ally_beats_the_guess_about_who_is_being_screened() -> None:

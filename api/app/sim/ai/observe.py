@@ -75,6 +75,12 @@ class Observation:
     #: `positioning.protected_by` would rather be told than infer. That type is
     #: the one to keep when the two branches meet; see `protected_by`.
     nominated_target_ids: tuple[UnitId, ...] = ()
+    #: The ally this unit was assigned to answer that threat *on behalf of*,
+    #: when a coordinator named one. Travels with `nominated_target_ids` and is
+    #: replaced by JQ-330's `Assignment` along with it — the pair is the same
+    #: handoff split in two, kept apart only because their type does not exist
+    #: on this branch yet.
+    protecting_id: UnitId | None = None
     #: The chase this unit is already running, if any. Read from `unit.ai`.
     commitment: Commitment | None = None
     #: Ticks left before this unit may be drawn off its post again. Above zero
@@ -103,6 +109,7 @@ def observe(
     seconds_per_tick: float,
     abilities: AbilityCatalog | None = None,
     nominated_target_ids: Iterable[UnitId] | None = None,
+    protecting_id: UnitId | None = None,
 ) -> Observation:
     capabilities = capabilities_of(unit)
 
@@ -125,6 +132,7 @@ def observe(
         tick=world.tick,
         seconds_per_tick=seconds_per_tick,
         nominated_target_ids=_nominations(nominated_target_ids),
+        protecting_id=protecting_id,
         commitment=unit.ai.commitment if unit.ai is not None else None,
         recovery_remaining=unit.ai.recovery_remaining if unit.ai is not None else 0,
         previous=unit.ai.intent if unit.ai is not None else None,
