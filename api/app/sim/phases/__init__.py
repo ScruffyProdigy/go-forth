@@ -28,6 +28,15 @@ so the earliest any mage can begin rebuilding it is the tick after — a unit
 never pops back on the same tick it fell. The troop-bond dissolve (§4.6) lives
 inside `removal` rather than in a phase of its own for the same reason: it is
 the moment a troop learns it has lost its last mage.
+
+Those two constraints — `removal` last, `resummon` immediately before it — leave
+`scoring` (slice B) with only one place to go, after `combat` and before
+`resummon`. That is not a convention anyone picked, and it has a rule attached
+that is easier to read here than to rediscover as a bug report: **a unit
+resummoned on tick T does not hold ground on tick T**, because scoring has
+already run by the time it appears. It is the mirror of the rule above, and
+deliberately so — a summon leaves the field a tick before it can come back, and
+earns nothing on the tick it returns.
 """
 
 from __future__ import annotations
