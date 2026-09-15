@@ -57,13 +57,23 @@ class Observation:
     seconds_per_tick: float = 0.0
     #: Enemies this unit has been asked to answer, sorted by id, deduplicated.
     #:
-    #: The seam JQ-330's troop coordinator hands an assignment through. Empty
-    #: here means nobody nominated anything, which is the state every test that
-    #: is not about coordination should be in. Candidates treats a nomination as
-    #: "this enemy is worth a position of its own", and generates the same
-    #: bounded set for it that it generates for the nearest enemy — so a melee
-    #: guard and an archer given one assignment answer it with their own legal
-    #: options rather than with a shared one.
+    #: Candidates treats a nomination as "this enemy is worth a position of its
+    #: own", and generates the same bounded set for it that it generates for the
+    #: nearest enemy — so a melee guard and an archer given one assignment answer
+    #: it with their own legal options rather than with a shared one.
+    #:
+    #: **Nothing populates this in a running battle yet, on purpose.** The
+    #: decision phase does not pass it: JQ-330 owns which unit is asked to answer
+    #: which threat, and asked for that call site to stay a single hand's. So the
+    #: consuming half is built and tested here and the producing half arrives
+    #: with their coordinator. Until then `INTERCEPTING` never fires in a battle,
+    #: and a green suite on this branch says nothing about the wiring — the tests
+    #: pass nominations straight to `observe`.
+    #:
+    #: JQ-330's coordinator carries a richer type than this — an `Assignment`
+    #: naming the ally the threat is being answered *on behalf of*, which
+    #: `positioning.protected_by` would rather be told than infer. That type is
+    #: the one to keep when the two branches meet; see `protected_by`.
     nominated_target_ids: tuple[UnitId, ...] = ()
     #: The chase this unit is already running, if any. Read from `unit.ai`.
     commitment: Commitment | None = None

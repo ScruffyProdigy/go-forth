@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from app.sim.ai.capabilities import Capabilities
 from app.sim.geometry import distance, point_along
-from app.sim.types import Vec2
+from app.sim.types import UnitId, Vec2
 from app.sim.world import Unit
 
 #: How much of its reach a unit actually wants to use, as a fraction.
@@ -101,12 +101,26 @@ def screen_position(threat: Vec2, protected: Vec2, gap: float) -> Vec2:
     return point_along(threat, protected, gap)
 
 
-def protected_by(unit: Unit, allies: tuple[Unit, ...], threat: Unit, station: Vec2) -> Vec2:
+def protected_by(
+    unit: Unit,
+    allies: tuple[Unit, ...],
+    threat: Unit,
+    station: Vec2,
+    protecting_id: UnitId | None = None,
+) -> Vec2:
     """What this unit would be screening `threat` away from.
 
-    The ally that threat is nearest to, which is the one it is most plausibly
-    about to hit — ties broken on id, since `allies` arrives sorted and the
-    comparison below keeps the first of an equal pair. With no allies at all
+    **`protecting_id` is an answer; everything below it is a guess.** A troop
+    coordinator that assigned this unit to a threat knows which ally it assigned
+    it *on behalf of*, and "answer that threat for that ally" is a strictly
+    better instruction than "answer that threat" — the screening line is then the
+    one the coordinator meant rather than the one this function inferred. JQ-330
+    carries it on their `Assignment`; the parameter is here so consuming it is a
+    wire-up rather than a redesign.
+
+    Without one: the ally that threat is nearest to, which is the one it is most
+    plausibly about to hit — ties broken on id, since `allies` arrives sorted and
+    the comparison below keeps the first of an equal pair. With no allies at all
     there is still something to cover: the post this unit was given, which is
     what a lone guard is guarding.
 
@@ -120,6 +134,13 @@ def protected_by(unit: Unit, allies: tuple[Unit, ...], threat: Unit, station: Ve
     in the arrangement screens exist for.
     """
     del unit  # The screener's own position decides the *gap*, not the line.
+
+    if protecting_id is not None:
+        named = next((ally for ally in allies if ally.id == protecting_id), None)
+        if named is not None:
+            return named.position
+        # Assigned to cover something that has since died or left. Fall through
+        # rather than refuse: the threat is still real and still worth screening.
 
     nearest: Unit | None = None
     nearest_gap = float("inf")

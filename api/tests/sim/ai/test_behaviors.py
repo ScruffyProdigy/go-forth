@@ -33,7 +33,7 @@ from app.sim.ai.intent import (
     UnitAi,
 )
 from app.sim.ai.observe import observe
-from app.sim.ai.positioning import useful_range
+from app.sim.ai.positioning import protected_by, useful_range
 from app.sim.ai.profiles import BehaviorLibrary, CreatureProfile
 from app.sim.ai.pursuit import PURSUIT_LEASH
 from app.sim.config import DEFAULT_SIM_CONFIG
@@ -475,3 +475,32 @@ def test_useful_range_is_not_inside_the_walking_standoff() -> None:
     for card in ROSTER:
         unit = make_unit("u", card, "north", HERE)
         assert useful_range(capabilities_of(unit)) >= engagement_standoff(unit)
+
+
+def test_a_named_ally_beats_the_guess_about_who_is_being_screened() -> None:
+    """The coordinator knows who it assigned this unit on behalf of.
+
+    `protected_by` infers it — the ally the threat is nearest to — and the
+    inference is only ever a guess. When a troop coordinator names one, the
+    screening line becomes the one it meant rather than the one this end worked
+    out, and the two differ exactly when the threat is nearer some *other* ally.
+
+    Staged on that difference: the threat stands next to one ally and the
+    assignment names the other. Without the name the screen would cover the
+    wrong one.
+    """
+    threat = make_unit("t", RAM, "south", Vec2(HERE.x + 100, HERE.y))
+    near_the_threat = make_unit("near", WISP, "north", Vec2(HERE.x + 90, HERE.y + 40))
+    the_one_that_matters = make_unit("far", WISP, "north", Vec2(HERE.x - 60, HERE.y))
+    screener = make_unit("s", HOUND, "north", HERE, destination=HERE)
+    allies = (near_the_threat, the_one_that_matters)
+
+    guessed = protected_by(screener, allies, threat, HERE)
+    named = protected_by(screener, allies, threat, HERE, protecting_id="far")
+
+    assert guessed == near_the_threat.position, "the guess is the ally nearest the threat"
+    assert named == the_one_that_matters.position
+
+    # And a named ally that has since died falls back rather than refusing: the
+    # threat is still real and still worth screening.
+    assert protected_by(screener, allies, threat, HERE, protecting_id="gone") == guessed
