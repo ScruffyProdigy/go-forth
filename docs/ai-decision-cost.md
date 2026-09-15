@@ -214,3 +214,32 @@ other direction: a single-tick assertion cannot tell a decision from an
 oscillation, and a render verified by eye cannot tell a formatter from a no-op.
 Both were caught by looking at **output over time** rather than asserting at a
 point.
+
+### A negative control has to prove it ran
+
+The sharpest of the three, and the one the other two depend on. Breaking the code
+on purpose to watch a test fail is the only evidence that the test can fail —
+but **"I broke it and the test failed" and "I believe I broke it and the test
+failed" look identical in a terminal**, and only the first is evidence.
+
+This is not hypothetical. Twice in one session a patch script that edited source
+by matching an anchor string silently matched nothing, because a formatter had
+reflowed the line it was looking for. It printed its success message over a file
+it had not touched. In one case that hid a helper nobody called; in the other it
+made a green test look like proof that a fix worked.
+
+So a negative control asserts that it landed before its result is read — the
+anchor matched, the file changed, and by how much — and the restore asserts the
+same in reverse. Three lines, and without them a mutation check is a ritual
+rather than a measurement.
+
+The same reasoning kills a subtler version, which is a test that asserts
+something about nothing. `all(...)` over an empty sequence is true, and an empty
+set differs from a populated one, so a test can pass both of its assertions while
+the thing it describes has ceased to exist. **Assert the collection is non-empty
+before asserting anything about its contents**, whenever "there is nothing here"
+is one of the failures you are trying to catch.
+
+All three notes above came out of one session of three agents merging each
+other's branches. Each defect was invisible from the branch that contained it,
+and every suite involved was green throughout.
