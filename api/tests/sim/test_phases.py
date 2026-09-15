@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from app.sim.config import DEFAULT_SIM_CONFIG
 from app.sim.context import TickContext, create_tick_context
+from app.sim.formation import station
 from app.sim.map import THREE_ZONE_MAP
+from app.sim.orders import PUSH_ENEMY_BASE
 from app.sim.phase import TickPhase
 from app.sim.phases import TICK_PHASES
 from app.sim.rng import create_rng
@@ -28,6 +30,7 @@ DUEL = BattleSetup(
             side=side,
             troops=[
                 TroopSetup(
+                    order=PUSH_ENEMY_BASE,
                     mages=[RosterEntry("ember-adept")],
                     summons=[RosterEntry("cinder-hound")],
                 )
@@ -61,7 +64,14 @@ def phase(name: str) -> TickPhase:
 
 
 def test_the_phase_order_is_declared_in_one_place() -> None:
-    assert [p.name for p in TICK_PHASES] == ["movement", "combat", "resummon", "removal"]
+    assert [p.name for p in TICK_PHASES] == [
+        "orders",
+        "movement",
+        "combat",
+        "scoring",
+        "resummon",
+        "removal",
+    ]
 
 
 def test_combat_runs_after_movement_so_a_unit_that_closed_can_swing() -> None:
@@ -74,6 +84,18 @@ def test_the_dead_are_swept_last_so_a_defeated_unit_cannot_act() -> None:
     names = [p.name for p in TICK_PHASES]
 
     assert names.index("removal") == len(names) - 1
+
+
+def test_orders_run_before_anything_moves() -> None:
+    names = [p.name for p in TICK_PHASES]
+
+    assert names.index("orders") == 0
+
+
+def test_zones_are_scored_after_combat_so_a_zone_flips_the_tick_its_holder_falls() -> None:
+    names = [p.name for p in TICK_PHASES]
+
+    assert names.index("combat") < names.index("scoring") < names.index("removal")
 
 
 def test_movement_advances_a_unit_toward_the_enemy_base() -> None:
@@ -217,3 +239,27 @@ def test_removal_leaves_the_living_alone() -> None:
     phase("removal").run(world, context())
 
     assert len(world.units) == before
+
+
+def test_orders_give_every_unit_a_station_derived_from_its_troops_order() -> None:
+    world, ctx = duel(), context()
+    hunter = unit_of(world, "north", "cinder-hound")
+    hunter.destination = Vec2(0, 0)
+
+    phase("orders").run(world, ctx)
+
+    assert hunter.destination == station(PUSH_ENEMY_BASE, "north", hunter.formation_offset, THREE_ZONE_MAP)
+
+
+def test_a_unit_pulled_off_its_station_is_sent_back_to_it_next_tick() -> None:
+    """The seam bounded diversions hang off (JQ-296): a behaviour layer overwrites
+    a destination for as long as it wants the unit elsewhere, and returning to
+    post costs it nothing but letting go."""
+    world, ctx = duel(), context()
+    hunter = unit_of(world, "north", "cinder-hound")
+    assigned = hunter.destination
+
+    hunter.destination = Vec2(10, 10)
+    phase("orders").run(world, ctx)
+
+    assert hunter.destination == assigned

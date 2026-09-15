@@ -11,13 +11,15 @@ from __future__ import annotations
 import copy
 import dataclasses
 
-from app.sim.config import DEFAULT_SIM_CONFIG, to_ticks
+from app.sim.config import DEFAULT_SIM_CONFIG, max_ticks, to_ticks
 from app.sim.context import TickContext, create_tick_context
+from app.sim.events import BattleEvent
 from app.sim.fixtures import placeholder_battle
 from app.sim.map import THREE_ZONE_MAP, MapConfig
+from app.sim.orders import PUSH_ENEMY_BASE
 from app.sim.phases import TICK_PHASES
 from app.sim.rng import create_rng
-from app.sim.run_battle import run_battle
+from app.sim.run_battle import run_battle, step_battle
 from app.sim.schools import SchoolConfig, resolve_side_multipliers
 from app.sim.types import Span, Vec2
 from app.sim.units import UnitType
@@ -71,6 +73,7 @@ def world_of(mages: int, summons: int, cards: list[UnitType] | None = None) -> W
                 side=side,
                 troops=[
                     TroopSetup(
+                        order=PUSH_ENEMY_BASE,
                         mages=[RosterEntry("kindler", mages)],
                         summons=[RosterEntry("cinder-hound", summons)] if summons else [],
                     )
@@ -80,10 +83,21 @@ def world_of(mages: int, summons: int, cards: list[UnitType] | None = None) -> W
         ],
     )
     world = create_world(THREE_ZONE_MAP, setup, create_rng(5))
-    for index, unit in enumerate(world.units):
-        # Out of everyone's reach: nothing here is about fighting.
-        unit.position = Vec2(index * 500, index * 500)
+    park(world)
     return world
+
+
+def park(world: World) -> None:
+    """Scatter everything out of reach and nail it down.
+
+    These tests measure a clock, not a battle. Since slice B the tick list also
+    holds `orders` and `movement`, which would otherwise walk every unit to its
+    station and start a fight in the middle of a timing assertion.
+    """
+    for index, unit in enumerate(world.units):
+        unit.position = Vec2(index * 500, index * 500)
+        unit.destination = unit.position
+        unit.speed = 0
 
 
 def troop_of(world: World, side: str) -> Troop:
@@ -254,7 +268,9 @@ def test_a_troop_rebuilds_only_up_to_its_combined_support_capacity() -> None:
     """One mage of capacity 2 holds two summons, however many slots it is owed."""
     world, ctx = world_of(mages=1, summons=2), context()
     troop = troop_of(world, "north")
-    troop.dispelled_slots.extend(DispelledSlot(type_id="cinder-hound") for _ in range(3))
+    troop.dispelled_slots.extend(
+        DispelledSlot(type_id="cinder-hound", formation_offset=Vec2(0, 0)) for _ in range(3)
+    )
 
     advance(world, ctx, PACE_TICKS * 4)
 
@@ -366,23 +382,27 @@ def test_a_same_school_mage_in_another_troop_does_not_prevent_the_dissolve() -> 
                 side="north",
                 troops=[
                     TroopSetup(
+                        order=PUSH_ENEMY_BASE,
                         id="doomed",
                         mages=[RosterEntry("kindler")],
                         summons=[RosterEntry("cinder-hound", 2)],
                     ),
                     TroopSetup(
+                        order=PUSH_ENEMY_BASE,
                         id="neighbour",
                         mages=[RosterEntry("kindler")],
                         summons=[RosterEntry("cinder-hound")],
                     ),
                 ],
             ),
-            ArmySetup(side="south", troops=[TroopSetup(mages=[RosterEntry("kindler")])]),
+            ArmySetup(
+                side="south",
+                troops=[TroopSetup(order=PUSH_ENEMY_BASE, mages=[RosterEntry("kindler")])],
+            ),
         ],
     )
     world = create_world(THREE_ZONE_MAP, setup, create_rng(5))
-    for index, unit in enumerate(world.units):
-        unit.position = Vec2(index * 500, index * 500)
+    park(world)
     ctx = context()
 
     doomed = next(troop for troop in world.troops if troop.id == "doomed")
@@ -468,31 +488,89 @@ GLASS_TROOP = BattleSetup(
     armies=[
         ArmySetup(
             side="north",
-            troops=[TroopSetup(mages=[RosterEntry("dying-wisp")], summons=[RosterEntry("cinder-statue", 2)])],
+            troops=[
+                TroopSetup(
+                    order=PUSH_ENEMY_BASE,
+                    mages=[RosterEntry("dying-wisp")],
+                    summons=[RosterEntry("cinder-statue", 2)],
+                )
+            ],
         ),
         ArmySetup(
             side="south",
-            troops=[TroopSetup(mages=[RosterEntry("kindler")], summons=[RosterEntry("cinder-hound", 2)])],
+            troops=[
+                TroopSetup(
+                    order=PUSH_ENEMY_BASE,
+                    mages=[RosterEntry("kindler")],
+                    summons=[RosterEntry("cinder-hound", 2)],
+                )
+            ],
         ),
     ],
 )
 
 
-def test_a_battle_dissolves_a_troop_that_loses_its_last_mage() -> None:
-    result = run_battle(NARROW_MAP, PINNED, GLASS_TROOP, 1)
+def doomed_battle() -> tuple[World, TickContext]:
+    """A glass mage standing in front of its own statues, in the real tick loop.
 
-    dissolves = [event for event in result.events if event.type == "troopDissolve"]
-    assert len(dissolves) == 1
-    assert sorted(unit.unit_id for unit in dissolves[0].swing.units_removed) == ["north-t0-u1", "north-t0-u2"]
-    assert not any(unit.troop_id == "north-t0" for unit in result.final_state.units)
+    Driven with `step_battle` rather than `run_battle` because slice B's
+    formations anchor a troop on its summon line and put the mage behind it — so
+    a battle built from `create_world` kills the screen first and leaves nothing
+    for the bond to dissolve. The mage has to be the exposed unit for this rule
+    to fire at all, and that is a placement, not a different loop: every phase
+    still runs, in `TICK_PHASES` order, through the sim's own step function.
+
+    Everything on the doomed side has speed 0, so the positions set here hold
+    against the orders phase rewriting destinations underneath them.
+    """
+    world = create_world(NARROW_MAP, GLASS_TROOP, create_rng(1))
+    ctx = create_tick_context(
+        config=DEFAULT_SIM_CONFIG,
+        map_config=NARROW_MAP,
+        multipliers=resolve_side_multipliers(PINNED),
+        rng=create_rng(1),
+        unit_types=[*CARDS, STATUE],
+    )
+    north = troop_of(world, "north")
+    mage = next(unit for unit in units_of(world, north) if unit.kind == "mage")
+    mage.position = Vec2(20, 300)
+    mage.destination = mage.position
+    for index, statue in enumerate(summons_in(world, north)):
+        statue.position = Vec2(20, 260 - index * 20)
+        statue.destination = statue.position
+    return world, ctx
 
 
-def test_a_dissolve_and_a_defeat_on_the_same_tick_stay_separate_events() -> None:
+def run_until_dissolve(world: World, ctx: TickContext) -> list[BattleEvent]:
+    events: list[BattleEvent] = []
+    for _ in range(max_ticks(DEFAULT_SIM_CONFIG)):
+        events.extend(step_battle(world, ctx))
+        if any(event.type == "troopDissolve" for event in events):
+            break
+    return events
+
+
+def test_the_tick_loop_dissolves_a_troop_that_loses_its_last_mage() -> None:
+    world, ctx = doomed_battle()
+    north = troop_of(world, "north")
+    held = [unit.id for unit in summons_in(world, north)]
+
+    events = run_until_dissolve(world, ctx)
+
+    dissolves = [event for event in events if event.type == "troopDissolve"]
+    assert len(dissolves) == 1, "the bond should fire once, through the real loop"
+    assert sorted(unit.unit_id for unit in dissolves[0].swing.units_removed) == sorted(held)
+    assert not any(unit.troop_id == north.id for unit in world.units)
+
+
+def test_a_dissolve_and_a_defeat_land_on_the_same_tick_as_separate_events() -> None:
     """The mage's defeat and the bond breaking are two things that happened."""
-    result = run_battle(NARROW_MAP, PINNED, GLASS_TROOP, 1)
+    world, ctx = doomed_battle()
 
-    dissolve = next(event for event in result.events if event.type == "troopDissolve")
-    same_tick = [event.type for event in result.events if event.tick == dissolve.tick]
+    events = run_until_dissolve(world, ctx)
+
+    dissolve = next(event for event in events if event.type == "troopDissolve")
+    same_tick = [event.type for event in events if event.tick == dissolve.tick]
 
     assert "unitDefeated" in same_tick, "the mage died on the tick its troop dissolved"
     assert same_tick.count("troopDissolve") == 1
@@ -500,15 +578,14 @@ def test_a_dissolve_and_a_defeat_on_the_same_tick_stay_separate_events() -> None
 
 def test_a_dissolve_reports_no_units_defeated() -> None:
     """Nothing killed the summons, so nothing is credited with killing them."""
-    result = run_battle(NARROW_MAP, PINNED, GLASS_TROOP, 1)
+    world, ctx = doomed_battle()
 
-    dissolve = next(event for event in result.events if event.type == "troopDissolve")
+    events = run_until_dissolve(world, ctx)
+
+    dissolve = next(event for event in events if event.type == "troopDissolve")
     dissolved = [unit.unit_id for unit in dissolve.swing.units_removed]
     defeated = [
-        unit.unit_id
-        for event in result.events
-        if event.type == "unitDefeated"
-        for unit in event.swing.units_removed
+        unit.unit_id for event in events if event.type == "unitDefeated" for unit in event.swing.units_removed
     ]
 
     # Both sides of the comparison are read out of the battle rather than written

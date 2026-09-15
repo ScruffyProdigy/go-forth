@@ -2,8 +2,7 @@
 
 Design doc §4.11. A school's resonance is the number of its mages **deployed at
 the start of the round** — a dual-school mage counting for both of its schools —
-and that one number scales the school's energy gain, its resummon pace, and its
-own stat axis.
+and it is what a school's effects gate on and scale by.
 
 Three properties this module exists to hold onto.
 
@@ -16,17 +15,30 @@ makes it a planning decision rather than a battle one. `run_battle` calls
 **Per side.** See the note in `schools.py`: resonance belongs to a player's
 roster, not to the field.
 
-**The axis is the school's, not the unit's.** A mono card scales on its one
-school's axis; a dual card has both, each fed by its own school — a Fire/Artifice
-golem gets Fire's multiplier on speed and damage and Artifice's on range, and its
-Artifice half is inactive when no Artifice mage is fielded, because a school
-nobody brought sits at the curve's identity step.
+**It is an input, not a blanket scaling.** Resonance does *not* walk the field
+multiplying everybody's stats. Ryan's call, 2026-09-15: a school's strength
+should show up as effects that **require** a resonance level to be selectable at
+all, or that **scale their own magnitude** by it — not as a flat multiplier on
+everything a school touches. A flat multiplier is both unreadable to a player
+(nothing on screen says why this Ember Adept hits for 8.8) and invisible to
+design, since every future effect inherits it whether or not that makes sense.
 
-Only Fire and Artifice have an axis the sim can act on today, which is what the
-opening demo needs (JQ-307 is Fire, §7.3's dual is Fire/Artifice). Stone's HP and
-armor, Time's carried energy, and Necromancy's lifesteal are all declared in
-§4.11 but have nothing to scale until the stats they name exist — `STAT_AXES`
-below is where each lands when it does.
+So this module produces two things and applies neither on its own:
+
+* `count_resonance` — the number itself, per side and school, which effects read
+  for a requirement ("selectable at Fire 3") or to scale their own magnitude;
+* the multiplier record in `schools.py`, which named systems read deliberately.
+  `resummon_pace_multiplier` is read by the resummon phase, and that is the one
+  scaling slice D applies, because pace is a per-school stat by design (§4.5).
+
+**The axis is the school's, not the unit's.** `STAT_AXES` records §4.11's table —
+which stat each school's resonance is *about* — as design data for the effects
+that will read it. A mono card has one axis; a dual card has both, each fed by
+its own school, which is the shape Ryan described: a red/yellow creature that
+gets faster from yellow and hits harder from red. Fire and Artifice are the two
+the opening demo needs (JQ-307 is Fire, §7.3's dual is Fire/Artifice); Stone's HP
+and armor, Time's carried energy and Necromancy's lifesteal land here when the
+stats they name exist.
 """
 
 from __future__ import annotations
@@ -34,12 +46,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from app.sim.schools import SCHOOLS, School, SchoolMultiplierTable
+from app.sim.schools import SCHOOLS, School
 from app.sim.types import SIDES, Side
-from app.sim.world import Unit, World
+from app.sim.world import World
 
-#: Which of a unit's stats each school's resonance scales (§4.11's table).
-#: A school absent from here has an axis the sim cannot express yet.
+#: Which stat each school's resonance is about (§4.11's table). Design data for
+#: the effects that scale on it — nothing here applies it to a unit. A school
+#: absent from this table has an axis the sim has no stat for yet.
 STAT_AXES: Mapping[School, tuple[str, ...]] = MappingProxyType(
     {
         "fire": ("speed", "damage"),
@@ -69,27 +82,3 @@ def count_resonance(world: World) -> SideResonanceCounts:
             counts[unit.side][school] += 1
 
     return MappingProxyType({side: MappingProxyType(counts[side]) for side in SIDES})
-
-
-def apply_stat_axis(unit: Unit, multipliers: SchoolMultiplierTable) -> None:
-    """Scales a unit's stats by its own schools' axes, in place.
-
-    Applied when a unit reaches the field — at battle start, and again to
-    anything resummoned onto it — rather than read at every use, so a stat block
-    on the field is the stat block that fights. A dual card takes both axes, so
-    the two multiply where the axes overlap; they do not today, and if a future
-    pair ever shares one, multiplying is the reading §4.11 describes ("a dual at
-    3/3 is strong because both halves are").
-    """
-    for school in unit.schools:
-        multiplier = multipliers[school].stat_axis_multiplier
-        if multiplier == 1.0:
-            continue
-        for stat in STAT_AXES.get(school, ()):
-            setattr(unit, stat, getattr(unit, stat) * multiplier)
-
-
-def apply_resonance(world: World, multipliers: Mapping[Side, SchoolMultiplierTable]) -> None:
-    """Scales every deployed unit by its side's resonance. Call once, at start."""
-    for unit in world.units:
-        apply_stat_axis(unit, multipliers[unit.side])

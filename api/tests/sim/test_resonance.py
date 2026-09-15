@@ -18,8 +18,9 @@ import pytest
 from app.sim.config import DEFAULT_SIM_CONFIG, to_ticks
 from app.sim.context import TickContext, create_tick_context
 from app.sim.map import THREE_ZONE_MAP
+from app.sim.orders import PUSH_ENEMY_BASE
 from app.sim.phases.resummon import resummon_pace_ticks
-from app.sim.resonance import STAT_AXES, SideResonanceCounts, apply_stat_axis, count_resonance
+from app.sim.resonance import STAT_AXES, SideResonanceCounts, count_resonance
 from app.sim.rng import create_rng
 from app.sim.run_battle import run_battle
 from app.sim.schools import (
@@ -43,6 +44,7 @@ STRONG = resonance_step(DEFAULT_RESONANCE_CURVE, 4)
 
 def troop(mage: str, mages: int = 1, summon: str | None = None, summons: int = 0) -> TroopSetup:
     return TroopSetup(
+        order=PUSH_ENEMY_BASE,
         mages=[RosterEntry(mage, mages)],
         summons=[RosterEntry(summon, summons)] if summon and summons else [],
     )
@@ -199,12 +201,13 @@ def test_the_table_cannot_be_rewritten_mid_battle() -> None:
 
 def context_for(setup: BattleSetup) -> tuple[World, TickContext]:
     world = world_of(setup)
-    multipliers = resolve_side_multipliers([], count_resonance(world))
+    resonance = count_resonance(world)
     ctx = create_tick_context(
         config=DEFAULT_SIM_CONFIG,
         map_config=THREE_ZONE_MAP,
-        multipliers=multipliers,
+        multipliers=resolve_side_multipliers([], resonance),
         rng=create_rng(5),
+        resonance=resonance,
         unit_types=CARDS,
     )
     return world, ctx
@@ -243,56 +246,67 @@ def test_a_dual_mage_rebuilds_on_its_stronger_school() -> None:
     assert resummon_pace_ticks(machinist, ctx) == expected
 
 
-# --- applied: the stat axis --------------------------------------------------
+# --- the stat axis is declared, not applied -----------------------------------
 
 
-def test_fire_resonance_scales_speed_and_damage() -> None:
+def test_the_axis_table_records_which_stat_each_school_is_about() -> None:
+    """§4.11's table, as design data for the effects that will read it."""
     assert STAT_AXES["fire"] == ("speed", "damage")
-
-    result = run_battle(THREE_ZONE_MAP, [], battle([troop("kindler")], [troop("kindler", 4)]), 1)
-    opening = result.ticks[0].state
-    weak = next(u for u in opening.units if u.side == "north")
-    strong = next(u for u in opening.units if u.side == "south")
-
-    assert weak.damage == pytest.approx(KINDLER.damage * WEAK.stat_axis_multiplier)
-    assert weak.speed == pytest.approx(KINDLER.speed * WEAK.stat_axis_multiplier)
-    assert strong.damage == pytest.approx(KINDLER.damage * STRONG.stat_axis_multiplier)
-
-
-def test_artifice_resonance_scales_range_rather_than_speed() -> None:
-    """The synthetic second school, and the point of having one: a sim that
-    applied Fire's axis to everything would scale speed here too."""
     assert STAT_AXES["artifice"] == ("range",)
 
-    setup = battle([troop("clockwork-artificer")], [troop("kindler", 3)])
-    opening = run_battle(THREE_ZONE_MAP, [], setup, 1).ticks[0].state
-    artificer = next(u for u in opening.units if u.side == "north")
 
-    assert artificer.range == pytest.approx(ARTIFICER.range * WEAK.stat_axis_multiplier)
-    assert artificer.speed == ARTIFICER.speed
+def test_resonance_does_not_silently_rescale_the_units_on_the_field() -> None:
+    """Ryan's call, 2026-09-15: resonance is a requirement or a per-effect
+    scaling, never a flat multiplier on everything a school touches.
 
+    A blanket multiplier is unreadable to a player — nothing on screen says why
+    this Ember Adept hits for 8.8 — and it silently reaches every future effect.
+    So a unit fields the stat block on its card, whatever its school's resonance.
+    """
+    weak = run_battle(THREE_ZONE_MAP, [], battle([troop("kindler")], [troop("kindler", 4)]), 1)
+    strong = run_battle(THREE_ZONE_MAP, [], battle([troop("kindler", 4)], [troop("kindler")]), 1)
 
-def test_a_dual_summon_takes_each_axis_from_its_own_school() -> None:
-    setup = battle(
-        [troop("kindler", 1, "furnace-golem", 1), troop("clockwork-artificer", 4)],
-        [troop("kindler", 3)],
-    )
-    opening = run_battle(THREE_ZONE_MAP, [], setup, 1).ticks[0].state
-    golem = next(u for u in opening.units if u.type_id == "furnace-golem")
-
-    # Fire 1 on speed and damage, Artifice 4 on range.
-    assert golem.speed == pytest.approx(FURNACE_GOLEM.speed * WEAK.stat_axis_multiplier)
-    assert golem.range == pytest.approx(FURNACE_GOLEM.range * STRONG.stat_axis_multiplier)
+    for result in (weak, strong):
+        for unit in result.ticks[0].state.units:
+            if unit.type_id == "kindler":
+                assert unit.damage == KINDLER.damage
+                assert unit.speed == KINDLER.speed
 
 
-def test_a_school_with_no_expressible_axis_scales_nothing() -> None:
-    """Stone, Time and Necromancy name axes the sim has no stat for yet."""
-    unit = next(u for u in world_of(battle([troop("kindler")], [troop("kindler")])).units)
-    before = (unit.speed, unit.damage, unit.range)
+def test_the_record_still_carries_the_axis_for_effects_to_scale_on() -> None:
+    """Dropping the blanket application does not drop the number."""
+    table = resolve_side_multipliers([], {"north": {"fire": 1}, "south": {"fire": 4}})
 
-    apply_stat_axis(unit, resolve_school_multipliers([], {"stone": 4}))
+    assert table["north"]["fire"].stat_axis_multiplier == WEAK.stat_axis_multiplier
+    assert table["south"]["fire"].stat_axis_multiplier == STRONG.stat_axis_multiplier
 
-    assert (unit.speed, unit.damage, unit.range) == before
+
+def test_a_dual_school_unit_has_an_axis_per_school_each_on_its_own_count() -> None:
+    """The shape Ryan described: a two-school creature that gets faster from one
+    of its schools and hits harder from the other, each on that school's own
+    resonance rather than on a single blended number."""
+    setup = battle([troop("ember-machinist"), troop("clockwork-artificer", 3)], [troop("kindler", 3)])
+    result = run_battle(THREE_ZONE_MAP, [], setup, 1)
+    table = result.multipliers["north"]
+
+    # Fire 1 from the machinist itself; Artifice 4 with the three artificers.
+    assert result.resonance["north"]["fire"] == 1
+    assert result.resonance["north"]["artifice"] == 4
+    assert table["fire"].stat_axis_multiplier == WEAK.stat_axis_multiplier
+    assert table["artifice"].stat_axis_multiplier == STRONG.stat_axis_multiplier
+    assert STAT_AXES["fire"] == ("speed", "damage")
+    assert STAT_AXES["artifice"] == ("range",)
+
+
+def test_the_count_is_on_the_context_for_an_effect_to_require_or_scale_on() -> None:
+    """A requirement is a comparison, not a scaling — "selectable at Fire 3"
+    needs the number, which is why the context carries it (JQ-288, JQ-297)."""
+    _, ctx = context_for(battle([troop("kindler", 3)], [troop("clockwork-artificer")]))
+
+    assert ctx.resonance["north"]["fire"] == 3
+    assert ctx.resonance["south"]["fire"] == 0
+    assert ctx.resonance["south"]["artifice"] == 1
+    assert ctx.resonance["north"]["fire"] >= 3, "a Fire-3 requirement is met here"
 
 
 # --- once per battle ---------------------------------------------------------

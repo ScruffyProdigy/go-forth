@@ -7,7 +7,11 @@ import pytest
 from app.sim.map import (
     THREE_ZONE_MAP,
     MapConfig,
+    chip_box,
+    clear_of_chip,
     validate_map_config,
+    zone_by_id,
+    zone_centre,
     zone_containing,
 )
 from app.sim.types import Span, Vec2
@@ -109,3 +113,70 @@ def test_beside_a_narrow_zone_is_the_bypass_lane(a_map: MapConfig) -> None:
     beside_it = Vec2(x=20, y=(zone.lane.start + zone.lane.end) / 2)
 
     assert zone_containing(a_map, beside_it) is None
+
+
+def test_a_zone_is_found_by_its_id() -> None:
+    assert zone_by_id(THREE_ZONE_MAP, "B") is THREE_ZONE_MAP.zones[1]
+
+
+def test_naming_a_zone_the_map_does_not_have_is_an_error_not_an_empty_answer() -> None:
+    with pytest.raises(ValueError, match="no zone"):
+        zone_by_id(THREE_ZONE_MAP, "Z")
+
+
+def test_the_middle_of_a_zone_is_the_middle_of_both_its_spans() -> None:
+    zone = THREE_ZONE_MAP.zones[0]
+
+    assert zone_centre(zone) == Vec2(
+        (zone.extent.start + zone.extent.end) / 2,
+        (zone.lane.start + zone.lane.end) / 2,
+    )
+
+
+def test_the_chip_corner_sits_at_the_top_left_of_the_zone_band() -> None:
+    zone = THREE_ZONE_MAP.zones[1]
+    across, down = chip_box(THREE_ZONE_MAP, zone)
+
+    assert (across.start, down.start) == (zone.extent.start, zone.lane.start)
+    assert across.end - across.start == THREE_ZONE_MAP.chip_reserve.width
+    assert down.end - down.start == THREE_ZONE_MAP.chip_reserve.height
+
+
+def test_the_chip_corner_follows_a_narrow_zone_rather_than_floating_over_the_bypass(
+    a_map: MapConfig,
+) -> None:
+    a_map.zones[1].extent = Span(start=100, end=275)
+    across, _ = chip_box(a_map, a_map.zones[1])
+
+    assert across.start == 100
+
+
+def test_a_spot_in_the_chip_corner_is_moved_out_of_it() -> None:
+    zone = THREE_ZONE_MAP.zones[0]
+    across, down = chip_box(THREE_ZONE_MAP, zone)
+    inside = Vec2(across.start + 1, down.start + 1)
+
+    moved = clear_of_chip(THREE_ZONE_MAP, zone, inside)
+
+    assert not (across.start <= moved.x < across.end and down.start <= moved.y < down.end)
+
+
+def test_a_spot_outside_the_chip_corner_is_left_alone() -> None:
+    zone = THREE_ZONE_MAP.zones[0]
+    spot = zone_centre(zone)
+
+    assert clear_of_chip(THREE_ZONE_MAP, zone, spot) == spot
+
+
+def test_rejects_a_base_with_a_negative_footprint(a_map: MapConfig) -> None:
+    a_map.bases["north"].footprint_radius = -1
+
+    with pytest.raises(ValueError, match="footprint"):
+        validate_map_config(a_map)
+
+
+def test_rejects_a_negative_chip_reserve(a_map: MapConfig) -> None:
+    a_map.chip_reserve.height = -1
+
+    with pytest.raises(ValueError, match="chip reserve"):
+        validate_map_config(a_map)

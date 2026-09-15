@@ -33,7 +33,6 @@ from app.sim.config import to_ticks
 from app.sim.context import TickContext
 from app.sim.events import resummoned
 from app.sim.phases.targeting import is_alive
-from app.sim.resonance import apply_stat_axis
 from app.sim.world import Troop, Unit, World, support_capacity_of, unit_ref
 
 
@@ -121,13 +120,17 @@ class ResummonPhase:
             attack_cooldown_seconds=unit_type.attack_cooldown_seconds,
             hp=unit_type.max_hp,
             position=mage.position,
+            # The slot's station, not a fresh one: a rebuilt summon steps back
+            # into the formation place of the unit it replaces (JQ-287). It
+            # *appears* at its mage and walks to that station from there, which
+            # is what "a troop rebuilds where it stands" means once formations
+            # exist — the orders phase rewrites `destination` next tick anyway.
+            formation_offset=slot.formation_offset,
+            destination=mage.position,
             support_capacity=unit_type.support_capacity,
             resummon_pace_seconds=unit_type.resummon_pace_seconds,
         )
         troop.next_unit_ordinal += 1
-        # A rebuilt summon is as strong as the one it replaces: the axis is
-        # applied when a unit reaches the field, not only at battle start.
-        apply_stat_axis(summon, ctx.multipliers[troop.side])
 
         world.units.append(summon)
         troop.summon_ids.append(summon.id)

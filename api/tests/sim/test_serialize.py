@@ -69,3 +69,32 @@ def test_the_placeholder_armies_open_at_the_starting_mage_cap_of_three() -> None
 def test_the_placeholder_cards_pass_catalog_validation() -> None:
     assert PLACEHOLDER_UNIT_TYPES
     run_battle(THREE_ZONE_MAP, [], placeholder_battle(), 1)
+
+
+def test_the_header_says_whose_base_fell_when_one_did() -> None:
+    header = json.loads(serialize_battle(run()).split("\n")[0])
+
+    assert "destroyedBase" in header
+
+
+def test_the_footer_says_who_holds_each_zone_in_map_order() -> None:
+    result = run()
+    last = json.loads(serialize_battle(result).split("\n")[-1])
+
+    assert list(last["zoneHolders"]) == [zone.id for zone in THREE_ZONE_MAP.zones]
+    assert last["zoneHolders"] == result.final_state.zone_holders
+
+
+def test_a_zone_flip_line_names_the_zone_that_flipped() -> None:
+    result = run()
+    flips = [
+        json.loads(line) for line in serialize_battle(result).split("\n") if '"event":"zoneFlip"' in line
+    ]
+
+    assert flips
+    assert all(flip["zone"] in [zone.id for zone in THREE_ZONE_MAP.zones] for flip in flips)
+
+
+def test_the_placeholder_armies_are_each_under_an_order() -> None:
+    for army in placeholder_battle().armies:
+        assert all(troop.order is not None for troop in army.troops)

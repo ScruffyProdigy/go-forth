@@ -56,7 +56,9 @@ class RemovalPhase:
             if unit.id in fallen_ids and unit.kind == "summon":
                 troop = troops_by_id.get(unit.troop_id)
                 if troop is not None:
-                    troop.dispelled_slots.append(DispelledSlot(type_id=unit.type_id))
+                    troop.dispelled_slots.append(
+                        DispelledSlot(type_id=unit.type_id, formation_offset=unit.formation_offset)
+                    )
 
         had_mages = {troop.id for troop in world.troops if troop.mage_ids}
 

@@ -10,8 +10,10 @@ mandatory and local — a mage in another troop is too far away to help — so a
 summon whose school no mage in *its own* troop supports is rejected at build time
 rather than quietly standing on the field.
 
-Placement here is the flat "everyone into the strip" version. Formations derived
-from orders are slice B (JQ-287); this is what it replaces.
+Placement is derived, never supplied. Every troop carries exactly one order, and
+`formation.py` turns that order into a shape, a starting spot in the deployment
+strip, and the station each unit walks to. Nothing in this module — or anywhere
+else in the API — accepts a position, a stance or a facing from a plan.
 """
 
 from __future__ import annotations
@@ -19,7 +21,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from app.sim.formation import (
+    Formation,
+    deployment_anchor,
+    deployment_band,
+    deployment_spot,
+    derive_formation,
+    station,
+)
 from app.sim.map import MapConfig, validate_map_config
+from app.sim.orders import Order, validate_order
 from app.sim.rng import Rng
 from app.sim.schools import School
 from app.sim.types import SIDES, Side, TroopId, UnitId, UnitRef, Vec2
@@ -36,6 +47,14 @@ class RosterEntry:
 
 @dataclass
 class TroopSetup:
+    """A troop as a plan gives it: a roster and the one order it is under.
+
+    `order` comes first and has no default because it is not optional — a troop
+    without an order has nothing to derive a position from, and a default would
+    quietly become the placement input this design does not have.
+    """
+
+    order: Order
     mages: list[RosterEntry] = field(default_factory=list)
     summons: list[RosterEntry] = field(default_factory=list)
     id: str | None = None
@@ -53,6 +72,9 @@ class BattleSetup:
 
     unit_types: list[UnitType] = field(default_factory=list)
     armies: list[ArmySetup] = field(default_factory=list)
+    #: Base HP carried in from earlier rounds. A side left out opens at full.
+    #: Damage persists across a match: nothing here ever refills a base (JQ-187).
+    base_hp: dict[Side, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -71,6 +93,14 @@ class Unit:
     attack_cooldown_seconds: float
     hp: float
     position: Vec2
+    #: This unit's slot in its troop's formation, relative to the objective.
+    #: Derived from the troop's order at battle start; never supplied.
+    formation_offset: Vec2
+    #: Where the unit is trying to stand this tick. The orders phase rewrites it
+    #: from the troop's order every tick, so a behaviour layer (JQ-296/328) can
+    #: overwrite it for a bounded diversion and get the assigned station back by
+    #: simply stopping — returning to post needs no bookkeeping of its own.
+    destination: Vec2
     #: Ticks still to wait before this unit can attack again — ticks, not seconds.
     cooldown_remaining: int = 0
     #: Mages only: how many summons this mage sustains (§4.2).
@@ -89,15 +119,23 @@ class DispelledSlot:
     The slot belongs to the troop, not to the summon type: two troops fielding
     the same card never share a slot, and refilling one never moves a living
     unit between troops.
+
+    It carries the fallen summon's `formation_offset` because the slot is a
+    *position in the troop* as much as a unit type — a rebuilt summon inherits
+    the station of the one it replaces (JQ-287), rather than appearing without
+    one and being assigned a fresh slot by the next orders pass.
     """
 
     type_id: str
+    formation_offset: Vec2
 
 
 @dataclass
 class Troop:
     id: TroopId
     side: Side
+    #: Exactly one, for the whole battle. The plan phase is where it is chosen.
+    order: Order
     #: Living mages. A troop whose last mage dies dissolves (§4.6).
     mage_ids: list[UnitId] = field(default_factory=list)
     summon_ids: list[UnitId] = field(default_factory=list)
@@ -136,6 +174,8 @@ class World:
     troops: list[Troop]
     bases: dict[Side, BaseState]
     zone_score: dict[Side, float]
+    #: Who currently holds each zone, by zone id. None while empty or contested.
+    zone_holders: dict[str, Side | None]
 
 
 def unit_ref(unit: Unit) -> UnitRef:
@@ -143,10 +183,9 @@ def unit_ref(unit: Unit) -> UnitRef:
     return UnitRef(unit.id, unit.troop_id, unit.side, unit.type_id)
 
 
-#: Spacing between deployed units, in map units. Sprites are 18-28 px (JQ-243).
-DEPLOY_SPACING = 24
-#: A unit of jitter, so placement reads as an army rather than a spreadsheet.
-DEPLOY_JITTER = 1
+def is_alive(unit: Unit) -> bool:
+    """A unit brought to zero stops acting at once, and is swept at end of tick."""
+    return unit.hp > 0
 
 
 def _expand(entries: Sequence[RosterEntry], catalog: UnitTypeCatalog, kind: UnitKind) -> list[UnitType]:
@@ -190,33 +229,23 @@ def _assert_supported(mages: Sequence[UnitType], summons: Sequence[UnitType], tr
             )
 
 
-def _clamp(value: float, low: float, high: float) -> float:
-    return min(high, max(low, value))
+def _carried_base_hp(config: MapConfig, side: Side, carried: dict[Side, float]) -> float:
+    """The HP this side's base opens on: what it has left, or full if unstated.
 
-
-def _deployment_spot(config: MapConfig, side: Side, index: int, rng: Rng) -> Vec2:
-    """Lays a side's units out in its strip, filling columns before adding a row.
-
-    A row costs 21 px of the scarce portrait axis, a column 22 px of width the
-    map was not using (JQ-243).
+    A base never recovers between rounds (JQ-187), so a match engine hands last
+    round's remaining HP straight back in.
     """
-    strip = config.deployment[side]
-    width = strip.extent.end - strip.extent.start
-    columns = max(1, int(width // DEPLOY_SPACING))
-    column = index % columns
-    row = index // columns
+    if side not in carried:
+        return config.bases[side].max_hp
 
-    x = strip.extent.start + DEPLOY_SPACING / 2 + column * DEPLOY_SPACING
-    jitter = (rng.next_float() * 2 - 1) * DEPLOY_JITTER
-
-    # Front rank nearest the zones; further ranks fall back toward the base.
-    depth = DEPLOY_SPACING / 2 + row * DEPLOY_SPACING
-    y = strip.lane.end - depth if side == "north" else strip.lane.start + depth
-
-    return Vec2(
-        _clamp(x + jitter, strip.extent.start, strip.extent.end),
-        _clamp(y, strip.lane.start, strip.lane.end),
-    )
+    hp = carried[side]
+    if not isinstance(hp, (int, float)) or isinstance(hp, bool):
+        raise ValueError(f"carried {side} base HP must be a number, got {hp!r}")
+    if hp <= 0:
+        raise ValueError(f"{side} base is carried in at {hp} HP, so the match is already over")
+    if hp > config.bases[side].max_hp:
+        raise ValueError(f"{side} base is carried in above its maximum; bases do not recover")
+    return float(hp)
 
 
 def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> World:
@@ -230,15 +259,25 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
     seen_ids: set[UnitId] = set()
 
     for army in battle_state.armies:
-        placed = 0
-
         for troop_index, troop_setup in enumerate(army.troops):
             troop_id = troop_setup.id or f"{army.side}-t{troop_index}"
+            order = troop_setup.order
+            validate_order(order, config)
+
             mage_types = _expand(troop_setup.mages, catalog, "mage")
             summon_types = _expand(troop_setup.summons, catalog, "summon")
             _assert_supported(mage_types, summon_types, troop_id)
 
-            troop = Troop(id=troop_id, side=army.side)
+            band = deployment_band(config, army.side, troop_index, len(army.troops))
+            formation: Formation = derive_formation(
+                order,
+                army.side,
+                len(mage_types),
+                len(summon_types),
+                band.end - band.start,
+            )
+            anchor = deployment_anchor(config, army.side, order, band, formation)
+            troop = Troop(id=troop_id, side=army.side, order=order)
 
             for member_index, unit_type in enumerate([*mage_types, *summon_types]):
                 unit_id = f"{troop_id}-u{member_index}"
@@ -246,6 +285,7 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
                     raise ValueError(f"two units share the id {unit_id}; troop ids must be unique")
                 seen_ids.add(unit_id)
 
+                offset = formation.offsets[member_index]
                 units.append(
                     Unit(
                         id=unit_id,
@@ -260,12 +300,13 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
                         speed=unit_type.speed,
                         attack_cooldown_seconds=unit_type.attack_cooldown_seconds,
                         hp=unit_type.max_hp,
-                        position=_deployment_spot(config, army.side, placed, rng),
+                        position=deployment_spot(config, army.side, anchor, offset, rng),
+                        formation_offset=offset,
+                        destination=station(order, army.side, offset, config),
                         support_capacity=unit_type.support_capacity,
                         resummon_pace_seconds=unit_type.resummon_pace_seconds,
                     )
                 )
-                placed += 1
 
                 if unit_type.kind == "mage":
                     troop.mage_ids.append(unit_id)
@@ -284,9 +325,32 @@ def create_world(config: MapConfig, battle_state: BattleSetup, rng: Rng) -> Worl
             side: BaseState(
                 max_hp=config.bases[side].max_hp,
                 position=config.bases[side].position,
-                hp=config.bases[side].max_hp,
+                hp=_carried_base_hp(config, side, battle_state.base_hp),
             )
             for side in SIDES
         },
         zone_score={"north": 0, "south": 0},
+        zone_holders={zone.id: None for zone in config.zones},
     )
+
+
+def troop_of(world: World, unit: Unit) -> Troop:
+    """The troop a unit belongs to. Every unit belongs to exactly one."""
+    for troop in world.troops:
+        if troop.id == unit.troop_id:
+            return troop
+    raise ValueError(f"unit {unit.id} names troop {unit.troop_id}, which is not in this battle")
+
+
+def order_of(world: World, unit: Unit) -> Order:
+    """The order this unit is acting under — its troop's, always."""
+    return troop_of(world, unit).order
+
+
+def orders_by_troop(world: World) -> dict[TroopId, Order]:
+    """Every troop's order, for a phase that needs to look one up per unit.
+
+    A dict keyed by troop id: looked up, never iterated. Iterating it would order
+    the sim by Python's per-process string hashing. See `rng.py`.
+    """
+    return {troop.id: troop.order for troop in world.troops}

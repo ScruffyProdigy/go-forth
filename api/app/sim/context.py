@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from app.sim.config import SimConfig, seconds_per_tick, validate_sim_config
 from app.sim.events import EventEmitter, create_event_emitter
 from app.sim.map import MapConfig
+from app.sim.resonance import SideResonanceCounts
 from app.sim.rng import Rng
 from app.sim.schools import SideMultiplierTable
 from app.sim.units import UnitType, UnitTypeCatalog, build_unit_type_catalog
@@ -26,6 +28,13 @@ class TickContext:
     #: Keyed by side first: resonance is a property of a player's roster, not of
     #: the field, so a system reads `multipliers[unit.side][school]`.
     multipliers: SideMultiplierTable
+    #: How many mages of each school each side deployed (§4.11), counted once at
+    #: battle start. The raw number rather than a multiplier, because that is
+    #: what an effect with a **requirement** needs — "selectable at Fire 3" is a
+    #: comparison, not a scaling — and what an effect that scales its own
+    #: magnitude reads. Resonance is applied by the effects that care, never
+    #: blanket across the field.
+    resonance: SideResonanceCounts
     #: The one emitter every system writes events through.
     emitter: EventEmitter
     rng: Rng
@@ -44,6 +53,7 @@ def create_tick_context(
     map_config: MapConfig,
     multipliers: SideMultiplierTable,
     rng: Rng,
+    resonance: SideResonanceCounts | None = None,
     unit_types: UnitTypeCatalog | Sequence[UnitType] = (),
     emitter: EventEmitter | None = None,
 ) -> TickContext:
@@ -55,6 +65,7 @@ def create_tick_context(
         config=config,
         map_config=map_config,
         multipliers=multipliers,
+        resonance=resonance if resonance is not None else MappingProxyType({}),
         emitter=emitter if emitter is not None else create_event_emitter(),
         rng=rng,
         unit_types=catalog,
