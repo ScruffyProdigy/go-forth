@@ -388,12 +388,21 @@ def test_a_purely_contextual_tag_leaves_the_standing_weights_alone() -> None:
     of what they do arrives per candidate — so a test that compares standing
     weights to prove a personality landed will pass identically whether it did
     or not, and the thing to compare is the scored candidate.
+
+    This is not hypothetical. JQ-331's inspector scenarios read the standing set
+    and concluded a working personality did nothing; three tests failed on where
+    the effect lives rather than on its size or direction. Hence the blunt table
+    on `ResolvedBehavior`, and hence the last assertion here — `personalities`
+    being non-empty is the signal that a tag landed, and it is the check to make
+    when the weights look untouched.
     """
     plain = escort(BehaviorLibrary(personalities=SAMPLE_PERSONALITIES))
     led = escort(combined_library("m"))
 
     assert behavior_of(led, "melee").weights == behavior_of(plain, "melee").weights
     assert scored(led, *INTERCEPT).influences != scored(plain, *INTERCEPT).influences
+    assert behavior_of(led, "melee").personalities
+    assert not behavior_of(plain, "melee").personalities
 
 
 # --- exceptions, and the dimensions a rule composes on -----------------------

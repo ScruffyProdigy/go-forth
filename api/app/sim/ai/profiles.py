@@ -354,14 +354,42 @@ class ResolvedBehavior:
     """One unit's standing weights, plus everything that went into them.
 
     Immutable, and shared by reference across the per-tick world snapshots — see
-    `__deepcopy__`. `weights` is the *standing* set: what this unit believes
-    before it has looked at a particular candidate. Contextual rules are applied
-    on top of it, per candidate, in `scoring.py`.
+    `__deepcopy__`.
+
+    **`weights` is not the answer to "what is this unit like".** It is the
+    standing set — what the unit believes before it has looked at anything — and
+    a personality made entirely of contextual rules does not touch it at all.
+    Both shipped example tags are like that, so a hound under a reckless mage,
+    under a methodical mage, and under no mage at all have *byte-identical*
+    standing weights. Read this field to compare two personalities and the
+    honest, useless answer is that they are the same.
+
+    This has already cost someone a debugging session (JQ-331 read it and
+    concluded a working personality did nothing), so it is worth being blunt
+    about where the answer actually lives:
+
+    ==========================================  ===============================
+    Question                                    Read
+    ==========================================  ===============================
+    what a unit believes before it looks        `weights`, here
+    what it believed about one candidate        `FactorContribution.weight` on
+                                                that `ScoredCandidate`
+    which tag changed that, and why             `ScoredCandidate.influences`
+                                                / `Intent.influences`
+    which tags a unit carries at all            `personalities`, here
+    what a tag would say, in prose              `describe_behavior`
+    ==========================================  ===============================
+
+    The rule of thumb: anything contextual needs a candidate to be true *of*,
+    so any question whose answer could change between two candidates cannot be
+    answered by this field, by construction.
     """
 
     weights: FactorWeights
     traits: tuple[TraitTag, ...] = ()
-    #: Sorted by tag.
+    #: Sorted by tag. Non-empty whenever a mage authored anything on this troop,
+    #: **even when `weights` above is untouched** — which is the check to make
+    #: when a personality looks like it did not land.
     personalities: tuple[ResolvedPersonality, ...] = ()
     tie_break_jitter: float = 0.0
 
