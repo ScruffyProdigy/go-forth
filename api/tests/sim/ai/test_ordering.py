@@ -21,9 +21,36 @@ They are latent today only because nothing populates `nominated_target_ids` in a
 running battle — JQ-330's coordinator is the producer and has not merged. So the
 determinism suite cannot exercise the path at all, however many subprocesses it
 spawns, and the guarantee would have been broken silently the day the seam was
-wired. That is the shape to remember: **an unwired seam is untested by
-construction**, and its tests have to be written against the function rather than
-against a battle.
+wired. JQ-330 swept their own side afterwards and found the same sort missing
+from `nominated_target_ids(troop)`, a live bug rather than a missing test. That
+is the shape to remember: **an unwired seam is untested by construction**, and
+its tests have to be written against the function rather than against a battle.
+
+**These three are not equally severe, and a reader should not have to work that
+out.** A surviving mutation is a question — is this load-bearing, or is something
+else already holding it up — and the answers differ:
+
+=========================  =================================================
+Guarantee                  What it is worth
+=========================  =================================================
+`_nominations` sorts       **Live hazard.** Builds from a set of unit ids, so
+                           dropping the sort puts hash order into output and
+                           breaks cross-process reproducibility outright.
+`_answerable` walks        **Live hazard.** Same: the alternative iterates a
+`enemies`                  set, and candidate order is tie-break order.
+`observe` sorts enemies    **Defensive.** `world.units` is a deterministic
+                           list, so dropping this sort is still reproducible;
+                           it moves the guarantee from local to "depends on
+                           how `world.py` happens to order units", and it
+                           reaches output only through float summation order
+                           in `threat.threats_against`. Worth keeping, worth
+                           knowing it is a different claim from the two above.
+=========================  =================================================
+
+Each was confirmed load-bearing by pointing the mutation at **this file alone**,
+not at the suite: a sweep run against everything reports "caught" without saying
+which test caught it, so a new ordering test can look effective while the
+failure came from somewhere else entirely. All three fail here and nowhere else.
 """
 
 from __future__ import annotations
