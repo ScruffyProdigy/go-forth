@@ -261,7 +261,7 @@ def test_an_immobile_unit_never_receives_a_movement_action() -> None:
 
 
 def test_no_advance_candidate_ever_walks_away_from_what_it_is_advancing_on() -> None:
-    """The bug this shape invites, pinned in the general case.
+    """The bug this shape invites, pinned across a sweep that states its own coverage.
 
     `point_along` does not clamp, so "the point a weapon's reach from that enemy"
     is *behind* a unit already nearer than that. An `advance` onto it walks
@@ -270,23 +270,51 @@ def test_no_advance_candidate_ever_walks_away_from_what_it_is_advancing_on() -> 
     about it. It was reachable through both the approach and the screen; a
     five-hit sprite with an ash-ram closing preferred a "screen" forty map units
     to its rear.
+
+    **Every arrangement says whether it expects a candidate, and that is the
+    point of the test as much as the invariant is.** Written as a bare sweep with
+    an assertion inside the loop, it quietly stopped doing anything: the reach
+    gate emptied the close arrangements and the leash emptied the far ones, and
+    seven of these ten cases asserted nothing at all while reading as if they
+    covered the lot. An invariant checked over an empty collection is not
+    checked. So each case now pins the *presence or absence* it should produce —
+    derived from the two bounds rather than from a hardcoded count, so tuning
+    either one keeps the test honest — and the whole sweep has to produce some.
     """
+    checked = 0
+
     for gap in (4.0, 10.0, 40.0, 100.0, 200.0):
         for unit_type in (HOUND, ADEPT):
             me = make_unit("m", unit_type, "north", MIDFIELD)
             enemy = make_unit("e", HOUND, "south", Vec2(MIDFIELD.x + gap, MIDFIELD.y))
-            ally = make_unit("a", HOUND, "north", Vec2(MIDFIELD.x - 30, MIDFIELD.y))
+            # Off the line between the two, so a screen is a distinct candidate
+            # rather than deduplicating into the approach.
+            ally = make_unit("a", HOUND, "north", Vec2(MIDFIELD.x - 30, MIDFIELD.y + 40))
             world = make_world([me, ally, enemy])
 
+            reach = useful_range(capabilities_of(me))
+            # Offered only from outside the weapon, and only when walking to the
+            # standoff keeps the unit inside its pursuit leash.
+            expected = gap > unit_type.range and (gap - reach) <= PURSUIT_LEASH
+
+            toward = [
+                (c.reason, c.destination)
+                for c in generate_candidates(look(world, me))
+                if c.kind == "advance" and c.target_id is not None and c.destination is not None
+            ]
+            assert bool(toward) == expected, (
+                f"{unit_type.id} at gap {gap}: expected {'a' if expected else 'no'} "
+                f"advance on the enemy, got {len(toward)}"
+            )
+
             here = distance(MIDFIELD, enemy.position)
-            for candidate in generate_candidates(look(world, me)):
-                if candidate.kind != "advance" or candidate.destination is None:
-                    continue
-                if candidate.target_id is None:
-                    continue  # walking to the station is not a claim about the enemy
-                assert distance(candidate.destination, enemy.position) <= here, (
-                    f"{unit_type.id} at gap {gap}: {candidate.reason} opens the gap it claims to close"
+            for reason, destination in toward:
+                checked += 1
+                assert distance(destination, enemy.position) <= here, (
+                    f"{unit_type.id} at gap {gap}: {reason} opens the gap it claims to close"
                 )
+
+    assert checked, "the sweep produced no advance candidates, so the invariant went unchecked"
 
 
 def test_a_unit_declines_to_set_out_after_something_past_the_leash() -> None:
