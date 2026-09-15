@@ -9,8 +9,10 @@ import pytest
 from app.sim.ai.factors import FACTORS, FactorName
 from app.sim.ai.fixtures import AGGRESSIVE, DUTIFUL, SAMPLE_TRAITS, SKIRMISHER, placeholder_behavior
 from app.sim.ai.profiles import BehaviorLibrary, CreatureProfile, UnitBehavior
+from app.sim.ai.scoring import STATION_TOLERANCE
 from app.sim.config import SimConfig
 from app.sim.fixtures import placeholder_battle
+from app.sim.geometry import distance
 from app.sim.map import TWO_LANE_MAP
 from app.sim.phases import TICK_PHASES
 from app.sim.phases.combat import combat_phase
@@ -331,10 +333,17 @@ def test_fighting_style_follows_the_stat_block_not_the_profile() -> None:
     """The same behaviour data on two creatures that differ only in reach.
 
     Both stand on their post with an enemy a hundred units off. The long-armed
-    one engages it; the short-armed one holds, because closing would cost more
-    objective ground than the swing at the end is worth to it. No data anywhere
-    says either of those things — the profiles are byte-identical, and the only
-    difference in the whole scenario is `range`.
+    one engages it from where it stands; the short-armed one cannot, shuffles a
+    couple of units toward it, and settles — because closing the rest would cost
+    more objective ground than the swing at the end is worth to it. No data
+    anywhere says either of those things: the profiles are byte-identical, and
+    the only difference in the whole scenario is `range`.
+
+    Run to a settled state rather than read off the first tick. JQ-329 gives a
+    unit room to manoeuvre near its post — a post is a place rather than a point
+    — so the short-armed one does take a step or two before it stops. Where it
+    stops is the fact worth pinning; that it stops at all is
+    `test_a_unit_does_not_oscillate_between_two_positions` in `test_behaviors`.
 
     That is what "capabilities decide what is legal, traits decide what is
     preferred" buys: fighting style is a consequence of the stat block, so it
@@ -360,14 +369,32 @@ def test_fighting_style_follows_the_stat_block_not_the_profile() -> None:
         [LONGARM, BULWARK, HOUND],
     )
 
-    decision_phase.run(world, context())
+    ctx = context()
+    started = Vec2(stub.position.x, stub.position.y)
+    posts = {unit.id: Vec2(unit.position.x, unit.position.y) for unit in (reach, stub)}
+    for tick in range(1, 30):
+        world.tick = tick
+        # Standing in for the orders phase, which rewrites every unit's station
+        # from its troop's order at the top of each tick. Without it the station
+        # follows the unit — the decision phase writes its destination — and a
+        # unit that took one step would have taken its post along with it.
+        for unit in (reach, stub):
+            unit.destination = posts[unit.id]
+        decision_phase.run(world, ctx)
+        movement_phase.run(world, ctx)
 
     assert reach.ai is not None and reach.ai.intent is not None
     assert stub.ai is not None and stub.ai.intent is not None
     # Identical weights — the only difference between these two is `range`.
     assert dict(reach.ai.behavior.weights) == dict(stub.ai.behavior.weights)
+
     assert reach.ai.intent.kind == "attack"
+    assert reach.position == MIDFIELD, "the long-armed one had no need to move at all"
+
     assert stub.ai.intent.kind == "hold"
+    assert distance(stub.position, started) < STATION_TOLERANCE, (
+        "the short-armed one left its post rather than settling near it"
+    )
 
 
 def test_a_trait_a_new_creature_cannot_support_is_refused_rather_than_ignored() -> None:

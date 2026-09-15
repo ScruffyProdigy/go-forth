@@ -29,7 +29,12 @@ def test_advancing_toward_the_station_scores_positively() -> None:
 
     scored = score_candidate(look(world, hound), Candidate(kind="advance", destination=station), EVEN)
 
-    assert raw_of(scored, "objective_progress") == pytest.approx(1.0)
+    # Not quite a flat 1.0: JQ-329 softens the distance near the station itself,
+    # so that a unit at its post has room to manoeuvre without the order
+    # outbidding every other consideration. A hundred units out is well beyond
+    # that softening, so the march is still pulled at very nearly full strength.
+    # See `scoring._beyond_post`.
+    assert raw_of(scored, "objective_progress") == pytest.approx(1.0, abs=0.05)
 
 
 def test_walking_away_from_the_station_scores_negatively() -> None:
