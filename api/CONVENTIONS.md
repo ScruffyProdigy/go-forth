@@ -129,6 +129,36 @@ complementary test too — that a unit whose path takes it inside range ends up
 able to fire — and stage it **off-axis**, because head-on is the one arrangement
 that works when this is broken.
 
+## Movement does not guarantee separation
+
+Read the standoff clamp in `phases/movement.py` and it looks like the thing that
+keeps units apart. It is not, and the difference matters because it is invisible
+until a behaviour layer is attached.
+
+What actually holds a line is the **engage-en-route** rule: a unit stops the
+moment anything is within its weapon range. The standoff sits inside that range,
+so an ordinary unit has already stopped before the clamp could bind. Measured on
+the placeholder armies with no behaviour layer, closest approach between opposing
+units over a whole battle is 16.8 on every seed, and there is not a single tick
+where two of them are within 1 of each other.
+
+A unit acting on an *intent* (JQ-328) skips that check by design — that is what
+makes "press the objective past a weak enemy" possible, and pressing past
+something in a sim with no collision means passing through it. The clamp does not
+catch it either: since JQ-379 an enemy a unit is already inside the standoff of
+does not cap the step, which is what stopped the clamp freezing units in place.
+
+So in a behaviour-driven battle, opposing units do overlap. Measured: coincident
+to 0.000, in episodes of 36 ticks at the median and 114 at the longest — nearly
+six seconds of a ninety-second battle with two units standing inside each other.
+
+**Nothing in the sim prevents this.** Whether it should is a live question
+(JQ-380): it is squarely in JQ-243's readability territory, since overlapping
+sprites read as one unit, which is worse than the blob the engagement gap was
+protecting against. The point here is only that a reader of the clamp must not
+conclude the sim keeps units apart. It keeps units *from walking into contact on
+their own initiative*, which is a different and much smaller claim.
+
 ## Layout
 
 ```
