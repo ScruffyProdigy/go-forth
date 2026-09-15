@@ -22,6 +22,16 @@ from app.sim.types import Side, UnitId, Vec2, opposing
 from app.sim.units import UnitKind
 from app.sim.world import BaseState, Troop, Unit, World
 
+#: The centre of the map — half its width, roughly half its height. Not a
+#: zone: these tests assert relative distance (inside the blast, one hop away,
+#: two hops) and absolute position is incidental, which is why none of them
+#: reference zone geometry at all.
+#:
+#: JQ-376 reshapes the zones into two lanes with a push corridor between them,
+#: and this point lands in that corridor — in no zone. That costs these tests
+#: nothing, but once JQ-376 is in main the honest form of this fixture is
+#: `hotspot_centre(config, zone)` with everything expressed as offsets from it.
+#: Those helpers do not exist yet, so that is a rebase task, not this branch's.
 MID = Vec2(187.5, 290)
 
 

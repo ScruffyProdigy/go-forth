@@ -89,6 +89,11 @@ def test_every_card_on_the_demo_seed_gets_its_ability_off() -> None:
     up full depends on how its battle went, so this is a claim about the run a
     reader will actually see printed, not about every battle — and it is the
     check that caught `ram-charge` being priced out of its own demo.
+
+    Expect to re-tune the costs in `fixtures.py` when JQ-287 lands: it derives
+    deployment from orders, so these armies start somewhere else and fight a
+    different battle. This test going red at that merge means the demo stopped
+    demonstrating a primitive, not that anything is broken.
     """
     fired = {event.label for event in run().events if event.type == "abilityCast"}
 

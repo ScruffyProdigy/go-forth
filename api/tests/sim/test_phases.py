@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from app.sim.config import DEFAULT_SIM_CONFIG
 from app.sim.context import TickContext, create_tick_context
 from app.sim.formation import station
@@ -98,18 +100,42 @@ def test_slice_c_phases_are_in_the_list_the_loop_actually_walks() -> None:
     assert [name for name in SLICE_C_PHASES if name not in present] == []
 
 
+def statuses_precedes_scoring(names: Sequence[str]) -> bool:
+    """Whether a phase list keeps status damage ahead of zone scoring.
+
+    Vacuously true while there is no scoring phase to be ahead of, which is
+    every run on this branch: `scoring` arrives with JQ-287.
+    """
+    if "scoring" not in names or "statuses" not in names:
+        return True
+
+    return names.index("statuses") < names.index("scoring")
+
+
 def test_statuses_lands_before_scoring_once_there_is_a_scoring_phase() -> None:
-    """Vacuous on this branch and load-bearing after JQ-287 merges.
+    """Load-bearing the moment JQ-287 merges.
 
     Burn and burning-ground damage is damage, so a unit a burn finishes should
     stop holding its zone on the same tick a weapon kill would, rather than
-    scoring once more because of what killed it.
+    the lane paying out once more because of which one killed it.
     """
-    names = [p.name for p in TICK_PHASES]
-    if "scoring" not in names:
-        return
+    assert statuses_precedes_scoring([p.name for p in TICK_PHASES])
 
-    assert names.index("statuses") < names.index("scoring")
+
+def test_the_scoring_guard_is_not_vacuous_when_there_is_something_to_check() -> None:
+    """The guard above cannot fail on this branch, because there is no
+    `scoring` phase for it to check against until JQ-287 merges. That makes it
+    a guard that goes live, never having been watched fail, inside someone
+    else's merge resolution — and if it were vacuous for the wrong reason it
+    would report green forever and nobody would look. So the predicate is
+    exercised here against both orders, today.
+
+    The other way this could have stayed asleep is a phase named something
+    other than `scoring`. JQ-287's is `name = "scoring"`, read off their
+    branch rather than assumed.
+    """
+    assert statuses_precedes_scoring(["combat", "statuses", "scoring", "removal"])
+    assert not statuses_precedes_scoring(["combat", "scoring", "statuses", "removal"])
 
 
 def test_a_gauge_is_charged_and_spent_before_the_weapons_swing() -> None:

@@ -157,6 +157,16 @@ PLACEHOLDER_ABILITIES: list[Ability] = [
     ),
     Ability(
         id="pounce",
+        # `stop_short` is deliberately inside the hound's own 16 range, and
+        # JQ-287 confirmed it should stay that way. Their standoff rule — a
+        # unit never *walks* into contact, so a front line holds instead of
+        # collapsing into a scrum — is a rule about walking, not an invariant
+        # over every way a position can change. A pounce that stopped politely
+        # at weapon range would not be a pounce, and the invariant reading is
+        # not available anyway: JQ-289's resummon places a unit at its mage,
+        # which on a contested lane is inside enemy range the tick it appears.
+        # Sprites overlapping at 12 units is a rendering input (JQ-243/294),
+        # and a headless sim cannot see pixels. Do not "fix" this number.
         energy_cost=35,
         effects=(
             DashToTarget(max_distance=70, stop_short=12),
