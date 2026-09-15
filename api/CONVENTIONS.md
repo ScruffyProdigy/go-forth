@@ -129,6 +129,27 @@ complementary test too — that a unit whose path takes it inside range ends up
 able to fire — and stage it **off-axis**, because head-on is the one arrangement
 that works when this is broken.
 
+**And check that the break actually applied.** Breaking a test on purpose is the
+only way to learn whether it is evidence, and it has a failure mode of its own:
+the edit that was supposed to break the code does not land — a formatter has
+reflowed the line an anchor matched on, a patch script prints success over a file
+it never touched — and the suite runs green against unmodified source. "I broke
+it and the test passed" and "I believe I broke it and the test passed" are
+indistinguishable in a terminal, and only the first means anything.
+
+This happened twice in one hour on JQ-329, to two people, in opposite directions:
+once verifying a test (a green run read as "my test has a blind spot", when
+nothing had been modified) and once verifying a fix (a green run read as "the fix
+works", same cause). One of them was nearly reported as a finding. So: assert the
+injection matched before trusting the result, and treat a falsification
+experiment that cannot fail as exactly the same error as a test that cannot fail.
+
+A related blind spot in the test itself, from the same episode. "Nothing was
+dropped from this record" is naturally written as a walk over `dataclasses.fields`
+comparing each by name — and that cannot fail, because a dropped field holds its
+*default* on both sides of the comparison. Compare the records whole, with the
+field that legitimately varies normalised away.
+
 ## Movement does not guarantee separation — the behaviour layer does
 
 Read the standoff clamp in `phases/movement.py` and it looks like the thing that
