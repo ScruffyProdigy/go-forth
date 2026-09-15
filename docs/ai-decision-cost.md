@@ -285,6 +285,34 @@ neighbour was worse and simpler — it closed on `chosen.kind in ("advance",
 about how many cases a fixture exercises is exactly the step that was wrong in
 every instance above.
 
+### An unwired seam is untested by construction
+
+JQ-329's, and the only one here that is not a check which *cannot fail* — it is a
+check that **never runs**. No amount of strengthening the assertion helps,
+because the code path is not reachable from any fixture.
+
+Three consumers on this branch are written against producers that have not
+merged. `Decision.reason` arrives with JQ-329, so `_reason_of` returns empty for
+every unit of every tick and the populated half of the reason render is dead. The
+same was true of personality provenance until JQ-330 landed. A determinism suite
+can spawn as many subprocesses as it likes and never once exercise those lines.
+
+The failure mode is nastier than a normal gap: the break surfaces **on the day
+the seam is wired**, in the producer's pull request, looking like a fault in
+their work rather than a hole in the consumer's. JQ-329 found two dropped sorts
+in their own package this way — set iteration reaching candidate order, which
+they measured at eight distinct orders across eight fresh interpreters — sitting
+behind a seam nothing populated yet.
+
+**So a consumer built against an unlanded producer has to be tested against the
+function rather than against a battle.** Hand-build the record, call the
+renderer, assert on the string. It is less satisfying than an end-to-end run and
+it is the only kind of test that can reach the code.
+
+This is also the standing hazard of building three tickets in parallel against
+each other's interfaces. It is genuinely efficient, and it silently removes a
+whole path from every suite involved.
+
 ### Preconditions are not free, and neither is skipping them
 
 Asserting a test's own preconditions is the fix for most of the shapes above, so

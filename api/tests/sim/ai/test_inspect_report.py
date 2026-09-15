@@ -16,7 +16,7 @@ import json
 from app.sim.ai.decide import decide
 from app.sim.ai.factors import FACTORS
 from app.sim.ai.inspect.record import DecisionTrace, PersonalityRecord, TraceConfig
-from app.sim.ai.inspect.report import as_dicts, render_json, render_text
+from app.sim.ai.inspect.report import NO_REASON, as_dicts, render_json, render_text
 from app.sim.ai.profiles import NEUTRAL_BEHAVIOR, PersonalityTag
 from app.sim.types import Vec2
 from tests.sim.ai.helpers import look, make_unit, make_world
@@ -149,3 +149,28 @@ def test_json_parses_and_keeps_factors_in_declared_order() -> None:
 
 def test_an_empty_trace_reports_that_rather_than_rendering_nothing() -> None:
     assert render_text(()).strip() != ""
+
+
+def test_text_renders_the_reason_when_one_is_present() -> None:
+    """Written against the function, because no battle here can produce one.
+
+    `Decision` gains its `reason` in JQ-329, so on this branch `_reason_of`
+    returns empty for every unit of every tick and the populated half of the
+    render is unreachable from any fixture. An unwired seam is untested by
+    construction: the suite can spawn as many subprocesses as it likes and never
+    once exercise this line. So it is exercised directly, on a record built by
+    hand, and the day the seam is wired this is already covered rather than
+    surfacing as a fault in whoever merged.
+    """
+    record = traced().records[0]
+    explained = type(record)(**{**record.__dict__, "reason": "pursuit_abandoned_leash"})
+
+    assert "pursuit_abandoned_leash" in render_text((explained,))
+
+
+def test_text_says_unexplained_when_no_reason_was_recorded() -> None:
+    """The other half, which is every decision on this branch."""
+    record = traced().records[0]
+
+    assert record.reason == ""
+    assert NO_REASON in render_text((record,))
