@@ -10,9 +10,15 @@ a post-battle summary wants "what changed because of this", not "a thing
 occurred", so every event carries zone-score and base-HP deltas and the units it
 removed — zeroed when it moved none.
 
-`unitDefeated` is the only type slice A has anything to say with. Orders and zone
-flips arrive with JQ-287, ability casts with JQ-288, resummons and dissolves with
-JQ-289 — each adding its own member to `BattleEventType`.
+`unitDefeated` shipped with slice A; `zoneFlip` and `baseHit` arrive with slice B.
+Ability casts are JQ-288, resummons and dissolves JQ-289 — each adding its own
+member to `BattleEventType`.
+
+A `zoneFlip`'s swing is the one that needs saying out loud: it carries the change
+in **per-tick income** the flip caused — the new holder gains the zone's rate, the
+old holder loses it — not a one-off award. The award itself lands every tick for
+as long as the zone is held, and attributing a whole zone's worth of score to the
+moment it changed hands would be a lie in either direction.
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ from typing import Any, Literal
 
 from app.sim.types import Side, UnitRef, Vec2
 
-BattleEventType = Literal["unitDefeated"]
+BattleEventType = Literal["unitDefeated", "zoneFlip", "baseHit"]
 
 _NO_DELTA: Mapping[Side, float] = MappingProxyType({"north": 0, "south": 0})
 
@@ -53,6 +59,10 @@ class BattleEvent:
     position: Vec2
     actors: EventActors
     swing: EventSwing
+    #: The zone the event is about, for the events that are about one. A zone
+    #: flip that does not say which zone flipped is not worth reading, and the
+    #: renderer's chips are indexed by zone id (JQ-294).
+    zone_id: str | None = None
 
 
 class EventEmitter:
@@ -76,6 +86,7 @@ class EventEmitter:
         position: Vec2,
         actors: EventActors | None = None,
         swing: EventSwing | None = None,
+        zone_id: str | None = None,
     ) -> BattleEvent:
         """Records an event, filling in the rest of the envelope."""
         event = BattleEvent(
@@ -84,6 +95,7 @@ class EventEmitter:
             position=position,
             actors=actors if actors is not None else EventActors(),
             swing=swing if swing is not None else EventSwing(),
+            zone_id=zone_id,
         )
         self._buffer.append(event)
         return event
@@ -111,4 +123,56 @@ def unit_defeated(*, tick: int, position: Vec2, unit: UnitRef, killer: UnitRef |
         "position": position,
         "actors": EventActors(source=killer, targets=(unit,)),
         "swing": EventSwing(units_removed=(unit,)),
+    }
+
+
+def _delta(gaining: Side | None, losing: Side | None, amount: float) -> Mapping[Side, float]:
+    """A swing built by walking `SIDES`, never by iterating a dict. See `rng.py`."""
+    return MappingProxyType(
+        {
+            side: (amount if side == gaining else 0) - (amount if side == losing else 0)
+            for side in ("north", "south")
+        }
+    )
+
+
+def zone_flip(
+    *,
+    tick: int,
+    position: Vec2,
+    zone_id: str,
+    holder: Side | None,
+    previous: Side | None,
+    points_per_tick: float,
+) -> dict[str, Any]:
+    """A zone changed hands — to a side, or to nobody.
+
+    The swing is the change in per-tick income: what the new holder starts
+    earning and the old holder stops. A flip into contested or empty carries the
+    loss alone, which is the whole of what that moment cost.
+    """
+    return {
+        "type": "zoneFlip",
+        "tick": tick,
+        "position": position,
+        "zone_id": zone_id,
+        "swing": EventSwing(zone_score=_delta(holder, previous, points_per_tick)),
+    }
+
+
+def base_hit(
+    *,
+    tick: int,
+    position: Vec2,
+    owner: Side,
+    attacker: UnitRef,
+    damage: float,
+) -> dict[str, Any]:
+    """A unit under Push enemy base landed a blow on that base."""
+    return {
+        "type": "baseHit",
+        "tick": tick,
+        "position": position,
+        "actors": EventActors(source=attacker),
+        "swing": EventSwing(base_hp=_delta(None, owner, damage)),
     }

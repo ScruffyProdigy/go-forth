@@ -8,6 +8,7 @@ import pytest
 
 from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig
 from app.sim.map import THREE_ZONE_MAP, MapConfig
+from app.sim.orders import DEFEND_BASE, PUSH_ENEMY_BASE, Order
 from app.sim.run_battle import run_battle
 from app.sim.schools import IDENTITY_MULTIPLIERS, SchoolConfig
 from app.sim.types import Side, Span
@@ -33,15 +34,24 @@ def narrow_map() -> MapConfig:
 NARROW_MAP = narrow_map()
 
 
-def army(side: Side, type_id: str) -> ArmySetup:
-    return ArmySetup(side=side, troops=[TroopSetup(mages=[RosterEntry(type_id)], summons=[])])
+def army(side: Side, type_id: str, order: Order = PUSH_ENEMY_BASE) -> ArmySetup:
+    return ArmySetup(
+        side=side,
+        troops=[TroopSetup(order=order, mages=[RosterEntry(type_id)], summons=[])],
+    )
 
 
 HUNTER_VS_WISP = BattleSetup(
     unit_types=[ADEPT, WISP],
     armies=[army("north", "ember-adept"), army("south", "dying-wisp")],
 )
-STANDOFF = BattleSetup(unit_types=[WISP], armies=[army("north", "dying-wisp"), army("south", "dying-wisp")])
+STANDOFF = BattleSetup(
+    unit_types=[WISP],
+    armies=[
+        army("north", "dying-wisp", DEFEND_BASE),
+        army("south", "dying-wisp", DEFEND_BASE),
+    ],
+)
 ONE_SECOND = SimConfig(tick_rate=20, max_battle_seconds=1)
 
 

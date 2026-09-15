@@ -7,6 +7,7 @@ import dataclasses
 import pytest
 
 from app.sim.map import THREE_ZONE_MAP
+from app.sim.orders import PUSH_ENEMY_BASE
 from app.sim.rng import create_rng
 from app.sim.types import Side
 from app.sim.world import (
@@ -25,6 +26,7 @@ def one_each(side: Side) -> ArmySetup:
         side=side,
         troops=[
             TroopSetup(
+                order=PUSH_ENEMY_BASE,
                 mages=[RosterEntry("ember-adept")],
                 summons=[RosterEntry("cinder-hound")],
             )
@@ -44,7 +46,9 @@ def build(battle_state: BattleSetup | None = None, seed: int = 1) -> World:
 
 
 def only_mage(side: Side) -> ArmySetup:
-    return ArmySetup(side=side, troops=[TroopSetup(mages=[RosterEntry("ember-adept")], summons=[])])
+    return ArmySetup(
+        side=side, troops=[TroopSetup(order=PUSH_ENEMY_BASE, mages=[RosterEntry("ember-adept")], summons=[])]
+    )
 
 
 def test_starts_at_tick_zero() -> None:
@@ -70,6 +74,7 @@ def test_instantiates_a_unit_per_copy_so_duplicates_are_legal() -> None:
                     side="north",
                     troops=[
                         TroopSetup(
+                            order=PUSH_ENEMY_BASE,
                             mages=[RosterEntry("ember-adept", 3)],
                             summons=[RosterEntry("cinder-hound", 4)],
                         )
@@ -90,7 +95,11 @@ def test_one_unit_a_side_is_a_legal_battle() -> None:
 
 
 def test_forty_units_a_side_is_the_same_code_path() -> None:
-    many = TroopSetup(mages=[RosterEntry("ember-adept", 6)], summons=[RosterEntry("cinder-hound", 14)])
+    many = TroopSetup(
+        order=PUSH_ENEMY_BASE,
+        mages=[RosterEntry("ember-adept", 6)],
+        summons=[RosterEntry("cinder-hound", 14)],
+    )
     world = build(
         setup(
             [
@@ -113,7 +122,9 @@ def test_rejects_a_roster_entry_naming_a_card_not_in_the_catalog() -> None:
                 [
                     ArmySetup(
                         side="north",
-                        troops=[TroopSetup(mages=[RosterEntry("frost-adept")], summons=[])],
+                        troops=[
+                            TroopSetup(order=PUSH_ENEMY_BASE, mages=[RosterEntry("frost-adept")], summons=[])
+                        ],
                     ),
                     only_mage("south"),
                 ]
@@ -166,8 +177,8 @@ def test_every_unit_has_a_unique_id() -> None:
                 ArmySetup(
                     side="north",
                     troops=[
-                        TroopSetup(mages=[RosterEntry("ember-adept", 2)], summons=[]),
-                        TroopSetup(mages=[RosterEntry("ember-adept", 2)], summons=[]),
+                        TroopSetup(order=PUSH_ENEMY_BASE, mages=[RosterEntry("ember-adept", 2)], summons=[]),
+                        TroopSetup(order=PUSH_ENEMY_BASE, mages=[RosterEntry("ember-adept", 2)], summons=[]),
                     ],
                 ),
                 only_mage("south"),
@@ -187,6 +198,7 @@ def test_rejects_a_summon_no_mage_in_its_troop_can_support() -> None:
                 side="north",
                 troops=[
                     TroopSetup(
+                        order=PUSH_ENEMY_BASE,
                         mages=[RosterEntry("ember-adept")],
                         summons=[RosterEntry("stone-guard")],
                     )
@@ -207,7 +219,9 @@ def test_rejects_a_troop_with_no_mage() -> None:
                 [
                     ArmySetup(
                         side="north",
-                        troops=[TroopSetup(mages=[], summons=[RosterEntry("cinder-hound")])],
+                        troops=[
+                            TroopSetup(order=PUSH_ENEMY_BASE, mages=[], summons=[RosterEntry("cinder-hound")])
+                        ],
                     ),
                     only_mage("south"),
                 ]
@@ -221,7 +235,11 @@ def test_rejects_an_army_missing_for_a_side() -> None:
 
 
 def test_places_every_unit_inside_its_own_deployment_strip() -> None:
-    many = TroopSetup(mages=[RosterEntry("ember-adept", 6)], summons=[RosterEntry("cinder-hound", 14)])
+    many = TroopSetup(
+        order=PUSH_ENEMY_BASE,
+        mages=[RosterEntry("ember-adept", 6)],
+        summons=[RosterEntry("cinder-hound", 14)],
+    )
     world = build(
         setup(
             [
@@ -243,7 +261,9 @@ def test_does_not_stack_two_units_on_the_same_spot() -> None:
             [
                 ArmySetup(
                     side="north",
-                    troops=[TroopSetup(mages=[RosterEntry("ember-adept", 6)], summons=[])],
+                    troops=[
+                        TroopSetup(order=PUSH_ENEMY_BASE, mages=[RosterEntry("ember-adept", 6)], summons=[])
+                    ],
                 ),
                 only_mage("south"),
             ]

@@ -199,9 +199,11 @@ rendering imports, no randomness that is not seeded.
 from app.sim import THREE_ZONE_MAP, placeholder_battle, run_battle
 
 result = run_battle(THREE_ZONE_MAP, [], placeholder_battle(), seed)
-#   result.ticks    - tick-by-tick state, starting with the opening state
-#   result.events   - the event stream, every event carrying the swing it caused
-#   result.outcome  - why the battle stopped
+#   result.ticks          - tick-by-tick state, starting with the opening state
+#   result.events         - the event stream, every event carrying the swing it caused
+#   result.outcome        - why the battle stopped
+#   result.destroyed_base - whose base fell, on a `baseDestroyed` outcome
+#   result.base_hp        - what each base has left, to carry into the next round
 ```
 
 Same inputs and seed, byte-identical state and events — in this process and in a
@@ -212,7 +214,13 @@ before adding to the sim:
 |---|---|
 | `tests/test_purity.py` | Parses the import graph from `app/sim/__init__.py` with `ast`: nothing that reaches the outside world, nothing under `app.` outside `app.sim`, no `print`/`open`/`eval` |
 | `tests/test_determinism.py` | Two runs in one process, plus **five fresh interpreters** that must all agree |
-| `tests/test_golden_parity.py` | Replays two battles captured from the original TypeScript sim and checks every defeat, tick, position and survivor |
+
+The port also shipped with `tests/sim/test_golden_parity.py`, which replayed two
+battles captured from the original TypeScript sim. Those vectors pinned slice A's
+movement rule — everybody marches at the enemy base — which slice B (JQ-287)
+replaces with orders and derived formations, so they were retired once they had
+done their job. The PRNG vectors in `tests/sim/test_rng.py` are a different claim
+and still stand.
 
 ### Two Python rules this sim lives by
 
@@ -233,6 +241,32 @@ shells out to real child processes — pytest runs a whole suite in one
 interpreter, so an in-process check samples a single hash seed and always agrees.
 It also asserts `PYTHONHASHSEED` is unpinned, because pinning it in CI would make
 the check pass while disarming it everywhere.
+
+### Orders, not placements
+
+A plan gives each troop exactly one **order** — hold a zone, defend your own base,
+push the enemy's — and nothing else. Where its units stand, which rank they are
+in and how far the mages sit behind the summon line are all derived from that
+order and the map, which is what keeps the plan phase to three taps on a phone
+(JQ-190).
+
+```python
+from app.sim import THREE_ZONE_MAP, hold, legal_orders, DEFEND_BASE, PUSH_ENEMY_BASE
+
+legal_orders(THREE_ZONE_MAP)   # hold A, hold B, hold C, defend base, push enemy base
+TroopSetup(order=hold("B"), mages=[...], summons=[...])
+```
+
+`tests/sim/test_orders.py` asserts directly that no placement, stance or facing
+input exists anywhere a plan can reach. A field that let one in would break no
+other test — everything would still run, and the plan phase would quietly stop
+being three taps — so the constraint is checked rather than trusted.
+
+A zone is held when **exactly one** side has living units inside it; contested
+and empty zones pay nobody, and ownership is not sticky. Only troops under Push
+enemy base may attack a base, and a base reaching zero ends the whole match
+rather than the round. Base HP never recovers: `result.base_hp` goes straight
+back into the next round's `BattleSetup.base_hp`.
 
 The per-tick **phase order** is declared in one place,
 [`app/sim/phases/__init__.py`](api/app/sim/phases/__init__.py). Adding behaviour

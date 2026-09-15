@@ -8,11 +8,9 @@ units are removed.
 from __future__ import annotations
 
 from app.sim.geometry import distance
-from app.sim.world import Unit, World
+from app.sim.world import Unit, World, is_alive
 
-
-def is_alive(unit: Unit) -> bool:
-    return unit.hp > 0
+__all__ = ["acquire_target", "is_alive"]
 
 
 def acquire_target(world: World, unit: Unit) -> Unit | None:
