@@ -19,7 +19,7 @@ movement and combat phases act on it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.sim.ai.candidates import Candidate, generate_candidates
 from app.sim.ai.factors import FactorContribution, PersonalityInfluence
@@ -55,19 +55,26 @@ def _with_jitter(
     Drawn in candidate order so the same battle draws the same numbers in the
     same sequence; the branch above is why a battle of jitter-free creatures
     consumes no randomness here whatsoever.
+
+    **`replace` rather than naming the fields.** This is the only place a
+    `ScoredCandidate` is rebuilt rather than scored, so it is the only place a
+    field can be silently lost — and losing one here is invisible three times
+    over. `influences` defaults to `()`, so mypy says nothing; no profile in
+    `app/` sets `tie_break_jitter` above zero, so the path is dead in every
+    battle anyone runs; and the tests that do set it build a behavior with no
+    personalities. A dropped reason would surface as every candidate in a
+    battle reporting that no personality had spoken to it, the first time
+    somebody enabled jitter on a profile.
+
+    A field list would have to be kept in step by whoever adds the next field.
+    `replace` carries whatever the record holds and changes only the score, so
+    there is nothing to remember. JQ-329 arrived at the same fix independently
+    on their branch; whichever body survives the merge, the path is safe.
     """
     if jitter <= 0 or rng is None:
         return scored
 
-    return tuple(
-        ScoredCandidate(
-            candidate=entry.candidate,
-            score=entry.score + rng.next_float() * jitter,
-            contributions=entry.contributions,
-            influences=entry.influences,
-        )
-        for entry in scored
-    )
+    return tuple(replace(entry, score=entry.score + rng.next_float() * jitter) for entry in scored)
 
 
 def _select(scored: tuple[ScoredCandidate, ...]) -> ScoredCandidate:
