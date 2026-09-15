@@ -13,10 +13,11 @@
  *
  * - `Side` is the sim's own `north`/`south` (`api/app/sim/types.py`), portrait,
  *   north at the top of the screen.
- * - `CastCommand` carries the four fields of the sim's `SpellInjection`
- *   (tick, spell id, location, side — side is filled in by the server from the
- *   seat, so the client never sends it), plus a client-minted `commandId`.
- *   Deduplicating on that id is JQ-310; what matters here is that one exists.
+ * - `CastCommand` carries the sim's `SpellInjection` minus its `side`, plus a
+ *   client-minted `commandId`. The missing field is the point: the server fills
+ *   `side` in from the seat, because a client that could name its own side could
+ *   cast as its opponent. Deduplicating on the id is JQ-310; what matters here
+ *   is that one exists.
  */
 
 import type { PlanState, ZoneId } from '../plan/types.ts';
@@ -212,9 +213,16 @@ export interface LoadoutSpell {
 /* ----------------------------------------------------------------- casts -- */
 
 /**
- * A cast the client is asking for. The sim's `SpellInjection` is
- * (tick, spell_id, location, side); `side` comes from the seat on the server, so
- * a client sends the other three plus an id to deduplicate retries on (JQ-310).
+ * A cast the client is asking for.
+ *
+ * The sim's `SpellInjection` is (tick, spell_id, location, side). A client sends
+ * the first three and never the fourth: `side` is filled in on the server from
+ * the seat, because a client trusted to name its own side is a client that can
+ * cast as its opponent. No damage or effect payload crosses either — the sim
+ * looks effects up in its own catalogue (confirmed with JQ-288, 2026-09-14).
+ *
+ * `commandId` is ours, so a retry is recognisable as the same cast rather than a
+ * second one. Deduplicating on it is JQ-310.
  */
 export interface CastCommand {
   readonly commandId: string;
