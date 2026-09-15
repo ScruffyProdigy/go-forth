@@ -540,12 +540,17 @@ def test_a_screen_records_who_it_is_covering_and_whether_anyone_said_so() -> Non
     assert screen.reason == SCREENING_INFERRED
     assert screen.protecting_id == "f"
 
-    # A lone guard covers its own post, which is nobody in particular.
+    # A lone guard gets no *separate* screen at all, and that is worth pinning
+    # rather than glossing: with no allies the thing being covered is its own
+    # post, so the screening line and the approach line are the same line, the
+    # two candidates land on the same point, and the dedupe on `_sort_key`
+    # collapses them into one. Standing between a threat and yourself is just
+    # walking toward the threat.
     alone = make_unit("s", HOUND, "north", HERE, destination=HERE)
     solo = make_world([alone, make_unit("t", RAM, "south", threat_at)])
-    lone_screen = [
-        c
-        for c in generate_candidates(observe(solo, alone, TWO_LANE_MAP, SECONDS_PER_TICK))
-        if c.reason in (SCREENING, SCREENING_INFERRED)
-    ]
-    assert all(c.protecting_id is None for c in lone_screen)
+    lone = generate_candidates(observe(solo, alone, TWO_LANE_MAP, SECONDS_PER_TICK))
+
+    assert lone, "the lone guard generated nothing at all"
+    toward = [c for c in lone if c.target_id == "t"]
+    assert len(toward) == 1, f"expected the screen to collapse into the approach, got {toward}"
+    assert toward[0].protecting_id is None, "it is covering its own post, which is nobody"
