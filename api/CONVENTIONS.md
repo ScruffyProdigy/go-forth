@@ -90,6 +90,45 @@ reproducing its own output* — not two languages agreeing on float formatting.
 Those are different claims, and conflating them sends you chasing an impossible
 one.
 
+## Boundaries in the sim's geometry
+
+**Where this file has failed twice: a rule that stops a unit *at* a boundary, and
+a second rule that tests whether it is *past* that boundary.** The two overlap at
+exactly one point, and floating point will not reliably put anything on it.
+
+First instance (JQ-287). Movement capped a step at `distance - weapon range`, so
+a unit could never end a tick inside its range; combat fired at
+`distance <= range`. A unit walking straight at an enemy lands on the boundary
+exactly — along the line of approach a step closes the distance by its own length
+— so head-on worked and every test was written head-on. Walking *past* something
+closes by less, so the unit converged on its own weapon range from outside and
+stopped there for ever: a hair out of range so it could not shoot, out of slack so
+it could not walk on. A hound frozen at `20.000000000000018` against a range of
+20, alive and out of the battle.
+
+Second instance (JQ-379), in the fix for the first. The standoff clamp lands a
+unit *exactly* on the standoff line, and the test for "already inside the
+standoff" used a strict `<`. So the unit was counted again the next tick, handed
+a slack of zero, and pinned there permanently.
+
+**The rule: the predicate that decides where a unit stops and the predicate that
+decides what it may then do must overlap on an interval, not at a point.** In
+practice that means one of two things, and both are cheap:
+
+- Put the stopping distance strictly inside the acting distance — `ENGAGEMENT_STANDOFF`
+  is nine tenths of weapon range for this reason, so "close enough to stop" and
+  "close enough to fire" are the same state rather than two that meet at a point.
+- Where a clamp lands a value on a boundary, make the test for being at that
+  boundary inclusive. `gap <= standoff` counts the line as inside, because the
+  line is exactly where the clamp puts things.
+
+**Both were found by breaking a new test on purpose, not by review.** An
+invariant of the form "never get closer than X" is satisfied perfectly by a unit
+that never goes anywhere, so on its own it is not evidence of anything. Write the
+complementary test too — that a unit whose path takes it inside range ends up
+able to fire — and stage it **off-axis**, because head-on is the one arrangement
+that works when this is broken.
+
 ## Layout
 
 ```
