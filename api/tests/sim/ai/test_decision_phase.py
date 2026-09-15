@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from app.sim.ai.factors import FACTORS
-from app.sim.ai.fixtures import AGGRESSIVE, DUTIFUL, SAMPLE_TRAITS
+from collections.abc import Mapping
+
+import pytest
+
+from app.sim.ai.factors import FACTORS, FactorName
+from app.sim.ai.fixtures import AGGRESSIVE, DUTIFUL, SAMPLE_TRAITS, SKIRMISHER
 from app.sim.ai.objective import ObjectiveFixtures
 from app.sim.ai.profiles import BehaviorLibrary, CreatureProfile, UnitBehavior
 from app.sim.fixtures import placeholder_battle
@@ -14,6 +18,7 @@ from app.sim.phases.decision import decision_phase
 from app.sim.phases.movement import movement_phase
 from app.sim.rng import create_rng
 from app.sim.types import Vec2
+from app.sim.units import UnitType
 from app.sim.world import World, create_world
 from tests.sim.ai.helpers import attach, context, make_unit, make_world
 from tests.sim.fixtures_units import ADEPT, HOUND
@@ -249,3 +254,108 @@ def test_the_two_hounds_differ_only_in_their_trait_data() -> None:
 
 def test_the_decision_phase_is_in_the_battle_s_phase_list() -> None:
     assert decision_phase in TICK_PHASES
+
+
+# --- the headline claim: a new creature costs data, not code ----------------
+#
+# JQ-296's rule, and the reason none of this branches on a creature id. It was
+# the one claim in this ticket with no test of its own: the trait scenario above
+# proves two units of the *same* type can differ, which is not the same as
+# proving a type nobody anticipated works at all.
+#
+# Both types below are defined here and nowhere else. Nothing in `app/` knows
+# their ids, has a profile for them, or has been changed to accommodate them.
+
+#: Slow, very tough, and swings at arm's length.
+BULWARK = UnitType(
+    id="iron-bulwark",
+    kind="summon",
+    schools=("stone",),
+    max_hp=200,
+    damage=12,
+    range=14,
+    speed=20,
+    attack_cooldown_seconds=1.8,
+)
+#: The same creature in every respect except reach.
+LONGARM = UnitType(
+    id="iron-longarm",
+    kind="summon",
+    schools=("stone",),
+    max_hp=200,
+    damage=12,
+    range=120,
+    speed=20,
+    attack_cooldown_seconds=1.8,
+)
+#: One set of behaviour data, applied identically to both.
+STOIC: Mapping[FactorName, float] = {
+    "objective_progress": 1.0,
+    "target_suitability": 1.5,
+    "danger": 0.5,
+    "ally_support": 0.5,
+}
+
+
+def test_a_creature_type_nobody_anticipated_works_from_data_alone() -> None:
+    """No new code, no new branch, no entry in any of the sim's own fixtures."""
+    newcomer = make_unit("north-t0-u0", BULWARK, "north", MIDFIELD)
+    world = make_world([newcomer])
+    at_station(world)
+    attach(world, library(CreatureProfile("iron-bulwark", STOIC)), [BULWARK])
+
+    decision_phase.run(world, context())
+
+    assert newcomer.ai is not None and newcomer.ai.intent is not None
+    assert dict(newcomer.ai.behavior.weights) == STOIC
+
+
+def test_fighting_style_follows_the_stat_block_not_the_profile() -> None:
+    """The same behaviour data on two creatures that differ only in reach.
+
+    Both stand on their post with an enemy a hundred units off. The long-armed
+    one engages it; the short-armed one holds, because closing would cost more
+    objective ground than the swing at the end is worth to it. No data anywhere
+    says either of those things — the profiles are byte-identical, and the only
+    difference in the whole scenario is `range`.
+
+    That is what "capabilities decide what is legal, traits decide what is
+    preferred" buys: fighting style is a consequence of the stat block, so it
+    changes when the stats change rather than when someone remembers to re-label
+    the card.
+    """
+    # Separate troops, explicitly. `make_unit` defaults every unit into
+    # `<side>-t0`, and two units sharing a troop share a station — which made an
+    # earlier version of this test pass for a reason that had nothing to do with
+    # reach: the short-armed one was walking to a post twenty units away.
+    reach = make_unit("north-t0-u0", LONGARM, "north", MIDFIELD, troop_id="north-t0")
+    stub = make_unit("north-t1-u0", BULWARK, "north", Vec2(MIDFIELD.x + 20, MIDFIELD.y), troop_id="north-t1")
+    enemy = make_unit("e", HOUND, "south", Vec2(MIDFIELD.x, MIDFIELD.y + 100))
+    world = make_world([reach, stub, enemy])
+    # Each is already standing on its station, so "walk to your post" is not on
+    # the table. What is left is close-on-the-enemy versus hit it, which is the
+    # only comparison this test is about.
+    world.objectives = ObjectiveFixtures(stations={"north-t0": reach.position, "north-t1": stub.position})
+    attach(
+        world,
+        library(CreatureProfile("iron-longarm", STOIC), CreatureProfile("iron-bulwark", STOIC)),
+        [LONGARM, BULWARK, HOUND],
+    )
+
+    decision_phase.run(world, context())
+
+    assert reach.ai is not None and reach.ai.intent is not None
+    assert stub.ai is not None and stub.ai.intent is not None
+    # Identical weights — the only difference between these two is `range`.
+    assert dict(reach.ai.behavior.weights) == dict(stub.ai.behavior.weights)
+    assert reach.ai.intent.kind == "attack"
+    assert stub.ai.intent.kind == "hold"
+
+
+def test_a_trait_a_new_creature_cannot_support_is_refused_rather_than_ignored() -> None:
+    """Data errors surface at build, not as a preference that silently does nothing."""
+    newcomer = make_unit("north-t0-u0", BULWARK, "north", MIDFIELD)
+    world = make_world([newcomer])
+
+    with pytest.raises(ValueError, match="lacks ranged_attack"):
+        attach(world, library(CreatureProfile("iron-bulwark", STOIC, traits=(SKIRMISHER,))), [BULWARK])
