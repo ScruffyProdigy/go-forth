@@ -174,6 +174,12 @@ def test_the_record_still_says_which_of_those_two_it_was() -> None:
 def test_zero_strength_removes_the_contribution_rather_than_inverting_it() -> None:
     silent = escort(strength_library("m", PROTECTIVE, strength=0.0))
     absent = escort(BehaviorLibrary(personalities=SAMPLE_PERSONALITIES))
+    ordinary = escort(strength_library("m", PROTECTIVE))
+
+    # The control. Without it, a tag that had stopped speaking in *every*
+    # context would satisfy the assertion below just as well as one dialled to
+    # zero, and this test would be asserting that nothing equals nothing.
+    assert scored(ordinary, *INTERCEPT).influences != ()
 
     assert behavior_of(silent, "melee").weights == behavior_of(absent, "melee").weights
     assert scored(silent, *INTERCEPT).influences == ()
@@ -481,10 +487,14 @@ def with_rule(*rules: PersonalityRule) -> BehaviorLibrary:
 
 
 def test_a_rule_scoped_to_one_action_is_silent_on_every_other() -> None:
-    library = with_rule(PersonalityRule(when="closing", weights={"danger": -1.0}, actions=("attack",)))
-    entry = scored(escort(library), *INTERCEPT)
+    scoped = with_rule(PersonalityRule(when="closing", weights={"danger": -1.0}, actions=("attack",)))
+    unscoped = with_rule(PersonalityRule(when="closing", weights={"danger": -1.0}))
 
-    assert entry.influences == ()
+    # The same rule, same situation, same candidate — the only difference is the
+    # scope. Without the first assertion this test would pass against a rule
+    # engine that had stopped firing anything at all.
+    assert scored(escort(unscoped), *INTERCEPT).influences != ()
+    assert scored(escort(scoped), *INTERCEPT).influences == ()
 
 
 def test_an_exception_silences_a_rule_that_would_otherwise_fire() -> None:

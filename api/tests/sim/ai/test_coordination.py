@@ -112,6 +112,21 @@ def unit(world: World, unit_id: str) -> Unit:
     return next(u for u in world.units if u.id == unit_id)
 
 
+def answered(units: list[Unit]) -> tuple[str, ...]:
+    """Who this fixture actually commits, so a test can prove its threat is live.
+
+    The positive control every "nobody is assigned" test below needs. Asserting
+    that a wall is not sent anywhere proves nothing unless something else in the
+    same arrangement *is* sent — otherwise a coordinator that noticed no threats
+    at all would satisfy it, and so would a fixture where the mortar was out of
+    range, or armed with nothing, or on the wrong side.
+
+    Confirmed rather than assumed: with `_under_threat` stubbed to return False,
+    every one of those tests passed until this control was added.
+    """
+    return tuple(a.unit_id for a in run(guarded_world(units)).coordination.assignments)
+
+
 # --- composing the habits ---------------------------------------------------
 
 
@@ -192,22 +207,23 @@ def test_leadership_cannot_commandeer_the_whole_troop() -> None:
 
 def test_an_immobile_summon_is_never_sent_after_something_out_of_its_reach() -> None:
     """The capability rule at its sharpest: a wall is not asked to walk."""
-    units = guarded(summons=0)
-    units.append(make_unit("wall", EMPLACEMENT, "north", Vec2(MAGE_AT.x, MAGE_AT.y - 20)))
+    at = Vec2(MAGE_AT.x, MAGE_AT.y - 20)
+    wall = [*guarded(summons=0), make_unit("wall", EMPLACEMENT, "north", at)]
+    hound = [*guarded(summons=0), make_unit("hound", HOUND, "north", at)]
 
-    troop = run(guarded_world(units))
-
-    assert troop.coordination.assignments == ()
+    # Same threat, same spot, same troop — and the one that can walk is asked.
+    assert answered(hound) == ("hound",)
+    assert answered(wall) == ()
 
 
 def test_a_summon_with_no_damage_is_never_assigned() -> None:
     """Being able to *go* is not the same as being able to do anything there."""
-    units = guarded(summons=0)
-    units.append(make_unit("mote", HARMLESS, "north", Vec2(MAGE_AT.x, MAGE_AT.y - 20)))
+    at = Vec2(MAGE_AT.x, MAGE_AT.y - 20)
+    mote = [*guarded(summons=0), make_unit("mote", HARMLESS, "north", at)]
+    hound = [*guarded(summons=0), make_unit("hound", HOUND, "north", at)]
 
-    troop = run(guarded_world(units))
-
-    assert troop.coordination.assignments == ()
+    assert answered(hound) == ("hound",)
+    assert answered(mote) == ()
 
 
 def test_assignments_come_out_sorted_by_unit_id() -> None:
@@ -254,6 +270,8 @@ def test_an_assignment_is_released_when_the_ally_it_protects_dies() -> None:
     world = guarded_world(guarded(summons=3))
     run(world)
 
+    assert troop_of(world).coordination.assignments
+
     unit(world, "m").hp = 0
     troop = run(world, tick=1)
 
@@ -274,6 +292,7 @@ def test_an_assignment_is_released_when_the_threat_walks_away() -> None:
     """Live-state reaction: the premise is gone, so the commitment goes with it."""
     world = guarded_world(guarded(summons=3))
     run(world)
+    assert troop_of(world).coordination.assignments
 
     unit(world, "e0").position = Vec2(MAGE_AT.x, MAGE_AT.y - 320)
     troop = run(world, tick=1)
@@ -285,6 +304,7 @@ def test_a_troop_that_has_lost_its_last_mage_coordinates_nothing() -> None:
     """JQ-289's dissolve. What a mage was providing stops when the mage does."""
     world = guarded_world(guarded(summons=3))
     run(world)
+    assert troop_of(world).coordination.assignments
 
     unit(world, "m").hp = 0
     troop = run(world, tick=1)
