@@ -153,3 +153,22 @@ async def test_the_finished_callback_runs_once_the_match_is_over() -> None:
 
     # This is what persists the result and reports it to the Lobby.
     assert finished == [session]
+
+
+async def test_a_finished_match_starts_no_clock() -> None:
+    """A player returning to read their result must not restart the match.
+
+    Without the guard the loop exits on its first check and runs the finished
+    callback again, re-reporting a match the Lobby already closed out.
+    """
+    from app.match.hub import MatchHub as Hub
+    from app.repository import MemoryRepository
+    from app.service import GameService
+
+    service = GameService(MemoryRepository(), Hub())
+    session = make_session(seconds=1)
+    session.abandon()
+    assert session.over
+
+    service.start_clock(session)
+    assert service.is_ticking(session.external_match_id) is False

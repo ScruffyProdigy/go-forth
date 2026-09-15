@@ -272,13 +272,27 @@ class GameService:
     # ------------------------------------------------------------ lifecycle --
 
     def start_clock(self, session: MatchSession) -> None:
-        """Begin ticking a match. Idempotent — a second claim does not start two."""
+        """Begin ticking a match. Idempotent — a second claim does not start two.
+
+        A finished match starts nothing. Without that guard a player returning to
+        read their result spawns a loop that exits on its first check and runs
+        the finished callback again, re-reporting a match the Lobby has already
+        been told about.
+        """
+        if session.over:
+            return
+
         clock = self._clocks.get(session.external_match_id)
         if clock is not None and clock.running:
             return
         clock = SessionClock(session, self._hub, on_finished=self._on_match_finished)
         self._clocks[session.external_match_id] = clock
         clock.start()
+
+    def is_ticking(self, external_match_id: str) -> bool:
+        """Whether a tick loop is running for this match."""
+        clock = self._clocks.get(external_match_id)
+        return clock is not None and clock.running
 
     async def stop_clock(self, external_match_id: str) -> None:
         clock = self._clocks.pop(external_match_id, None)
