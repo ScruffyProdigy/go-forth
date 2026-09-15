@@ -21,17 +21,24 @@ from app.sim.context import TickContext, create_tick_context
 from app.sim.events import BattleEvent
 from app.sim.map import MapConfig
 from app.sim.phases import TICK_PHASES
+from app.sim.resonance import SideResonanceCounts, count_resonance
 from app.sim.rng import create_rng
 from app.sim.schools import (
     SchoolConfig,
-    SchoolMultiplierTable,
-    resolve_school_multipliers,
+    SideMultiplierTable,
+    resolve_side_multipliers,
 )
-from app.sim.types import SIDES
+from app.sim.types import SIDES, Side
+from app.sim.units import build_unit_type_catalog
 from app.sim.world import BattleSetup, World, create_world
 
-#: Why the battle stopped. Zone-score and base-destruction endings arrive with slice B.
-BattleOutcome = Literal["annihilation", "timeUp"]
+#: Why the battle stopped.
+#:
+#: `timeUp` is the ordinary ending: the round is decided on zone score, which is
+#: the match engine's business rather than the sim's (JQ-187). `baseDestroyed` is
+#: the exception — it does not resolve a round, it ends the whole match, and it
+#: takes precedence over everything else that happened on the same tick.
+BattleOutcome = Literal["annihilation", "timeUp", "baseDestroyed"]
 
 
 @dataclass(frozen=True)
@@ -55,7 +62,19 @@ class BattleResult:
     #: The map the battle was fought on, so a consumer need not be handed it twice.
     map: MapConfig
     config: SimConfig
-    multipliers: SchoolMultiplierTable
+    multipliers: SideMultiplierTable
+    #: What each side's resonance was for this battle (§4.11), so a match engine
+    #: can carry the same numbers into the next round rather than re-deriving
+    #: them from whatever that round happens to field.
+    resonance: SideResonanceCounts
+    #: Whose base fell, on a `baseDestroyed` outcome. That side loses the match
+    #: outright — not the round. None on every other outcome.
+    destroyed_base: Side | None = None
+
+    @property
+    def base_hp(self) -> dict[Side, float]:
+        """What each base has left, to be carried into the next round as-is."""
+        return {side: self.final_state.bases[side].hp for side in SIDES}
 
 
 def step_battle(world: World, ctx: TickContext) -> list[BattleEvent]:
@@ -73,6 +92,16 @@ def _side_is_wiped_out(world: World) -> bool:
     return any(not any(unit.side == side for unit in world.units) for side in SIDES)
 
 
+def _base_destroyed(world: World) -> Side | None:
+    """Whose base has fallen, walking `SIDES` so the answer never depends on
+    dict order. North is checked first; a tie is not a thing two separate
+    attackers can produce in one tick, since damage resolves in list order."""
+    for side in SIDES:
+        if world.bases[side].hp <= 0:
+            return side
+    return None
+
+
 def run_battle(
     map_config: MapConfig,
     school_configs: Sequence[SchoolConfig],
@@ -87,19 +116,43 @@ def run_battle(
     validate_sim_config(config)
 
     rng = create_rng(seed)
-    multipliers = resolve_school_multipliers(list(school_configs))
     world = create_world(map_config, battle_state, rng)
-    ctx = create_tick_context(config=config, map_config=map_config, multipliers=multipliers, rng=rng)
+
+    # The mages a side selects for the round establish its resonance for the
+    # whole round (Ryan, 2026-09-15): counted once off the opening world and
+    # never again, so a mage falling at tick 400 costs you the mage and not the
+    # resonance you brought. Resolved here rather than in a phase for that
+    # reason. Nothing between `create_world` and here touches the rng, so the
+    # battle's draws are unaffected by the order.
+    established = count_resonance(world)
+    multipliers = resolve_side_multipliers(list(school_configs), established)
+
+    ctx = create_tick_context(
+        config=config,
+        map_config=map_config,
+        multipliers=multipliers,
+        rng=rng,
+        resonance=established,
+        unit_types=build_unit_type_catalog(battle_state.unit_types),
+    )
 
     ticks: list[BattleTick] = [BattleTick(tick=0, state=copy.deepcopy(world), events=())]
     events: list[BattleEvent] = []
     limit = max_ticks(config)
     outcome: BattleOutcome = "timeUp"
+    destroyed_base: Side | None = None
 
     while world.tick < limit:
         tick_events = step_battle(world, ctx)
         events.extend(tick_events)
         ticks.append(BattleTick(tick=world.tick, state=copy.deepcopy(world), events=tuple(tick_events)))
+
+        # A base falling ends the match, so it is settled before anything else
+        # that happened on the same tick.
+        destroyed_base = _base_destroyed(world)
+        if destroyed_base is not None:
+            outcome = "baseDestroyed"
+            break
 
         if _side_is_wiped_out(world):
             outcome = "annihilation"
@@ -114,4 +167,6 @@ def run_battle(
         map=map_config,
         config=config,
         multipliers=multipliers,
+        resonance=established,
+        destroyed_base=destroyed_base,
     )

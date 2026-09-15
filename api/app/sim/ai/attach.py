@@ -8,6 +8,21 @@ check for behavior data.
 
 The result is immutable and shared by reference across the per-tick snapshots —
 see `ResolvedBehavior.__deepcopy__`.
+
+**Units can also arrive mid-battle.** A resummoned summon (JQ-289) is built after
+`create_world` has run, so it reaches the field with no behaviour at all — and a
+unit with no behaviour is skipped by the decision phase entirely, which means it
+would quietly fall back to walking at its station while everything around it was
+deciding. `resolve_missing` is what the decision phase calls to catch those; it
+leaves already-resolved units alone, so it cannot disturb an intent mid-tick.
+
+Battle-start validation is deliberately *not* repeated for them. `unit_behaviors`
+and `mage_personalities` name specific unit ids, and by the time a resummon
+happens some of those units are dead and gone — re-checking would reject a
+perfectly good library for naming a unit that has since fallen. One consequence
+worth knowing: a rebuilt summon gets a new id, so an individual trait override
+does not follow it. The override was authored about that individual, and the
+replacement is a different one.
 """
 
 from __future__ import annotations
@@ -19,6 +34,7 @@ from app.sim.ai.capabilities import capabilities_of
 from app.sim.ai.intent import UnitAi
 from app.sim.ai.profiles import (
     EMPTY_LIBRARY,
+    BehaviorIndex,
     BehaviorLibrary,
     index_library,
     personality_refs_for_troop,
@@ -66,12 +82,33 @@ def attach_behavior(
                 f"Personalities are authored on mages and reach their troop from there"
             )
 
+    _resolve(units, troops, index)
+
+
+def resolve_missing(
+    units: Sequence[Unit],
+    troops: Sequence[Troop],
+    library: BehaviorLibrary,
+    catalog: UnitTypeCatalog,
+) -> None:
+    """Attaches behaviour to units that have none yet, leaving the rest alone.
+
+    For units that arrive after the battle has started. See the module docstring
+    on why this does not repeat the battle-start validation.
+    """
+    if is_empty(library) or all(unit.ai is not None for unit in units):
+        return
+
+    _resolve(units, troops, index_library(library, catalog))
+
+
+def _resolve(units: Sequence[Unit], troops: Sequence[Troop], index: BehaviorIndex) -> None:
     # Walks `troops`, a list, so the refs for each troop are gathered in a fixed
     # order regardless of how the sets above happened to hash.
     for troop in troops:
         refs = personality_refs_for_troop(troop.id, troop.mage_ids, index)
         for unit in units:
-            if unit.troop_id != troop.id:
+            if unit.troop_id != troop.id or unit.ai is not None:
                 continue
             unit.ai = UnitAi(
                 behavior=resolve_behavior(unit, capabilities_of(unit), index, refs),

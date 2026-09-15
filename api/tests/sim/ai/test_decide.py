@@ -21,8 +21,13 @@ def behavior(jitter: float = 0.0, **weights: float) -> ResolvedBehavior:
     )
 
 
+#: A post further down the lane, so "press on" is a real option to weigh
+#: against "swing at what is in front of you".
+STATION = Vec2(MIDFIELD.x, MIDFIELD.y + 100)
+
+
 def engaged() -> tuple[World, Unit]:
-    hound = make_unit("h", HOUND, "north", MIDFIELD)
+    hound = make_unit("h", HOUND, "north", MIDFIELD, destination=STATION)
     enemy = make_unit("e", HOUND, "south", Vec2(MIDFIELD.x + 10, MIDFIELD.y))
     return make_world([hound, enemy]), hound
 

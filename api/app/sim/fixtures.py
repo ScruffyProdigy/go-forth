@@ -6,10 +6,15 @@ goal and certainly not slice A's — these exist so there is something to run.
 
 v1 is a Fire mirror (§7.4), and round 1 opens at the starting mage cap of three
 (§4.3): three troops, one mage each, with their summons.
+
+Each troop carries an order, because a troop without one cannot be built: two
+hold the near zones and one pushes, which is enough to put every derived
+formation and both endings — zone score and base damage — on screen in one run.
 """
 
 from __future__ import annotations
 
+from app.sim.orders import PUSH_ENEMY_BASE, hold
 from app.sim.types import Side
 from app.sim.units import UnitType
 from app.sim.world import ArmySetup, BattleSetup, RosterEntry, TroopSetup
@@ -61,18 +66,25 @@ PLACEHOLDER_UNIT_TYPES: list[UnitType] = [
 
 
 def _fire_army(side: Side) -> ArmySetup:
+    # A geometric mirror on the three-zone map: each side holds the zone in front
+    # of its own base and contests the middle, and sends one troop at the wall.
+    near_zone = "A" if side == "north" else "C"
+
     return ArmySetup(
         side=side,
         troops=[
             TroopSetup(
+                order=hold(near_zone),
                 mages=[RosterEntry("ember-adept")],
                 summons=[RosterEntry("cinder-hound", 2)],
             ),
             TroopSetup(
+                order=hold("B"),
                 mages=[RosterEntry("ember-adept")],
                 summons=[RosterEntry("ash-ram"), RosterEntry("ember-sprite")],
             ),
             TroopSetup(
+                order=PUSH_ENEMY_BASE,
                 mages=[RosterEntry("ember-adept")],
                 summons=[RosterEntry("ember-sprite", 2)],
             ),

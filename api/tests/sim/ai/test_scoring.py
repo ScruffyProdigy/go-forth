@@ -6,7 +6,6 @@ import pytest
 
 from app.sim.ai.candidates import Candidate, generate_candidates
 from app.sim.ai.factors import FACTORS, MAX_WEIGHT, FactorName, freeze_weights
-from app.sim.ai.objective import ObjectiveFixtures
 from app.sim.ai.scoring import ScoredCandidate, score_candidate, score_candidates
 from app.sim.types import Vec2
 from tests.sim.ai.helpers import look, make_unit, make_world
@@ -24,31 +23,23 @@ def raw_of(scored: ScoredCandidate, factor: FactorName) -> float:
 
 
 def test_advancing_toward_the_station_scores_positively() -> None:
-    hound = make_unit("h", HOUND, "north", MIDFIELD)
-    world = make_world([hound])
     station = Vec2(MIDFIELD.x, MIDFIELD.y + 100)
+    hound = make_unit("h", HOUND, "north", MIDFIELD, destination=station)
+    world = make_world([hound])
 
-    scored = score_candidate(
-        look(world, hound, ObjectiveFixtures(stations={"north-t0": station})),
-        Candidate(kind="advance", destination=station),
-        EVEN,
-    )
+    scored = score_candidate(look(world, hound), Candidate(kind="advance", destination=station), EVEN)
 
     assert raw_of(scored, "objective_progress") == pytest.approx(1.0)
 
 
 def test_walking_away_from_the_station_scores_negatively() -> None:
     """How a unit with a heavy objective weight refuses to chase backwards."""
-    hound = make_unit("h", HOUND, "north", MIDFIELD)
-    world = make_world([hound])
     station = Vec2(MIDFIELD.x, MIDFIELD.y + 100)
     behind = Vec2(MIDFIELD.x, MIDFIELD.y - 100)
+    hound = make_unit("h", HOUND, "north", MIDFIELD, destination=station)
+    world = make_world([hound])
 
-    scored = score_candidate(
-        look(world, hound, ObjectiveFixtures(stations={"north-t0": station})),
-        Candidate(kind="advance", destination=behind),
-        EVEN,
-    )
+    scored = score_candidate(look(world, hound), Candidate(kind="advance", destination=behind), EVEN)
 
     assert raw_of(scored, "objective_progress") < 0
 

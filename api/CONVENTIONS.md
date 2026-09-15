@@ -74,6 +74,15 @@ mulberry32 XORed the wrong operand and shifted 15 where the JavaScript shifts
 every determinism test it had. Only output captured from the TypeScript caught
 it.
 
+**Retire a golden vector when the behaviour it pins is superseded, rather than
+teaching the sim to reproduce it.** `tests/sim/golden_battles.json` proved the
+JQ-286 port matched the TypeScript, which is a claim about one moment: slice B
+(JQ-287) replaces the movement rule those battles encode — everybody marches at
+the enemy base — with orders and derived formations, so no correct
+implementation of slice B can reproduce them. Keeping them green would have
+meant keeping a superseded rule alive behind a flag. The PRNG vectors in
+`test_rng.py` pin the generator rather than the game and are untouched.
+
 **Compare across languages by parsed value, not by bytes.** Python and
 JavaScript format some floats differently in JSON (`1e+21` vs `1e21`, `1e-06`
 vs `0.000001`). Byte-identical determinism means *one implementation

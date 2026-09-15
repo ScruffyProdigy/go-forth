@@ -17,7 +17,6 @@ creature id anywhere.
 
 from __future__ import annotations
 
-from app.sim.ai.objective import ObjectiveFixtures
 from app.sim.ai.profiles import (
     BehaviorLibrary,
     CreatureProfile,
@@ -29,8 +28,6 @@ from app.sim.ai.profiles import (
     TraitTag,
     UnitBehavior,
 )
-from app.sim.map import THREE_ZONE_MAP
-from app.sim.types import Vec2
 
 # --- behavioral traits: what a creature is like -----------------------------
 
@@ -158,35 +155,3 @@ def placeholder_behavior() -> BehaviorLibrary:
             MagePersonality("south-t2-u0", (PersonalityRef(RECKLESS, strength=1.5),)),
         ),
     )
-
-
-# --- stand-in objective facts ----------------------------------------------
-
-#: The middle zone, which is what two armies are actually fighting over. Once
-#: JQ-287 lands its orders phase derives these and this goes away.
-_CONTESTED = THREE_ZONE_MAP.zones[1]
-_CONTESTED_Y = (_CONTESTED.lane.start + _CONTESTED.lane.end) / 2
-#: A troop ordered to push. The other two hold the zone — which is the shape of
-#: the order mix JQ-287 will produce, and it is what makes the restriction on
-#: who may take the base observable in a running battle rather than only in a test.
-_PUSHERS = frozenset({"north-t1", "south-t1"})
-
-
-def placeholder_objectives() -> ObjectiveFixtures:
-    """Stations for the placeholder armies, until JQ-287 derives real ones.
-
-    Without these every troop's station is the enemy base, and two armies whose
-    orders are both "walk to the far end" march through each other and swap
-    ends — which says nothing about whether the decision loop works, because
-    nobody was ever asked to hold anything.
-    """
-    lanes = (90.0, 187.5, 285.0)
-
-    stations = {
-        f"{side}-t{index}": Vec2(x, _CONTESTED_Y + (-20 if side == "north" else 20))
-        for side in ("north", "south")
-        for index, x in enumerate(lanes)
-        if f"{side}-t{index}" not in _PUSHERS
-    }
-
-    return ObjectiveFixtures(stations=stations, push_troops=_PUSHERS)

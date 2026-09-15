@@ -25,6 +25,7 @@ def _event_line(event) -> str:  # type: ignore[no-untyped-def]
             "event": event.type,
             "tick": event.tick,
             "position": {"x": event.position.x, "y": event.position.y},
+            "zone": event.zone_id,
             "actors": {
                 "source": event.actors.source.unit_id if event.actors.source else None,
                 "targets": [target.unit_id for target in event.actors.targets],
@@ -47,6 +48,7 @@ def serialize_battle(result: BattleResult) -> str:
             "map": result.map.id,
             "tickRate": result.config.tick_rate,
             "outcome": result.outcome,
+            "destroyedBase": result.destroyed_base,
             "ticks": result.final_state.tick,
         },
         separators=(",", ":"),
@@ -71,6 +73,9 @@ def serialize_battle(result: BattleResult) -> str:
                 "south": result.final_state.bases["south"].hp,
             },
             "zoneScore": dict(result.final_state.zone_score),
+            # Walked in map order rather than by iterating the dict: zone ids are
+            # strings, and Python hashes those differently in every process.
+            "zoneHolders": {zone.id: result.final_state.zone_holders[zone.id] for zone in result.map.zones},
         },
         separators=(",", ":"),
     )

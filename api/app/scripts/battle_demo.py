@@ -9,9 +9,9 @@ is reachable from `run_battle`.
     python -m app.scripts.battle_demo --behavior
 
 `--behavior` attaches the sample creature profiles and mage personalities
-(JQ-328), so the same armies fight with the decision loop instead of marching at
-the enemy base. Without it the battle runs exactly as it did before that loop
-existed, which is what the determinism vectors are pinned to.
+(JQ-328), so the same armies decide what to do rather than walking to the station
+their order gave them and stopping. Without it the battle runs exactly as it does
+without any behaviour data at all.
 
 stdout is the canonical serialisation and nothing else, so two runs can be
 compared byte for byte. The human-readable summary goes to stderr.
@@ -30,7 +30,6 @@ from app.sim import (
     digest_battle,
     placeholder_battle,
     placeholder_behavior,
-    placeholder_objectives,
     run_battle,
     serialize_battle,
 )
@@ -57,7 +56,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     battle = placeholder_battle()
     if args.behavior:
         battle.behavior = placeholder_behavior()
-        battle.objectives = placeholder_objectives()
 
     config = DEFAULT_SIM_CONFIG if args.seconds is None else SimConfig(max_battle_seconds=args.seconds)
 

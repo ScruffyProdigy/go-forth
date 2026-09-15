@@ -3,23 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 
 from app.sim.ai.candidates import Candidate, generate_candidates
-from app.sim.ai.objective import PUSH_ENEMY_BASE, ObjectiveFixtures
 from app.sim.geometry import distance
 from app.sim.map import THREE_ZONE_MAP
+from app.sim.orders import PUSH_ENEMY_BASE, hold
 from app.sim.types import Vec2
 from tests.sim.ai.helpers import look, make_unit, make_world
 from tests.sim.fixtures_units import ADEPT, HOUND, WISP
 
 MIDFIELD = Vec2(180, 300)
 SOUTH_BASE = THREE_ZONE_MAP.bases["south"].position
-
-
-@dataclass(frozen=True)
-class FakeOrder:
-    kind: str
 
 
 def kinds(candidates: Sequence[Candidate]) -> list[str]:
@@ -69,9 +63,10 @@ def test_a_dead_enemy_is_not_a_candidate() -> None:
 
 
 def test_a_unit_may_advance_on_its_station_and_on_the_nearest_enemy() -> None:
-    hound = make_unit("h", HOUND, "north", MIDFIELD)
+    # A station it is not already standing on, so the walk to it is on offer.
+    hound = make_unit("h", HOUND, "north", MIDFIELD, destination=SOUTH_BASE)
     enemy = make_unit("e", HOUND, "south", Vec2(60, 320))
-    world = make_world([hound, enemy])
+    world = make_world([hound, enemy], orders={"north-t0": PUSH_ENEMY_BASE})
 
     destinations = {
         (c.destination.x, c.destination.y)
@@ -90,10 +85,8 @@ def test_a_troop_not_pushing_the_base_never_sees_the_base_as_somewhere_to_go() -
     no stack of personalities, can talk a defending troop into the enemy base,
     because the option is never on the table to be scored.
     """
-    hound = make_unit("h", HOUND, "north", MIDFIELD)
-    world = make_world([hound])
-    setattr(world.troops[0], "order", FakeOrder(kind="holdZone"))  # noqa: B010
-    hound.destination = SOUTH_BASE
+    hound = make_unit("h", HOUND, "north", MIDFIELD, destination=SOUTH_BASE)
+    world = make_world([hound], orders={"north-t0": hold("B")})
 
     candidates = generate_candidates(look(world, hound))
 
@@ -101,20 +94,17 @@ def test_a_troop_not_pushing_the_base_never_sees_the_base_as_somewhere_to_go() -
 
 
 def test_a_troop_pushing_the_base_does_see_it() -> None:
-    hound = make_unit("h", HOUND, "north", MIDFIELD)
-    world = make_world([hound])
-    setattr(world.troops[0], "order", FakeOrder(kind=PUSH_ENEMY_BASE))  # noqa: B010
-    hound.destination = SOUTH_BASE
+    hound = make_unit("h", HOUND, "north", MIDFIELD, destination=SOUTH_BASE)
+    world = make_world([hound], orders={"north-t0": PUSH_ENEMY_BASE})
 
     assert "advance" in kinds(generate_candidates(look(world, hound)))
 
 
 def test_a_unit_already_standing_on_its_station_is_not_offered_a_walk_to_it() -> None:
-    hound = make_unit("h", HOUND, "north", MIDFIELD)
+    hound = make_unit("h", HOUND, "north", MIDFIELD, destination=MIDFIELD)
     world = make_world([hound])
-    fixtures = ObjectiveFixtures(stations={"north-t0": MIDFIELD})
 
-    assert kinds(generate_candidates(look(world, hound, fixtures))) == ["hold"]
+    assert kinds(generate_candidates(look(world, hound))) == ["hold"]
 
 
 def test_candidates_come_out_in_a_stable_order_whatever_the_world_list_order() -> None:
@@ -170,9 +160,7 @@ def test_no_candidate_expresses_a_retreat() -> None:
         [cornered]
         + [make_unit(f"e{i}", HOUND, "south", Vec2(station.x + 5 + i * 4, station.y)) for i in range(3)]
     )
-    fixtures = ObjectiveFixtures(stations={"north-t0": station})
-
-    candidates = generate_candidates(look(world, cornered, fixtures))
+    candidates = generate_candidates(look(world, cornered))
 
     assert {c.kind for c in candidates} == {"hold", "attack", "advance"}
     # The one advance leads toward an enemy, never away from the danger.

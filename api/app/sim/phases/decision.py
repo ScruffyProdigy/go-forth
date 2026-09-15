@@ -17,6 +17,7 @@ of them has merged.
 
 from __future__ import annotations
 
+from app.sim.ai.attach import resolve_missing
 from app.sim.ai.decide import decide, intent_of
 from app.sim.ai.observe import observe
 from app.sim.context import TickContext
@@ -30,21 +31,27 @@ class DecisionPhase:
     name = "decision"
 
     def run(self, world: World, ctx: TickContext) -> None:
+        # A resummoned summon (JQ-289) is built after `create_world`, so it
+        # arrives with no behaviour — and a unit with no behaviour is skipped
+        # below, which would leave it walking at its station while its whole
+        # troop decided. Cheap: it returns immediately once everyone has one.
+        resolve_missing(world.units, world.troops, world.behavior, ctx.unit_types)
+
         for unit in world.units:
             if not is_alive(unit) or unit.ai is None:
                 continue
 
             decision = decide(
-                observe(world, unit, ctx.map_config, ctx.seconds_per_tick, world.objectives),
+                observe(world, unit, ctx.map_config, ctx.seconds_per_tick),
                 unit.ai.behavior,
                 ctx.rng,
             )
             intent = intent_of(decision)
             unit.ai.intent = intent
 
-            # Movement reads `unit.destination`, which JQ-287's orders phase
-            # rewrites next tick — so a diversion undoes itself and "return to
-            # your station" needs no code at all.
+            # Movement reads `unit.destination`, which the orders phase rewrites
+            # next tick — so a diversion undoes itself and "return to your
+            # station" needs no code at all.
             if intent.destination is not None:
                 unit.destination = intent.destination
 

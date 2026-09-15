@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.sim.ai.capabilities import Capabilities, capabilities_of
-from app.sim.ai.objective import DEFAULT_FIXTURES, Objective, ObjectiveFixtures, objective_for
+from app.sim.ai.objective import Objective, objective_for
 from app.sim.map import MapConfig
 from app.sim.world import Unit, World
 
@@ -48,14 +48,13 @@ def observe(
     unit: Unit,
     map_config: MapConfig,
     seconds_per_tick: float,
-    fixtures: ObjectiveFixtures = DEFAULT_FIXTURES,
 ) -> Observation:
     capabilities = capabilities_of(unit)
 
     return Observation(
         unit=unit,
         capabilities=capabilities,
-        objective=objective_for(world, unit, map_config, fixtures),
+        objective=objective_for(world, unit),
         enemies=tuple(
             sorted((u for u in world.units if u.hp > 0 and u.side != unit.side), key=lambda u: u.id)
         ),

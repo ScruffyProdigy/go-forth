@@ -7,16 +7,17 @@ from collections.abc import Mapping
 import pytest
 
 from app.sim.ai.factors import FACTORS, FactorName
-from app.sim.ai.fixtures import AGGRESSIVE, DUTIFUL, SAMPLE_TRAITS, SKIRMISHER
-from app.sim.ai.objective import ObjectiveFixtures
+from app.sim.ai.fixtures import AGGRESSIVE, DUTIFUL, SAMPLE_TRAITS, SKIRMISHER, placeholder_behavior
 from app.sim.ai.profiles import BehaviorLibrary, CreatureProfile, UnitBehavior
+from app.sim.config import SimConfig
 from app.sim.fixtures import placeholder_battle
 from app.sim.map import THREE_ZONE_MAP
 from app.sim.phases import TICK_PHASES
 from app.sim.phases.combat import combat_phase
 from app.sim.phases.decision import decision_phase
-from app.sim.phases.movement import movement_phase
+from app.sim.phases.movement import movement_phase, standoff_slack
 from app.sim.rng import create_rng
+from app.sim.run_battle import run_battle
 from app.sim.types import Vec2
 from app.sim.units import UnitType
 from app.sim.world import World, create_world
@@ -33,7 +34,13 @@ def library(*profiles: CreatureProfile, **rest: object) -> BehaviorLibrary:
 
 
 def at_station(world: World) -> None:
-    world.objectives = ObjectiveFixtures(stations={troop.id: STATION for troop in world.troops})
+    """Point every unit at a post it is not already standing on.
+
+    The orders phase writes `destination` each tick in a real battle; these tests
+    run the decision phase alone, so they set it themselves.
+    """
+    for unit in world.units:
+        unit.destination = STATION
 
 
 # --- the phase commits, it does not act -------------------------------------
@@ -43,11 +50,14 @@ def test_a_unit_with_no_behavior_data_is_left_completely_alone() -> None:
     """A battle that ships no library has to behave exactly as slice A did."""
     world = create_world(THREE_ZONE_MAP, placeholder_battle(), create_rng(1))
     assert world.units
+    before = {unit.id: unit.destination for unit in world.units}
 
     decision_phase.run(world, context())
 
     assert all(unit.ai is None for unit in world.units)
-    assert all(unit.destination is None for unit in world.units)
+    # Their stations are whatever the orders phase derived; the decision phase
+    # touched none of them.
+    assert all(unit.destination == before[unit.id] for unit in world.units)
 
 
 def test_deciding_records_an_intent_rather_than_moving_or_damaging_anything() -> None:
@@ -92,14 +102,19 @@ def test_movement_walks_to_the_destination_the_decision_committed_to() -> None:
 
 
 def test_a_unit_that_decided_to_advance_moves_even_with_an_enemy_in_reach() -> None:
-    """Slice A froze anything in weapon range. Pressing on is now a decision.
+    """Movement used to freeze anything in weapon range. Pressing on is a decision.
 
     Whether it is a *good* decision is the weights' business — what matters here
     is that the loop is allowed to make it, rather than the movement phase
-    silently overruling it the way the old range check would have.
+    silently overruling it the way the unconditional hold would have.
+
+    The enemy sits inside weapon range but outside the engagement standoff, which
+    is the band where pressing on is physically available at all. See
+    `test_a_unit_inside_the_standoff_bubble_cannot_move_at_all` for what happens
+    closer in, and why that band is narrower than it looks.
     """
     hound = make_unit("h", HOUND, "north", MIDFIELD)
-    world = make_world([hound, make_unit("e", HOUND, "south", Vec2(MIDFIELD.x + 10, MIDFIELD.y))])
+    world = make_world([hound, make_unit("e", HOUND, "south", Vec2(MIDFIELD.x + 19, MIDFIELD.y))])
     at_station(world)
     attach(
         world,
@@ -335,7 +350,8 @@ def test_fighting_style_follows_the_stat_block_not_the_profile() -> None:
     # Each is already standing on its station, so "walk to your post" is not on
     # the table. What is left is close-on-the-enemy versus hit it, which is the
     # only comparison this test is about.
-    world.objectives = ObjectiveFixtures(stations={"north-t0": reach.position, "north-t1": stub.position})
+    for unit in (reach, stub):
+        unit.destination = unit.position
     attach(
         world,
         library(CreatureProfile("iron-longarm", STOIC), CreatureProfile("iron-bulwark", STOIC)),
@@ -359,3 +375,69 @@ def test_a_trait_a_new_creature_cannot_support_is_refused_rather_than_ignored() 
 
     with pytest.raises(ValueError, match="lacks ranged_attack"):
         attach(world, library(CreatureProfile("iron-bulwark", STOIC, traits=(SKIRMISHER,))), [BULWARK])
+
+
+def test_a_unit_inside_the_standoff_bubble_cannot_move_at_all() -> None:
+    """JQ-287's standoff pins an engaged unit, whatever it decided.
+
+    `standoff_slack` caps a step at the distance to the nearest enemy minus the
+    standoff, floored at zero — so once anything is closer than nine tenths of
+    this unit's *own* weapon range, the cap is zero and the unit cannot move in
+    any direction. For an adept that bubble has an eighty-one unit radius.
+
+    This is not a complaint about the clamp, which exists so a fast unit cannot
+    vault from out of range to on top of someone in one tick. It is pinned
+    because of what it does to two things above it:
+
+    * "press the objective past a weak enemy", which this ticket owns, survives
+      only in the narrow band between the standoff and full weapon range;
+    * and a retreat verb, when JQ-329 adds one, would be inert inside the bubble
+      — the loop could choose to leave and movement would decline to carry it
+      out, because stepping away and stepping closer are capped alike.
+
+    Both are worth knowing before anyone builds on either. A direction-aware
+    clamp — one that only restricts steps which *close* on an enemy — would free
+    both without weakening what the standoff is for, but that is JQ-287's rule to
+    change, not this ticket's.
+    """
+    hound = make_unit("h", HOUND, "north", MIDFIELD)
+    world = make_world([hound, make_unit("e", HOUND, "south", Vec2(MIDFIELD.x + 5, MIDFIELD.y))])
+    at_station(world)
+    attach(
+        world,
+        library(
+            CreatureProfile(
+                "cinder-hound",
+                {"objective_progress": 4.0, "target_suitability": 0.0, "danger": 0.0, "ally_support": 0.0},
+            )
+        ),
+        TYPES,
+    )
+    ctx = context()
+
+    decision_phase.run(world, ctx)
+    movement_phase.run(world, ctx)
+
+    assert hound.ai is not None and hound.ai.intent is not None
+    assert hound.ai.intent.kind == "advance"
+    assert standoff_slack(world, hound, ctx) == 0.0
+    assert hound.position == MIDFIELD
+
+
+def test_a_unit_that_arrives_mid_battle_is_given_behaviour_too() -> None:
+    """A resummoned summon is built after `create_world`, so it starts with none.
+
+    Found by merging: every resummoned unit in a placeholder battle finished with
+    `ai is None`, which the decision phase skips silently — so it walked at its
+    station while its own troop decided. Nothing failed; it just quietly opted
+    out of the system it was supposed to be part of.
+    """
+    battle = placeholder_battle()
+    battle.behavior = placeholder_behavior()
+    result = run_battle(THREE_ZONE_MAP, [], battle, 20260916, SimConfig(max_battle_seconds=20.0))
+
+    opening = {unit.id for unit in result.ticks[0].state.units}
+    arrivals = [unit for unit in result.final_state.units if unit.id not in opening]
+
+    assert arrivals, "no unit was resummoned, so this proves nothing"
+    assert all(unit.ai is not None for unit in arrivals)

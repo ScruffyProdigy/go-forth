@@ -15,7 +15,7 @@ import os
 import subprocess
 import sys
 
-from app.sim.ai.fixtures import placeholder_behavior, placeholder_objectives
+from app.sim.ai.fixtures import placeholder_behavior
 from app.sim.config import SimConfig
 from app.sim.fixtures import placeholder_battle
 from app.sim.map import THREE_ZONE_MAP
@@ -34,7 +34,7 @@ SHORT = SimConfig(max_battle_seconds=SECONDS)
 #: it finished on. The battle serialisation covers positions and damage; this
 #: covers the decisions themselves, which are what the ticket asks be reproducible.
 DECISIONS_SCRIPT = """
-from app.sim.ai.fixtures import placeholder_behavior, placeholder_objectives
+from app.sim.ai.fixtures import placeholder_behavior
 from app.sim.fixtures import placeholder_battle
 from app.sim.config import SimConfig
 from app.sim.map import THREE_ZONE_MAP
@@ -42,7 +42,6 @@ from app.sim.run_battle import run_battle
 
 battle = placeholder_battle()
 battle.behavior = placeholder_behavior()
-battle.objectives = placeholder_objectives()
 result = run_battle(THREE_ZONE_MAP, [], battle, {seed}, SimConfig(max_battle_seconds={seconds}))
 
 for unit in sorted(result.final_state.units, key=lambda u: u.id):
@@ -51,17 +50,16 @@ for unit in sorted(result.final_state.units, key=lambda u: u.id):
     weights = [f"{{f}}={{w:.4f}}" for f, w in (ai.behavior.weights.items() if ai else [])]
     traits = ",".join(ai.behavior.traits) if ai else ""
     tags = ",".join(f"{{t}}:{{s}}" for t, s in (ai.behavior.personalities if ai else ()))
-    print(unit.id, traits, tags, *weights,
-          intent.kind if intent else None,
-          intent.target_id if intent else None,
-          f"{{intent.score:.6f}}" if intent else None)
+    print(f"id={{unit.id}}", f"traits={{traits}}", f"tags={{tags}}", *weights,
+          f"kind={{intent.kind if intent else None}}",
+          f"target={{intent.target_id if intent else None}}",
+          f"score={{intent.score:.6f}}" if intent else "score=None")
 """
 
 
 def battle_with_behavior() -> BattleResult:
     battle = placeholder_battle()
     battle.behavior = placeholder_behavior()
-    battle.objectives = placeholder_objectives()
     return run_battle(THREE_ZONE_MAP, [], battle, SEED, SHORT)
 
 
@@ -112,7 +110,10 @@ def test_the_decisions_are_not_empty() -> None:
     lines = decisions(SEED + 2).splitlines()
 
     assert len(lines) > 3
-    assert all(line.split()[-3] in ("advance", "attack", "hold") for line in lines)
+    kinds = [field for line in lines for field in line.split() if field.startswith("kind=")]
+
+    assert len(kinds) == len(lines)
+    assert all(kind[len("kind=") :] in ("advance", "attack", "hold") for kind in kinds)
 
 
 def test_behavior_data_changes_the_battle() -> None:
@@ -138,7 +139,6 @@ def test_the_sample_battle_actually_engages() -> None:
     for seed in (SEED, SEED + 1, SEED + 2, 1, 7):
         battle = placeholder_battle()
         battle.behavior = placeholder_behavior()
-        battle.objectives = placeholder_objectives()
         result = run_battle(THREE_ZONE_MAP, [], battle, seed, SHORT)
 
         defeats = [event for event in result.events if event.type == "unitDefeated"]

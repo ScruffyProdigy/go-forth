@@ -6,8 +6,12 @@ not by code"). A zone narrower than the map is the one variation that adds a new
 verb — it opens a bypass lane — so `extent` is separate from the map width even
 though v1's single map uses the full width.
 
-Scoring the zones is slice B (JQ-287). What lives here is the geometry and the
-occupancy test everything else reads.
+Slice B (JQ-287) adds the rest of the geometry orders are derived from: the
+centre of a zone, the centre of a deployment strip, a base's footprint, and the
+corner of each zone band the renderer's state chip sits in. They live here rather
+than in the phases so that sim coordinates and renderer coordinates stay the same
+numbers — a combat rule that hard-codes a phone pixel is the thing this module
+exists to prevent.
 """
 
 from __future__ import annotations
@@ -33,6 +37,9 @@ class ZoneConfig:
 class BaseConfig:
     position: Vec2
     max_hp: float
+    #: How far the base plate reaches. Nothing walks inside it, and a unit under
+    #: Push enemy base swings at the base from its own range plus this.
+    footprint_radius: float = 24
 
 
 @dataclass
@@ -44,6 +51,20 @@ class DeploymentStrip:
 
 
 @dataclass
+class ChipReserve:
+    """The corner of a zone band the renderer's zone state chip occupies.
+
+    Placement routes around it so that army size can never occlude the chip
+    (JQ-243, JQ-294). It is map data rather than a constant because it is a
+    property of the layout the map was drawn for — 115 x 25 in the reference
+    portrait layout — and a map drawn at another size moves it.
+    """
+
+    width: float = 115
+    height: float = 25
+
+
+@dataclass
 class MapConfig:
     id: str
     size_width: float
@@ -52,6 +73,8 @@ class MapConfig:
     zones: list[ZoneConfig]
     bases: dict[Side, BaseConfig] = field(default_factory=dict)
     deployment: dict[Side, DeploymentStrip] = field(default_factory=dict)
+    #: Reserved at each zone band's top-left corner. Chips align to zone extent.
+    chip_reserve: ChipReserve = field(default_factory=ChipReserve)
 
 
 #: v1 ships one map. Dimensions follow the JQ-243 readability plates: a 375 px
@@ -120,8 +143,13 @@ def validate_map_config(config: MapConfig) -> None:
         base = config.bases[side]
         if base.max_hp <= 0:
             raise ValueError(f"{side} base has no HP")
+        if base.footprint_radius < 0:
+            raise ValueError(f"{side} base has a negative footprint")
         if base.position.y < 0 or base.position.y > config.size_height:
             raise ValueError(f"{side} base falls outside the map")
+
+    if config.chip_reserve.width < 0 or config.chip_reserve.height < 0:
+        raise ValueError("the chip reserve cannot be negative")
 
 
 def _span_contains(span: Span, value: float) -> bool:
@@ -138,3 +166,57 @@ def zone_containing(config: MapConfig, position: Vec2) -> ZoneConfig | None:
         if _span_contains(zone.lane, position.y) and _span_contains(zone.extent, position.x):
             return zone
     return None
+
+
+def zone_by_id(config: MapConfig, zone_id: str) -> ZoneConfig:
+    """The zone with this id. Raises rather than returning None: an order naming
+    a zone the map does not have is a broken plan, not an empty result."""
+    for zone in config.zones:
+        if zone.id == zone_id:
+            return zone
+    raise ValueError(f'map {config.id} has no zone called "{zone_id}"')
+
+
+def _span_centre(span: Span) -> float:
+    return (span.start + span.end) / 2
+
+
+def zone_centre(zone: ZoneConfig) -> Vec2:
+    """The point a troop ordered to hold this zone forms up on."""
+    return Vec2(_span_centre(zone.extent), _span_centre(zone.lane))
+
+
+def strip_centre(config: MapConfig, side: Side) -> Vec2:
+    """The point a troop ordered to defend this side's base forms up on."""
+    strip = config.deployment[side]
+    return Vec2(_span_centre(strip.extent), _span_centre(strip.lane))
+
+
+def chip_box(config: MapConfig, zone: ZoneConfig) -> tuple[Span, Span]:
+    """The reserved corner of a zone band, as (horizontal, lane) spans.
+
+    Top-left of the band: the chip is drawn from the zone's own extent, so a
+    narrow zone moves its chip with it rather than leaving it floating over the
+    bypass lane.
+    """
+    return (
+        Span(zone.extent.start, zone.extent.start + config.chip_reserve.width),
+        Span(zone.lane.start, zone.lane.start + config.chip_reserve.height),
+    )
+
+
+def clear_of_chip(config: MapConfig, zone: ZoneConfig, position: Vec2) -> Vec2:
+    """Moves a position out of the zone's reserved chip corner, if it is in it.
+
+    Leaves by whichever edge is nearer, preferring east — a step sideways costs
+    width the map is not using, a step south costs the depth the troop wanted.
+    """
+    across, down = chip_box(config, zone)
+    if not (_span_contains(across, position.x) and _span_contains(down, position.y)):
+        return position
+
+    if across.end - position.x <= down.end - position.y and across.end < zone.extent.end:
+        return Vec2(across.end, position.y)
+    if down.end < zone.lane.end:
+        return Vec2(position.x, down.end)
+    return Vec2(min(across.end, zone.extent.end), position.y)
