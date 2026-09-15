@@ -78,6 +78,40 @@ def test_the_phase_order_is_declared_in_one_place() -> None:
     ]
 
 
+#: The phases slice C (JQ-288) adds. Named here so the check below is about
+#: them specifically rather than about the whole list, which is the assertion
+#: a merge resolution rewrites.
+SLICE_C_PHASES = ("energy", "spells", "abilities", "statuses")
+
+
+def test_slice_c_phases_are_in_the_list_the_loop_actually_walks() -> None:
+    """`step_battle` walks `TICK_PHASES` and nothing else, so a phase missing
+    from the tuple is a phase that never runs — and it fails quietly: a tuple
+    with three fewer entries still compiles, and the exact-order assertion
+    above can be rewritten to match whatever a merge produced.
+
+    Four branches edit this tuple. If you are resolving one and this fails,
+    the resolution dropped a phase. Do not delete this test to make it pass.
+    """
+    present = [p.name for p in TICK_PHASES]
+
+    assert [name for name in SLICE_C_PHASES if name not in present] == []
+
+
+def test_statuses_lands_before_scoring_once_there_is_a_scoring_phase() -> None:
+    """Vacuous on this branch and load-bearing after JQ-287 merges.
+
+    Burn and burning-ground damage is damage, so a unit a burn finishes should
+    stop holding its zone on the same tick a weapon kill would, rather than
+    scoring once more because of what killed it.
+    """
+    names = [p.name for p in TICK_PHASES]
+    if "scoring" not in names:
+        return
+
+    assert names.index("statuses") < names.index("scoring")
+
+
 def test_a_gauge_is_charged_and_spent_before_the_weapons_swing() -> None:
     names = [p.name for p in TICK_PHASES]
 

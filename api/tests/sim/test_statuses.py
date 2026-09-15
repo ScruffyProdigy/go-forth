@@ -5,16 +5,10 @@ from __future__ import annotations
 import pytest
 
 from app.sim.effects import AreaDamage, Burn, BurningGround, DamageProfile
-from app.sim.phase import TickPhase
-from app.sim.phases import TICK_PHASES
 from app.sim.resolution import Cast, apply_effects
 from app.sim.statuses import BURNING_GROUND, BurnStatus, GroundHazard
 from app.sim.types import Vec2
-from tests.sim.fixtures_abilities import MID, context, field, unit
-
-
-def phase(name: str) -> TickPhase:
-    return next(p for p in TICK_PHASES if p.name == name)
+from tests.sim.fixtures_abilities import MID, context, field, phase, unit
 
 
 def burning(world, ctx, effect: Burn):  # type: ignore[no-untyped-def]

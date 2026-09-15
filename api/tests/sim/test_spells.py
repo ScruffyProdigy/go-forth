@@ -7,21 +7,15 @@ import pytest
 from app.sim.effects import AreaDamage, BurningGround, DamageProfile, DashToTarget
 from app.sim.fixtures import ability_battle
 from app.sim.map import THREE_ZONE_MAP
-from app.sim.phase import TickPhase
-from app.sim.phases import TICK_PHASES
 from app.sim.run_battle import run_battle
 from app.sim.spells import Spell, SpellInjection, build_spell_catalog, schedule_injections
 from app.sim.types import Vec2
-from tests.sim.fixtures_abilities import MID, context, field, unit
+from tests.sim.fixtures_abilities import MID, context, field, phase, unit
 
 METEOR = Spell(id="meteor", effects=(AreaDamage(radius=40, damage=DamageProfile(amount=25)),))
 EMBERFALL = Spell(
     id="emberfall", effects=(BurningGround(radius=40, damage_per_second=5, duration_seconds=2),)
 )
-
-
-def phase(name: str) -> TickPhase:
-    return next(p for p in TICK_PHASES if p.name == name)
 
 
 def at(tick: int, spell_id: str = "meteor", location: Vec2 = MID, side: str = "north") -> SpellInjection:

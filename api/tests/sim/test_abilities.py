@@ -12,13 +12,11 @@ import pytest
 from app.sim.abilities import Ability, build_ability_catalog
 from app.sim.effects import ORIGIN_SELF, AreaDamage, DamageProfile, EnergyRefill
 from app.sim.energy import DAMAGE_DEALT
-from app.sim.phase import TickPhase
-from app.sim.phases import TICK_PHASES
 from app.sim.schools import SchoolConfig
 from app.sim.types import Vec2
 from app.sim.units import UnitType, build_unit_type_catalog
 from app.sim.world import Unit, is_resummonable, survives_round_end
-from tests.sim.fixtures_abilities import MID, context, field, unit
+from tests.sim.fixtures_abilities import MID, context, field, phase, unit
 
 BLAST = Ability(
     id="blast",
@@ -31,10 +29,6 @@ SELF_BLAST = Ability(
     origin=ORIGIN_SELF,
     effects=(AreaDamage(radius=40, damage=DamageProfile(amount=7)),),
 )
-
-
-def phase(name: str) -> TickPhase:
-    return next(p for p in TICK_PHASES if p.name == name)
 
 
 # --- the gauge -------------------------------------------------------------

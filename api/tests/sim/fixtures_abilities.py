@@ -13,6 +13,8 @@ from app.sim.context import TickContext, create_tick_context
 from app.sim.energy import resolve_school_energy_rules
 from app.sim.map import THREE_ZONE_MAP
 from app.sim.orders import PUSH_ENEMY_BASE
+from app.sim.phase import TickPhase
+from app.sim.phases import TICK_PHASES
 from app.sim.rng import create_rng
 from app.sim.schools import School, SchoolConfig, resolve_side_multipliers
 from app.sim.spells import Spell, build_spell_catalog
@@ -120,4 +122,30 @@ def field(*units: Unit) -> World:
         },
         zone_score={"north": 0, "south": 0},
         zone_holders={zone.id: None for zone in THREE_ZONE_MAP.zones},
+    )
+
+
+def phase(name: str) -> TickPhase:
+    """The phase called `name`, looked up out of `TICK_PHASES`.
+
+    Looked up rather than imported directly, on purpose: `step_battle` walks
+    that tuple and nothing else, so a merge that resolves it without slice C's
+    phases should fail these tests rather than pass them against a loop that
+    never runs the code under test.
+
+    The raise spells out what happened because the obvious implementation —
+    `next(p for p in TICK_PHASES if p.name == name)` — raises a bare
+    `StopIteration` from inside a helper, which reads like a broken test
+    rather than a dropped phase. That is the reading that gets tests "fixed"
+    instead of merges.
+    """
+    for candidate in TICK_PHASES:
+        if candidate.name == name:
+            return candidate
+
+    raise AssertionError(
+        f"there is no {name!r} phase in TICK_PHASES, which holds "
+        f"{[p.name for p in TICK_PHASES]}. If this turned up while resolving a "
+        "merge, the resolution dropped a phase and the tick loop will not run "
+        "it. Fix phases/__init__.py rather than this test."
     )
