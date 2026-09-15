@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 from app.sim.abilities import Ability, AbilityCatalog
 from app.sim.ai.capabilities import Capabilities, capabilities_of
+from app.sim.ai.intent import Assignment
 from app.sim.ai.objective import Objective, objective_for
 from app.sim.map import MapConfig
 from app.sim.world import Unit, World
@@ -45,6 +46,10 @@ class Observation:
     #: Whether the gauge is full enough to spend it is read off the unit.
     ability: Ability | None
     map_config: MapConfig
+    #: What this unit's troop has asked it to answer, if anything (JQ-330).
+    #: A suggestion carried into scoring as the `assigned` context, never an
+    #: instruction: the unit still weighs it against everything else it could do.
+    assignment: Assignment | None = None
 
 
 def observe(
@@ -53,6 +58,7 @@ def observe(
     map_config: MapConfig,
     seconds_per_tick: float,
     abilities: AbilityCatalog | None = None,
+    assignment: Assignment | None = None,
 ) -> Observation:
     capabilities = capabilities_of(unit)
 
@@ -72,4 +78,5 @@ def observe(
         step=capabilities.speed * seconds_per_tick,
         ability=(abilities or {}).get(unit.ability_id) if unit.ability_id else None,
         map_config=map_config,
+        assignment=assignment,
     )

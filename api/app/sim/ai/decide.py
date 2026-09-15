@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.sim.ai.candidates import Candidate, generate_candidates
-from app.sim.ai.factors import FactorContribution
+from app.sim.ai.factors import FactorContribution, PersonalityInfluence
 from app.sim.ai.intent import Intent
 from app.sim.ai.observe import Observation
 from app.sim.ai.profiles import ResolvedBehavior
@@ -39,6 +39,8 @@ class Decision:
     selected: Candidate
     score: float
     contributions: tuple[FactorContribution, ...]
+    #: Which personality tags spoke to the winner, and in which situation.
+    influences: tuple[PersonalityInfluence, ...]
     #: Every candidate that was scored, in the order they were scored.
     considered: tuple[ScoredCandidate, ...]
 
@@ -62,6 +64,7 @@ def _with_jitter(
             candidate=entry.candidate,
             score=entry.score + rng.next_float() * jitter,
             contributions=entry.contributions,
+            influences=entry.influences,
         )
         for entry in scored
     )
@@ -83,7 +86,7 @@ def decide(
 ) -> Decision:
     """Observe -> generate -> score -> select, for one unit, for one tick."""
     candidates = generate_candidates(observation)
-    scored = score_candidates(observation, candidates, behavior.weights)
+    scored = score_candidates(observation, candidates, behavior.weights, behavior.personalities)
     chosen = _select(_with_jitter(scored, behavior.tie_break_jitter, rng))
 
     return Decision(
@@ -91,6 +94,7 @@ def decide(
         selected=chosen.candidate,
         score=chosen.score,
         contributions=chosen.contributions,
+        influences=chosen.influences,
         considered=scored,
     )
 
@@ -105,4 +109,5 @@ def intent_of(decision: Decision) -> Intent:
         ability_id=candidate.ability_id,
         score=decision.score,
         contributions=decision.contributions,
+        influences=decision.influences,
     )
