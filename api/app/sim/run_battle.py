@@ -18,6 +18,7 @@ from typing import Literal
 
 from app.sim.abilities import build_ability_catalog
 from app.sim.ai.casting import FollowsIntent
+from app.sim.ai.inspect.record import DecisionTrace
 from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig, max_ticks, validate_sim_config
 from app.sim.context import TickContext, create_tick_context
 from app.sim.energy import SchoolEnergyRuleTable, resolve_school_energy_rules
@@ -115,10 +116,17 @@ def run_battle(
     battle_state: BattleSetup,
     seed: int,
     config: SimConfig = DEFAULT_SIM_CONFIG,
+    trace: DecisionTrace | None = None,
 ) -> BattleResult:
     """Runs a battle to its end.
 
     `seed` is the whole of the battle's randomness: same seed, same battle.
+
+    `trace` is a developer's window onto the decision phase (JQ-331) and nothing
+    more: it is written to, never read, and a battle run with one produces the
+    same result as the same battle run without. `tests/sim/ai/
+    test_inspect_determinism.py` holds that to byte-identical output in fresh
+    processes.
     """
     validate_sim_config(config)
 
@@ -149,6 +157,7 @@ def run_battle(
         # the default for units with no behaviour data (JQ-328).
         cast_policy=FollowsIntent(),
         spells=build_spell_catalog(battle_state.spells),
+        trace=trace,
     )
 
     ticks: list[BattleTick] = [BattleTick(tick=0, state=copy.deepcopy(world), events=())]

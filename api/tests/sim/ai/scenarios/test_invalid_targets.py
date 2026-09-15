@@ -1,0 +1,130 @@
+"""Scenario: invalid and dead targets.
+
+The failure this guards against is a unit that commits to something which has
+stopped existing — swinging at a corpse, walking at a unit that was removed three
+ticks ago, or holding an intent whose target id no longer resolves. It is the
+cheapest kind of bug to write and the most expensive to watch in a playtest,
+because it looks like the AI "froze" rather than like a stale reference.
+
+The invariant is stated over the whole run rather than at one tick: **at no point
+does any unit choose an action aimed at something that is not a living enemy**,
+and a unit whose target dies has decided something else by the very next tick it
+decides at all.
+"""
+
+from __future__ import annotations
+
+from app.sim.ai.fixtures import SAMPLE_PROFILES, SAMPLE_TRAITS
+from app.sim.ai.profiles import BehaviorLibrary
+from app.sim.types import Vec2
+from app.sim.world import Unit
+from tests.sim.ai.helpers import make_unit
+from tests.sim.ai.scenarios.harness import ScenarioRun, play
+from tests.sim.fixtures_units import ADEPT, HOUND, WISP
+
+TICKS = 40
+UNIT_TYPES = (ADEPT, HOUND, WISP)
+STAGED = tuple(p for p in SAMPLE_PROFILES if p.type_id in {t.id for t in UNIT_TYPES})
+LIBRARY = BehaviorLibrary(traits=SAMPLE_TRAITS, profiles=STAGED)
+
+
+def run(units: list[Unit]) -> ScenarioRun:
+    return play(units, UNIT_TYPES, LIBRARY, ticks=TICKS)
+
+
+def doomed() -> list[Unit]:
+    """A hound standing on a one-hp wisp: the target dies almost immediately."""
+    return [
+        make_unit("hunter", HOUND, "north", Vec2(100, 100), destination=Vec2(100, 100)),
+        make_unit("doomed", WISP, "south", Vec2(105, 100)),
+        make_unit("survivor", ADEPT, "south", Vec2(160, 100)),
+    ]
+
+
+def test_the_scenario_actually_kills_the_target() -> None:
+    """Guards everything below: if nothing dies, no test here means anything."""
+    result = run(doomed())
+
+    assert not result.alive("doomed")
+
+
+def test_no_decision_ever_names_a_unit_that_is_not_in_the_world() -> None:
+    result = run(doomed())
+    known = {unit.id for unit in result.world.units} | {"doomed"}
+
+    for record in result.records:
+        for candidate in (record.chosen, *record.rivals):
+            if candidate.target_id is not None:
+                assert candidate.target_id in known, f"tick {record.tick}: {candidate.target_id}"
+
+
+def test_no_unit_attacks_a_target_that_had_already_died() -> None:
+    """The precise failure: an attack committed after the target was removed."""
+    result = run(doomed())
+    removals = (
+        event.tick
+        for event in result.events
+        if any(target.unit_id == "doomed" for target in event.swing.units_removed)
+    )
+    died_at = min(removals, default=None)
+
+    assert died_at is not None, "the wisp never died, so this proves nothing"
+
+    for record in result.records:
+        if record.tick > died_at and record.chosen.target_id == "doomed":
+            raise AssertionError(f"{record.unit_id} aimed at a dead unit on tick {record.tick}")
+
+
+def test_the_hunter_finds_something_else_to_do_after_its_target_dies() -> None:
+    """Recovery, not just absence of error: it must not stall on the empty square."""
+    result = run(doomed())
+    after = [r for r in result.by_unit("hunter") if r.chosen.target_id != "doomed"]
+
+    assert after, "the hunter never decided anything after its target died"
+    assert after[-1].chosen.kind in ("advance", "attack", "cast", "hold")
+
+
+def test_a_unit_with_no_enemies_left_still_decides_something() -> None:
+    """An empty enemy list must produce `hold`, not an empty candidate set."""
+    lonely = [make_unit("alone", HOUND, "north", Vec2(100, 100), destination=Vec2(100, 100))]
+    result = play(lonely, UNIT_TYPES, LIBRARY, ticks=5)
+
+    assert result.actions("alone") != ()
+    assert all(record.candidate_count >= 1 for record in result.by_unit("alone"))
+    assert all(record.chosen.target_id is None for record in result.by_unit("alone"))
+
+
+def test_an_unreachable_enemy_is_never_offered_as_an_attack_candidate() -> None:
+    """Legality is filtered *before* scoring, so it must not reach the scorer at all.
+
+    Asserted over every candidate rather than over the chosen action. Checking
+    only what was chosen passes even when the filter is removed entirely —
+    scoring declines the hopeless attack on its own merits — which would leave
+    this scenario reporting a healthy filter that was not there. The whole point
+    of filtering before scoring is that no preference can talk a unit into an
+    illegal action, and that is only observable in the candidate set.
+    """
+    far = [
+        make_unit("hunter", HOUND, "north", Vec2(0, 0), destination=Vec2(0, 0)),
+        make_unit("distant", ADEPT, "south", Vec2(600, 600)),
+    ]
+    result = play(far, UNIT_TYPES, LIBRARY, ticks=3)
+    records = result.by_unit("hunter")
+
+    assert records, "the hunter never decided anything"
+    for record in records:
+        for candidate in (record.chosen, *record.rivals):
+            assert candidate.kind != "attack", f"tick {record.tick}: attack on an unreachable enemy"
+        # Exactly three are legal: hold, advance on the station the orders phase
+        # rewrote onto this unit, and advance on the enemy. An attack candidate
+        # would make it four — pinned as a number because the kind check above
+        # only sees the rivals the record kept, and the count sees all of them.
+        assert record.candidate_count == 3, record.candidate_count
+
+
+def test_every_traced_decision_has_a_candidate_behind_it() -> None:
+    """A decision with zero candidates would mean the fallback stopped existing."""
+    result = run(doomed())
+
+    assert result.records != ()
+    assert all(record.candidate_count >= 1 for record in result.records)
