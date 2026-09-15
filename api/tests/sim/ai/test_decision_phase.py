@@ -15,7 +15,7 @@ from app.sim.map import THREE_ZONE_MAP
 from app.sim.phases import TICK_PHASES
 from app.sim.phases.combat import combat_phase
 from app.sim.phases.decision import decision_phase
-from app.sim.phases.movement import movement_phase, standoff_slack
+from app.sim.phases.movement import movement_phase
 from app.sim.rng import create_rng
 from app.sim.run_battle import run_battle
 from app.sim.types import Vec2
@@ -109,10 +109,11 @@ def test_a_unit_that_decided_to_advance_moves_even_with_an_enemy_in_reach() -> N
     is that the loop is allowed to make it, rather than the movement phase
     silently overruling it the way the unconditional hold would have.
 
-    The enemy sits inside weapon range but outside the engagement standoff, which
-    is the band where pressing on is physically available at all. See
-    `test_a_unit_inside_the_standoff_bubble_cannot_move_at_all` for what happens
-    closer in, and why that band is narrower than it looks.
+    Until JQ-379 this only worked in the sliver between the engagement standoff
+    and full weapon range — closer in, the clamp zeroed the step and the decision
+    was silently discarded. That clamp no longer counts enemies a unit is already
+    inside the standoff of, so pressing on now works at any range. What it costs
+    is `test_pressing_past_lets_opposing_units_rest_coincident` below.
     """
     hound = make_unit("h", HOUND, "north", MIDFIELD)
     world = make_world([hound, make_unit("e", HOUND, "south", Vec2(MIDFIELD.x + 19, MIDFIELD.y))])
@@ -378,53 +379,6 @@ def test_a_trait_a_new_creature_cannot_support_is_refused_rather_than_ignored() 
         attach(world, library(CreatureProfile("iron-bulwark", STOIC, traits=(SKIRMISHER,))), [BULWARK])
 
 
-def test_a_unit_inside_the_standoff_bubble_cannot_move_at_all() -> None:
-    """JQ-287's standoff pins an engaged unit, whatever it decided.
-
-    `standoff_slack` caps a step at the distance to the nearest enemy minus the
-    standoff, floored at zero — so once anything is closer than nine tenths of
-    this unit's *own* weapon range, the cap is zero and the unit cannot move in
-    any direction. For an adept that bubble has an eighty-one unit radius.
-
-    This is not a complaint about the clamp, which exists so a fast unit cannot
-    vault from out of range to on top of someone in one tick. It is pinned
-    because of what it does to two things above it:
-
-    * "press the objective past a weak enemy", which this ticket owns, survives
-      only in the narrow band between the standoff and full weapon range;
-    * and a retreat verb, when JQ-329 adds one, would be inert inside the bubble
-      — the loop could choose to leave and movement would decline to carry it
-      out, because stepping away and stepping closer are capped alike.
-
-    Both are worth knowing before anyone builds on either. A direction-aware
-    clamp — one that only restricts steps which *close* on an enemy — would free
-    both without weakening what the standoff is for, but that is JQ-287's rule to
-    change, not this ticket's.
-    """
-    hound = make_unit("h", HOUND, "north", MIDFIELD)
-    world = make_world([hound, make_unit("e", HOUND, "south", Vec2(MIDFIELD.x + 5, MIDFIELD.y))])
-    at_station(world)
-    attach(
-        world,
-        library(
-            CreatureProfile(
-                "cinder-hound",
-                {"objective_progress": 4.0, "target_suitability": 0.0, "danger": 0.0, "ally_support": 0.0},
-            )
-        ),
-        TYPES,
-    )
-    ctx = context()
-
-    decision_phase.run(world, ctx)
-    movement_phase.run(world, ctx)
-
-    assert hound.ai is not None and hound.ai.intent is not None
-    assert hound.ai.intent.kind == "advance"
-    assert standoff_slack(world, hound, ctx) == 0.0
-    assert hound.position == MIDFIELD
-
-
 def test_a_unit_that_arrives_mid_battle_is_given_behaviour_too() -> None:
     """A resummoned summon is built after `create_world`, so it starts with none.
 
@@ -444,26 +398,33 @@ def test_a_unit_that_arrives_mid_battle_is_given_behaviour_too() -> None:
     assert all(unit.ai is not None for unit in arrivals)
 
 
-def test_opposing_units_never_come_to_rest_on_the_same_point() -> None:
-    """**Expected to fail when #12 (JQ-379) merges, and that is the point.**
+def test_pressing_past_lets_opposing_units_rest_coincident() -> None:
+    """The measured cost of press-past, pending JQ-380. Not a defect in either rule.
 
-    On this branch the engagement standoff still pins an engaged unit, so nothing
-    ever closes to contact: measured, opposing units never get nearer than 16.2.
+    This test asserted the opposite until JQ-379 merged, and was written to fail
+    here. A unit acting on an intent has already bypassed the engage-en-route
+    hold, and the standoff clamp now declines to cap it once inside — so nothing
+    in movement keeps it off an enemy, and nothing in scoring does either.
+    `danger` makes closing unattractive, not impossible, which `_danger` says
+    plainly because I claimed otherwise once and was wrong.
 
-    #12 relaxes that clamp so a unit acting on an intent can press past an enemy
-    — which it must, or this ticket's press-past criterion is unreachable. The
-    consequence, measured across both branches, is that opposing units then do
-    come to rest coincident, for up to 5.7 seconds of a ninety-second battle.
-    Neither rule is wrong on its own; the union has a property neither had.
+    Measured across five seeds: opposing units reach exactly 0.0 and stay there
+    for up to 155 ticks — nearly eight seconds of a ninety-second battle, which
+    is rest rather than transit.
 
-    JQ-380 owns the decision. When it lands, this test should be rewritten to
-    assert whichever outcome was chosen — a real separation floor, or the known
-    consequence recorded — rather than deleted. The measurement helpers it uses
-    are an acceptance criterion on that ticket.
+    Neither rule is wrong alone: JQ-379 without a behaviour layer keeps units
+    16.8 apart, and this loop under the old clamp kept them 16.2 apart. JQ-380
+    owns the choice between accepting it and adding a *projecting* separation
+    rule — one that pushes a step out to a minimum body separation rather than
+    blocking it, since blocking reintroduces the JQ-379 freeze at a smaller
+    radius. **When it lands, rewrite this to whichever way it went.**
     """
     battle = placeholder_battle()
     battle.behavior = placeholder_behavior()
     result = run_battle(THREE_ZONE_MAP, [], battle, 3, SimConfig(max_battle_seconds=90.0))
 
-    assert closest_opposing_approach(result) >= COINCIDENT
-    assert overlap_episodes(result) == []
+    episodes = overlap_episodes(result)
+
+    assert closest_opposing_approach(result) < COINCIDENT
+    assert episodes, "no overlap at all means JQ-380 landed without this being updated"
+    assert max(episodes) > 20, "overlap under a second would be transit, not rest"
