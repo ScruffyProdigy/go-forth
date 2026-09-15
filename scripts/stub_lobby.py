@@ -7,9 +7,16 @@ Two halves, matching what the real Lobby gives a game:
    ``/.well-known/jwks.json``, and tokens that verify against it with any
    standard library. It works today.
 2. A provisioning stub that POSTs a match assignment at the game API, the way
-   the Lobby pushes one. The endpoint it calls (``POST /api/v1/matches``) is
-   JQ-188's to build; until then ``provision`` reports the 404 plainly rather
-   than pretending, and ``serve`` and ``token`` are the useful halves.
+   the Lobby pushes one, and then prints a ready-to-open launch URL per seat —
+   the game's own launch base with ``token=`` appended exactly as the Lobby
+   appends it. Two of those in two browsers is the two-phone demo, locally,
+   with no platform in front of it.
+
+Both halves are **shape-conformant on purpose** (JQ-309). Seat keys are ``"1"``
+and ``"2"``, as Lobby's template expansion numbers them, and the seat token's
+``matchId``/``seatKey`` claims sit at the top level rather than nested under a
+``joinquest`` object. A stub that got either wrong would still verify against
+itself, and would teach the wrong shape to every developer who read it.
 
 Python rather than Node, even though the client's toolchain is Node: what this
 demonstrates — RS256 signing, a JWKS document, seat-token minting — is the JWT
@@ -157,6 +164,7 @@ def mint_seat_token(
     user_id: str,
     match_id: str,
     seat_key: str,
+    display_name: str | None = None,
     ttl_seconds: int = 3600,
 ) -> str:
     """An RS256 seat JWT shaped like the one the Lobby hands a player."""
@@ -167,10 +175,17 @@ def mint_seat_token(
         "aud": settings.audience,
         "sub": user_id,
         "iat": now,
+        "nbf": now,
         "exp": now + ttl_seconds,
         "jti": str(uuid.uuid4()),
-        # The seat claim the game checks before letting this user take the seat.
-        "joinquest": {"matchId": match_id, "seatKey": seat_key, "userId": user_id},
+        # Top level, not nested under a `joinquest` object (JQ-309). The real
+        # Lobby puts them here and rpslr reads them here, and a stub that
+        # nested them would verify perfectly while teaching the wrong shape to
+        # every developer who read it — the one failure a reference stub must
+        # not have.
+        "matchId": match_id,
+        "seatKey": seat_key,
+        "name": display_name or user_id,
     }
     def encode(part: dict[str, Any]) -> str:
         return _b64url(json.dumps(part, separators=(",", ":")).encode())
@@ -179,23 +194,46 @@ def mint_seat_token(
     return f"{signing_input.decode()}.{_b64url(signer.sign(signing_input))}"
 
 
+#: Seats as Lobby's template expansion numbers them: "1", "2". Not "a"/"b" —
+#: a stub that invented its own keys would mint tokens the game rejects.
+STUB_SEATS = (
+    {"seatKey": "1", "lobbyUserId": "stub-user-a", "displayName": "Player A"},
+    {"seatKey": "2", "lobbyUserId": "stub-user-b", "displayName": "Player B"},
+)
+
+
 def provision_payload(settings: Settings, external_match_id: str) -> dict[str, Any]:
-    """A Lobby-shaped provision payload for a two-seat match."""
+    """A Lobby-shaped provision push for a two-seat match.
+
+    The field names here are the contract, not a convenience: `lobbyId`,
+    `lobby.returnUrl`, `lobby.graphqlUrl` and a `player` object per seat are
+    what `app/lobby/provision.py` parses, and what the real Lobby sends.
+    """
     import os
 
     return {
+        # The issuer, and the same value every seat token carries as `iss`.
+        "lobbyId": settings.issuer,
+        "lobby": {
+            # Where a finished player is sent back to. A navigation target.
+            "returnUrl": os.environ.get("STUB_LOBBY_RETURN_URL", f"{settings.issuer}/return"),
+            # Where the game reports the result. The stub does not implement
+            # GraphQL, so the report will fail — visibly, and harmlessly, which
+            # is the correct local behaviour for a best-effort callback.
+            "graphqlUrl": os.environ.get("STUB_LOBBY_GRAPHQL_URL", f"{settings.issuer}/graphql"),
+            "serviceToken": os.environ.get("LOBBY_SERVICE_TOKEN", "stub-service-token"),
+        },
         "assignment": {
             "externalMatchId": external_match_id,
-            "gameMode": "skirmish",
+            "gameMode": os.environ.get("STUB_LOBBY_GAME_MODE", "opening-round"),
             "seats": [
-                {"seatKey": "a", "position": 0, "lobbyUserId": "stub-user-a", "displayName": "Player A"},
-                {"seatKey": "b", "position": 1, "lobbyUserId": "stub-user-b", "displayName": "Player B"},
+                {
+                    "seatKey": seat["seatKey"],
+                    "lobbyUserId": seat["lobbyUserId"],
+                    "player": {"displayName": seat["displayName"]},
+                }
+                for seat in STUB_SEATS
             ],
-        },
-        "lobby": {
-            "issuer": settings.issuer,
-            "jwksUri": f"{settings.issuer}/.well-known/jwks.json",
-            "serviceToken": os.environ.get("LOBBY_SERVICE_TOKEN", "stub-service-token"),
         },
     }
 
@@ -247,17 +285,29 @@ def serve(signer: Signer, settings: Settings) -> None:
     print(f"[stub-lobby]   JWKS   {issuer}/.well-known/jwks.json", file=sys.stderr)
     print(f"[stub-lobby]   token  {issuer}/token?user=stub-user-a&match=m1&seat=a", file=sys.stderr)
     print(f"[stub-lobby] seat JWTs are issued for aud={settings.audience}", file=sys.stderr)
-    print("[stub-lobby] point the API at this with LOBBY_JWKS_URI (JQ-188).", file=sys.stderr)
+    print(
+        "[stub-lobby] the game finds this JWKS from each token's own `iss`; "
+        "no per-environment Lobby URL is configured on the game.",
+        file=sys.stderr,
+    )
     HTTPServer(("127.0.0.1", settings.port), Handler).serve_forever()
 
 
 def provision(signer: Signer, settings: Settings) -> None:
     external_match_id = f"stub-{int(time() * 1000)}"
     body = provision_payload(settings, external_match_id)
+    service_token = body["lobby"]["serviceToken"]
+
     request = urllib.request.Request(
         f"{settings.api_base_url}/api/v1/matches",
         data=json.dumps(body).encode(),
-        headers={"content-type": "application/json"},
+        headers={
+            "content-type": "application/json",
+            # The push carries a `serviceToken`, so the game requires a matching
+            # bearer. Sending it here is what exercises the `provision.auth` row
+            # locally rather than only on the dashboard.
+            "authorization": f"Bearer {service_token}",
+        },
         method="POST",
     )
 
@@ -272,32 +322,38 @@ def provision(signer: Signer, settings: Settings) -> None:
             f"start it with ./scripts/dev.sh ({err.reason})"
         ) from err
 
-    if status == 404:
-        print(f"[stub-lobby] {settings.api_base_url}/api/v1/matches returned 404.", file=sys.stderr)
-        print(
-            "[stub-lobby] Provisioning is JQ-188 and is not built yet — this is expected today.",
-            file=sys.stderr,
-        )
-        print("[stub-lobby] The payload that would have been pushed:", file=sys.stderr)
-        print(json.dumps(body, indent=2), file=sys.stderr)
-        raise SystemExit(2)
-
     print(f"[stub-lobby] POST /api/v1/matches -> {status}", file=sys.stderr)
     print(text)
     if status >= 400:
         raise SystemExit(1)
 
-    # Hand back tokens for the seats just provisioned, so a browser can take
-    # one without a second command.
-    for seat in body["assignment"]["seats"]:
+    try:
+        launch_urls = json.loads(text).get("launchUrls") or {}
+    except json.JSONDecodeError:
+        launch_urls = {}
+
+    # Hand back a ready-to-open URL per seat: the launch base the game minted,
+    # with `token=` appended exactly as the Lobby appends it. Two of these in
+    # two browsers is the whole two-phone demo, locally.
+    for seat in STUB_SEATS:
         token = mint_seat_token(
             signer,
             settings,
             user_id=seat["lobbyUserId"],
             match_id=external_match_id,
             seat_key=seat["seatKey"],
+            display_name=seat["displayName"],
         )
-        print(f"[stub-lobby] seat {seat['seatKey']} ({seat['lobbyUserId']}): {token}", file=sys.stderr)
+        base = launch_urls.get(seat["lobbyUserId"])
+        if base:
+            separator = "&" if "?" in base else "?"
+            print(f"[stub-lobby] seat {seat['seatKey']}: {base}{separator}token={token}", file=sys.stderr)
+        else:
+            print(
+                f"[stub-lobby] seat {seat['seatKey']} ({seat['lobbyUserId']}) got no launch URL; "
+                f"token: {token}",
+                file=sys.stderr,
+            )
 
 
 def main(argv: list[str]) -> None:
