@@ -22,6 +22,7 @@ from app.sim.types import Vec2
 from app.sim.units import UnitType
 from app.sim.world import World, create_world
 from tests.sim.ai.helpers import attach, context, make_unit, make_world
+from tests.sim.ai.separation import COINCIDENT, closest_opposing_approach, overlap_episodes
 from tests.sim.fixtures_units import ADEPT, HOUND
 
 MIDFIELD = Vec2(180, 300)
@@ -441,3 +442,28 @@ def test_a_unit_that_arrives_mid_battle_is_given_behaviour_too() -> None:
 
     assert arrivals, "no unit was resummoned, so this proves nothing"
     assert all(unit.ai is not None for unit in arrivals)
+
+
+def test_opposing_units_never_come_to_rest_on_the_same_point() -> None:
+    """**Expected to fail when #12 (JQ-379) merges, and that is the point.**
+
+    On this branch the engagement standoff still pins an engaged unit, so nothing
+    ever closes to contact: measured, opposing units never get nearer than 16.2.
+
+    #12 relaxes that clamp so a unit acting on an intent can press past an enemy
+    — which it must, or this ticket's press-past criterion is unreachable. The
+    consequence, measured across both branches, is that opposing units then do
+    come to rest coincident, for up to 5.7 seconds of a ninety-second battle.
+    Neither rule is wrong on its own; the union has a property neither had.
+
+    JQ-380 owns the decision. When it lands, this test should be rewritten to
+    assert whichever outcome was chosen — a real separation floor, or the known
+    consequence recorded — rather than deleted. The measurement helpers it uses
+    are an acceptance criterion on that ticket.
+    """
+    battle = placeholder_battle()
+    battle.behavior = placeholder_behavior()
+    result = run_battle(THREE_ZONE_MAP, [], battle, 3, SimConfig(max_battle_seconds=90.0))
+
+    assert closest_opposing_approach(result) >= COINCIDENT
+    assert overlap_episodes(result) == []

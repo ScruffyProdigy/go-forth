@@ -159,6 +159,16 @@ def _exposure(observation: Observation, position: Vec2) -> float:
     weight buys caution about where to *go*, not a survival instinct. Anyone
     tuning these numbers expecting units to withdraw will be tuning the wrong
     dial until that verb exists.
+
+    **And it does not keep units apart.** It is tempting to read this factor as
+    the thing standing between the sim and two units occupying one point, because
+    once a unit is acting on an intent it has bypassed the engage-en-route hold
+    that stops everything else walking into contact. It is not: danger makes
+    closing *unattractive*, and a unit whose objective weight outvotes it walks
+    all the way on. Measured, opposing units come to rest coincident for seconds
+    at a time. See "Movement does not guarantee separation" in `CONVENTIONS.md`
+    for both sets of numbers, and JQ-380 for the decision — this is a consequence
+    of the press-past capability rather than a defect in either rule.
     """
     incoming = 0.0
 
