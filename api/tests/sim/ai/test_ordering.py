@@ -15,6 +15,23 @@ nobody — was caught, so the sweep was not producing false negatives. Re-runnin
 it after this file existed, three of those eight are now caught, and the other
 five are accounted for below rather than left as an unexplained residue.
 
+Each of the three was then re-run **twice**: against this file alone, and
+against the rest of the suite with this file excluded.
+
+    nominated_target_ids: iterate the set   here: CAUGHT   elsewhere: survived
+    assignments: unsorted output            here: CAUGHT   elsewhere: survived
+    needs: unsorted by priority             here: CAUGHT   elsewhere: survived
+
+That second column is the point. "The suite objected" does not say which test
+objected, so a new ordering file can be decorative while some pre-existing test
+carries the failure — and a sweep run only against the whole suite cannot tell
+the two apart. Each test below is individually load-bearing, and that is
+measured rather than assumed. The priority test in particular needed it: the
+first version could not distinguish sorted from unsorted, because both threats
+protected the mage and the tiebreak fell through to target id, which is exactly
+the order the mutation produces. It passed, and it passed under the mutation
+too. Only the aimed sweep showed it.
+
 Only one of the three was a live reproducibility bug. `nominated_target_ids`
 builds from a set comprehension, and Python randomizes string hashing per
 process — measured elsewhere in this repo at eight distinct iteration orders
