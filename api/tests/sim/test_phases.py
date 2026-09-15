@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.sim.config import DEFAULT_SIM_CONFIG
 from app.sim.context import TickContext, create_tick_context
 from app.sim.map import THREE_ZONE_MAP
@@ -293,3 +295,80 @@ def test_the_walk_actually_finds_the_phases() -> None:
 
     assert len(found) == len(TICK_PHASES)
     assert "decision.decision_phase" in found
+
+
+# --- ordering invariants, each with the reason it exists ---------------------
+#
+# The exact-order assertion near the top of this file is the artefact whoever
+# resolves a merge edits to match what they resolved to, so it cannot catch a
+# resolution that got the order wrong — it agrees with it by construction. These
+# do, because each encodes *why* a pair is ordered the way it is, stated by the
+# slice that owns it. Getting the order wrong now means contradicting a reason
+# rather than disagreeing with a list.
+#
+# They skip while the phase they name is absent, so they are inert on this
+# branch and arm themselves as each slice lands. Skipped rather than silently
+# passed: a guard that quietly does nothing is the failure this whole file has
+# been about.
+
+
+def _position_of(name: str) -> int | None:
+    names = [phase.name for phase in TICK_PHASES]
+    return names.index(name) if name in names else None
+
+
+def _require_order(earlier: str, later: str, why: str, *, adjacent: bool = False) -> None:
+    first, second = _position_of(earlier), _position_of(later)
+
+    if first is None or second is None:
+        absent = earlier if first is None else later
+        pytest.skip(f"{absent!r} has not landed yet")
+
+    assert first < second, f"{earlier!r} must run before {later!r}: {why}"
+    if adjacent:
+        assert second == first + 1, f"nothing may run between {earlier!r} and {later!r}: {why}"
+
+
+def test_orders_runs_before_deciding() -> None:
+    """JQ-287/JQ-328. A unit decides against a station that is fresh this tick.
+
+    It is also what makes a diversion self-undoing: the orders phase rewrites
+    `unit.destination` every tick, so "go back to your post" costs no code.
+    """
+    _require_order("orders", "decision", "a decision must see this tick's assigned station")
+
+
+def test_energy_and_abilities_run_before_combat() -> None:
+    """JQ-288. A spell cast this tick resolves before the auto-attacks do."""
+    for phase in ("energy", "spells", "abilities"):
+        _require_order(phase, "combat", "an ability resolves before the plain swing underneath it")
+
+
+def test_statuses_run_before_scoring() -> None:
+    """JQ-288. A burn death stops holding a zone on the same tick a weapon kill would.
+
+    Otherwise how a unit died would decide whether it still held ground.
+    """
+    _require_order("statuses", "scoring", "death by status and death by damage must count the same tick")
+
+
+def test_scoring_runs_before_resummoning() -> None:
+    """JQ-287/JQ-289. A unit that did not exist while the fighting happened does
+    not change who held ground during that tick."""
+    _require_order("scoring", "resummon", "a summon arrives for the next tick's contest, not this one")
+
+
+def test_resummoning_runs_immediately_before_removal() -> None:
+    """JQ-289, and load-bearing rather than a preference.
+
+    A summon defeated on tick T becomes a dispelled slot during `removal` on T,
+    so the earliest a mage can begin rebuilding it is T+1 — a unit never pops
+    back on the tick it fell. Anything slotted between the two breaks that by a
+    tick, which is why this one checks adjacency and the others do not.
+    """
+    _require_order(
+        "resummon",
+        "removal",
+        "a unit must never return on the tick it fell",
+        adjacent=True,
+    )
