@@ -129,35 +129,82 @@ complementary test too — that a unit whose path takes it inside range ends up
 able to fire — and stage it **off-axis**, because head-on is the one arrangement
 that works when this is broken.
 
-## Movement does not guarantee separation
+## Movement does not guarantee separation — the behaviour layer does
 
 Read the standoff clamp in `phases/movement.py` and it looks like the thing that
 keeps units apart. It is not, and the difference matters because it is invisible
 until a behaviour layer is attached.
 
-What actually holds a line is the **engage-en-route** rule: a unit stops the
+What holds a line without one is the **engage-en-route** rule: a unit stops the
 moment anything is within its weapon range. The standoff sits inside that range,
 so an ordinary unit has already stopped before the clamp could bind. Measured on
 the placeholder armies with no behaviour layer, closest approach between opposing
-units over a whole battle is 16.8 on every seed, and there is not a single tick
-where two of them are within 1 of each other.
+units over a whole battle is 16.8 on every seed.
 
 A unit acting on an *intent* (JQ-328) skips that check by design — that is what
 makes "press the objective past a weak enemy" possible, and pressing past
 something in a sim with no collision means passing through it. The clamp does not
 catch it either: since JQ-379 an enemy a unit is already inside the standoff of
-does not cap the step, which is what stopped the clamp freezing units in place.
+does not cap the step.
 
-So in a behaviour-driven battle, opposing units do overlap. Measured: coincident
-to 0.000, in episodes of 36 ticks at the median and 114 at the longest — nearly
-six seconds of a ninety-second battle with two units standing inside each other.
+**On JQ-328 that produced real overlap, and JQ-329 removed it.** Measured across
+five seeds, before and after:
 
-**Nothing in the sim prevents this.** Whether it should is a live question
-(JQ-380): it is squarely in JQ-243's readability territory, since overlapping
-sprites read as one unit, which is worse than the blob the engagement gap was
-protecting against. The point here is only that a reader of the clamp must not
-conclude the sim keeps units apart. It keeps units *from walking into contact on
-their own initiative*, which is a different and much smaller claim.
+```
+JQ-328   closest approach 0.00-0.79   overlap episodes 1-3 per battle
+JQ-329   closest approach 1.96-13.11  overlap episodes 0 on every seed
+```
+
+Nothing was added to prevent it. The cause was that the only way to close on an
+enemy was to walk at the enemy's own coordinates, so a unit that pressed on
+arrived exactly on top of it. JQ-329 aims every approach at the unit's own
+**useful range** from the target instead — the place it wants to stand to fight —
+and units stop where they can fight rather than where the target is standing.
+
+So the question JQ-380 was opened to decide, whether opposing units may come to
+rest on the same point, is answered in practice: on the current evaluator they do
+not. `tests/sim/ai/separation.py` still measures it, because the guarantee is
+emergent rather than enforced — nothing in the sim *prevents* overlap, and a
+future candidate that aims somewhere else would bring it back.
+
+## Boundaries in scoring are the same hazard as boundaries in geometry
+
+The rule two sections up — a stopping predicate and an acting predicate must
+overlap on an interval rather than at a point — has a second form, one layer up,
+and JQ-329 hit it twice.
+
+**A gradient with a kink oscillates even though its value is continuous.**
+`objective_progress` measured distance from a station through
+`max(0, gap - tolerance)`: smooth in value, but its slope jumps from zero to one
+at the tolerance. Inside, a step away from the post was free; one step outside,
+it cost a full stride. A unit walked out to the edge, found the next step
+expensive, walked back in, found the step out free again — and alternated between
+two positions one map unit apart for a hundred and seventy ticks, committing to a
+chase and abandoning it on every one of them. The fix is a ramp with no kink at
+all (`gap**2 / (gap + tolerance)`), not a smaller kink.
+
+**And a decision margin does not fix an equilibrium.** The obvious remedy —
+require a new action to beat the incumbent by some margin — only widens the band
+the unit wanders inside, because near an equilibrium the scores are close *by
+construction*. Measured on an iron-bulwark holding a post: the two competing
+candidates cross at three units off the post, both worth +0.0513, and either side
+of the crossing the leader changes by about 0.03 per unit travelled. No margin
+small enough to be honest covers that, and one large enough stops the unit
+noticing anything.
+
+What works is making one candidate win outright near the crossing, and the only
+candidate that can is **the one that does not move**. Every factor in the
+evaluator is a *rate* — ground gained this tick, not ground held — so `hold`
+scores zero however well placed a unit is, while both walking toward its post and
+walking toward an enemy score positive. Moving beats standing almost everywhere.
+`decide.MOVEMENT_THRESHOLD` requires a step to be clearly better than standing
+still, and the unit settles where no step is worth taking.
+
+**The general lesson.** A scoring function re-derived from scratch every tick has
+no memory, so anywhere two of its terms balance is a potential limit cycle. Look
+for them wherever a new factor is added, and test for them by running a unit to a
+settled state rather than by reading one tick — a single-tick assertion cannot
+tell a decision from an oscillation.
 
 ## Layout
 

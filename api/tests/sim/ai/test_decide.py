@@ -71,8 +71,17 @@ def test_the_winner_s_contributions_come_back_with_it() -> None:
     assert tuple(c.factor for c in decision.contributions) == FACTORS
 
 
-def test_a_tie_goes_to_the_earlier_candidate_every_single_time() -> None:
-    """Indifference has to resolve the same way in a replay, or it is not one."""
+def test_total_indifference_resolves_the_same_way_every_single_time() -> None:
+    """Indifference has to resolve the same way in a replay, or it is not one.
+
+    It resolves to standing still rather than to the first candidate, which is a
+    change from JQ-328's tie-break and a deliberate one: JQ-329 makes a *step*
+    have to be clearly better than holding before a unit takes it, so a creature
+    with no opinion about anything at all does not wander. See
+    `decide._worth_moving` — the alternative was units vibrating on the spot
+    wherever two forces balanced. The tie-break itself is unchanged and still
+    settles ties among everything else.
+    """
     world, hound = engaged()
     observation = look(world, hound)
     indifferent = behavior(**{factor: 0.0 for factor in FACTORS})
@@ -80,7 +89,28 @@ def test_a_tie_goes_to_the_earlier_candidate_every_single_time() -> None:
     first = decide(observation, indifferent)
     again = decide(observation, indifferent)
 
-    assert first.selected == again.selected == first.considered[0].candidate
+    assert first.selected == again.selected
+    assert first.selected.kind == "hold"
+
+
+def test_a_tie_between_two_swings_goes_to_the_earlier_candidate() -> None:
+    """The tie-break proper, on candidates that standing still cannot displace.
+
+    Two identical enemies in reach: nothing distinguishes the two attacks, so the
+    earlier one in the stable order wins, and does so in every replay.
+    """
+    world, hound = engaged()
+    observation = look(world, hound)
+    indifferent = behavior(**{factor: 0.0 for factor in FACTORS})
+
+    attacks = [
+        entry.candidate
+        for entry in decide(observation, indifferent).considered
+        if entry.candidate.kind == "attack"
+    ]
+
+    assert attacks, "the fixture has nothing in reach; this test needs a fight"
+    assert attacks == sorted(attacks, key=lambda c: c.target_id or "")
 
 
 def test_a_profile_with_no_jitter_draws_no_randomness_at_all() -> None:

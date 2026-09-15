@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from app.sim.abilities import Ability, AbilityCatalog
 from app.sim.ai.capabilities import Capabilities, capabilities_of
-from app.sim.ai.intent import Commitment
+from app.sim.ai.intent import Commitment, Intent
 from app.sim.ai.objective import Objective, objective_for
 from app.sim.map import MapConfig
 from app.sim.types import UnitId
@@ -52,6 +52,9 @@ class Observation:
     #: `world.tick`. Bounded pursuit needs to know how long it has been chasing,
     #: and a decision may not read a clock — see `CONVENTIONS.md` on determinism.
     tick: int = 0
+    #: The tick length, so a bound written in seconds can be compared against a
+    #: span measured in ticks without either end having to know the tick rate.
+    seconds_per_tick: float = 0.0
     #: Enemies this unit has been asked to answer, sorted by id, deduplicated.
     #:
     #: The seam JQ-330's troop coordinator hands an assignment through. Empty
@@ -64,6 +67,13 @@ class Observation:
     nominated_target_ids: tuple[UnitId, ...] = ()
     #: The chase this unit is already running, if any. Read from `unit.ai`.
     commitment: Commitment | None = None
+    #: Ticks left before this unit may be drawn off its post again. Above zero
+    #: only just after a chase ended on one of its bounds; see `ai/pursuit.py`.
+    recovery_remaining: int = 0
+    #: What this unit committed to last tick, if anything. Read so that a
+    #: decision can prefer to carry on doing what it was doing; see
+    #: `decide._prefer_incumbent` for why that is not merely a nicety.
+    previous: Intent | None = None
 
 
 def _nominations(ids: Iterable[UnitId] | None) -> tuple[UnitId, ...]:
@@ -103,6 +113,9 @@ def observe(
         ability=(abilities or {}).get(unit.ability_id) if unit.ability_id else None,
         map_config=map_config,
         tick=world.tick,
+        seconds_per_tick=seconds_per_tick,
         nominated_target_ids=_nominations(nominated_target_ids),
         commitment=unit.ai.commitment if unit.ai is not None else None,
+        recovery_remaining=unit.ai.recovery_remaining if unit.ai is not None else 0,
+        previous=unit.ai.intent if unit.ai is not None else None,
     )

@@ -23,7 +23,9 @@ from dataclasses import dataclass
 
 from app.sim.ai.candidates import Candidate
 from app.sim.ai.factors import FACTORS, FactorContribution, FactorName, FactorWeights, clamp_score
+from app.sim.ai.intent import MOVING_ACTIONS, movement_scale
 from app.sim.ai.observe import Observation
+from app.sim.ai.threat import threats_against
 from app.sim.effects import AreaDamage, DashToTarget
 from app.sim.geometry import distance, move_toward
 from app.sim.types import Vec2
@@ -61,9 +63,17 @@ WASTED_ABILITY_DISCOUNT = 0.5
 #: Enemies inside an area ability's radius at which spending it is clearly worth
 #: it. Fewer than this scales down rather than being refused outright.
 AREA_WORTH_IT = 2.0
-#: What an enemy's damage counts for when you are at the very edge of its
-#: reach, versus standing on top of it. See `_danger`.
-EDGE_EXPOSURE = 0.5
+#: The scale over which a unit stops counting as being at its post, in map
+#: units. Not a radius with an edge: `_beyond_post` softens the distance smoothly
+#: over roughly this range, so a unit near its station is pulled back weakly and
+#: has room to screen, to keep its firing distance, or to step into a fight
+#: without the order itself outbidding every one of those.
+#:
+#: Provisional, like every number here. Roughly a formation slot: wide enough for
+#: a screening step and far short of a lane, and well inside `PURSUIT_LEASH` so
+#: that the two bounds do not fight — a diversion becomes costly long before it
+#: becomes illegal.
+STATION_TOLERANCE = 24.0
 #: An ally in the same troop is worth this many strangers — support is local
 #: and mandatory within a troop (design doc 4.2), so it is worth more.
 OWN_TROOP_SUPPORT = 2.0
@@ -86,11 +96,23 @@ def _dash_of(observation: Observation) -> DashToTarget | None:
     return next((e for e in ability.effects if isinstance(e, DashToTarget)), None)
 
 
+def _step_for(observation: Observation, candidate: Candidate) -> float:
+    """How far this candidate actually walks, which is not the same for all of them.
+
+    `withdraw` covers half the ground `advance` does. Scoring has to use the same
+    scale the movement phase will, or a unit weighs the danger at a position it
+    is not going to reach this tick — and the whole point of `withdraw` being
+    slower is that the slowness is a cost it pays in the scoring.
+    """
+    return observation.step * movement_scale(candidate.kind)
+
+
 def _position_after(observation: Observation, candidate: Candidate) -> Vec2:
     """Where this candidate would leave the unit standing.
 
-    Uses the same `move_toward` the movement phase uses, so the danger a unit
-    weighs is the danger it actually walks into and not an approximation of it.
+    Uses the same `move_toward` the movement phase uses, at the same per-kind
+    speed, so the danger a unit weighs is the danger it actually walks into and
+    not an approximation of it.
 
     A cast that dashes is projected the same way, mirroring `_resolve_dash` —
     which is the point of deriving behaviour from ability mechanics rather than
@@ -98,8 +120,10 @@ def _position_after(observation: Observation, candidate: Candidate) -> Vec2:
     puts it, so the same danger and objective factors judge it without either
     knowing what a pounce is.
     """
-    if candidate.kind == "advance" and candidate.destination is not None:
-        return move_toward(observation.unit.position, candidate.destination, observation.step)
+    if candidate.kind in MOVING_ACTIONS and candidate.destination is not None:
+        return move_toward(
+            observation.unit.position, candidate.destination, _step_for(observation, candidate)
+        )
 
     if candidate.kind == "cast":
         dash = _dash_of(observation)
@@ -127,16 +151,72 @@ def _objective_progress(observation: Observation, candidate: Candidate, position
 
     Attacking and holding score zero rather than negative: standing your ground
     is not losing the objective, it just is not advancing it. A candidate that
-    walks *away* from the station — closing on an enemy behind you, say — scores
-    negative, which is how a unit with a heavy objective weight refuses a chase.
+    walks *away* from the station — closing on an enemy behind you, or giving
+    ground — scores negative, which is how a unit with a heavy objective weight
+    refuses a chase.
+
+    **A post is a place, not a point.** Distance is measured to the edge of a
+    tolerance around the station rather than to the station itself, so a unit
+    already standing at its post can move about within that radius at no cost to
+    this factor at all. Without it the factor saturates: one stride is the whole
+    denominator, so *every* move away from a post scored a flat -1.0 — stepping
+    aside to screen an ally and abandoning a two-hundred-unit march were priced
+    identically, at the maximum, and nothing else on the board could outbid it.
+
+    That was measured from both ends. JQ-330 found a melee guard walking straight
+    past a mortar shooting its own mage, because interposing scored -1.0 on this
+    and reaching its post scored +1.0, at every personality strength that exists;
+    their fixture is pinned as "an interception cannot yet outrank the troop's
+    own post". From this side, every `withdraw` and `retreat` ate the same flat
+    -1.0 and could only ever win when a unit was seconds from death. Both are the
+    one bug, and it is here rather than in either set of weights.
+
+    The pull to *march* is untouched: a unit well outside its tolerance still
+    closes a full stride and still scores a full 1.0, so a troop crossing the map
+    behaves exactly as it did.
+
+    Measured against the full stride rather than the candidate's own, so that
+    withdrawing at half speed reads as losing half as much ground rather than as
+    losing a full stride's worth at half pace. The denominator has to be one
+    fixed length or the factor is not comparable between candidates, which is the
+    whole basis for adding it to the others.
     """
-    if candidate.kind != "advance" or observation.step <= 0:
+    if candidate.kind not in MOVING_ACTIONS or observation.step <= 0:
         return 0.0
 
     station = observation.objective.station
-    before = distance(observation.unit.position, station)
-    after = distance(position, station)
+    before = _beyond_post(distance(observation.unit.position, station))
+    after = _beyond_post(distance(position, station))
     return clamp_score((before - after) / observation.step)
+
+
+def _beyond_post(gap: float) -> float:
+    """How far from its post a unit effectively is, softened near the post itself.
+
+    `gap**2 / (gap + tolerance)`: zero at the station, about half the distance at
+    one tolerance out, and indistinguishable from `gap - tolerance` far away. So
+    a unit near its post is pulled back weakly and a unit crossing the map is
+    pulled back at full strength, which is what the factor is for.
+
+    **The obvious form of this — `max(0, gap - tolerance)` — oscillates, and it
+    is worth saying why, because it looks completely safe.** Its *value* is
+    continuous; its slope is not. Inside the tolerance a step away from the post
+    costs nothing, and one step outside it costs a full stride. So a unit walks
+    out to the edge (free), finds the next step expensive and walks back in
+    (free), finds the step out free again, and alternates between two positions
+    one map unit apart for the rest of the battle — measured, on an iron-bulwark
+    holding a post: 23.0, 24.0, 23.0, 24.0, for a hundred and seventy ticks,
+    committing to a chase and abandoning it on every one of them.
+
+    A decision margin does not fix that, and trying one first is what showed why:
+    the two candidates either side of the boundary differ by far more than any
+    sane hysteresis, because the *cliff* is what they differ by. `CONVENTIONS.md`
+    says a boundary must be an interval rather than a point, and for a gradient
+    that means no kink at all rather than a small one.
+    """
+    if gap <= 0:
+        return 0.0
+    return gap * gap / (gap + STATION_TOLERANCE)
 
 
 def _target_suitability(observation: Observation, candidate: Candidate) -> float:
@@ -159,7 +239,12 @@ def _target_suitability(observation: Observation, candidate: Candidate) -> float
         return _area_suitability(observation)
 
     target = _find(observation, candidate.target_id)
-    if target is None or candidate.kind == "hold":
+    if target is None or candidate.kind in ("hold", "retreat"):
+        # `retreat` declines its target outright — see `phases/targeting.py` —
+        # so there is no fight to judge, the same as standing still. It earns
+        # its place on danger alone, which is the honest account of what it is
+        # for: a unit that retreats has given up on accomplishing anything this
+        # tick except surviving it.
         return 0.0
 
     unit = observation.unit
@@ -174,63 +259,56 @@ def _target_suitability(observation: Observation, candidate: Candidate) -> float
     if candidate.kind == "cast":
         return clamp_score(suitability * _ability_multiplier(observation, candidate))
 
+    # `withdraw` is scored like a swing rather than like a move, because it is
+    # one: backing off at half speed while still shooting is the kiting a unit
+    # with reach is *for*. Discounting it as a move would mean a ranged creature
+    # could only ever choose between standing in contact and running away, which
+    # is the pair of options that made the danger factor useless in the first
+    # place.
+    if candidate.kind in ("attack", "withdraw"):
+        return clamp_score(suitability)
+
     # Walking toward a target serves the same end as swinging at it, just less
     # directly — so it scores the same way, discounted. Without this an
     # aggressive creature could never choose to close on anything: closing is an
     # advance, advances scored nothing here, and the only factor that credits a
     # move is progress toward the station. "Aggressive" would have meant nothing
     # more than "swings at whatever happens to walk into reach".
-    return clamp_score(suitability if candidate.kind == "attack" else APPROACH_DISCOUNT * suitability)
+    return clamp_score(APPROACH_DISCOUNT * suitability)
 
 
-def _exposure(observation: Observation, position: Vec2) -> float:
+def _exposure(observation: Observation, before: Vec2, after: Vec2) -> float:
     """Incoming damage at the position this candidate leaves us in, versus HP.
 
-    Two gradients, both of which matter more than they look.
+    Delegates the per-enemy judgement to `threat.py`, which is where the two
+    gradients live: how *deep* inside an enemy's reach a position sits, and — new
+    in this ticket — how soon an enemy that is not in reach yet would be. The
+    second is what makes this factor mean anything at all. JQ-328 counted only
+    enemies already able to swing, so a unit forty map units from something
+    walking at it scored `danger = 0.00` on every candidate and a wary profile
+    weighed the board exactly as a reckless one did.
 
-    Being *deep* inside an enemy's reach counts for more than clipping its edge:
-    a unit at the fringe can step back out next tick, one in the middle cannot.
-    Without that, danger would be a step function — in reach or not — and since a
-    unit covers only a few map units per tick, almost every candidate would land
-    on the same side of the step and the factor would tell them apart never.
+    Scaled by *current* HP rather than max, so the same spot reads as more
+    dangerous to something already hurt. That is the durability term.
 
-    And it is scaled by *current* HP rather than max, so the same spot reads as
-    more dangerous to something already hurt. That is the durability term.
+    **What this factor can now do, that the version in JQ-328 could not.** It can
+    produce a disengagement. `withdraw` and `retreat` exist as candidates, and
+    because a move away from a slower enemy lowers that enemy's contribution to
+    nothing, backing off *scores* rather than merely being available. Whether it
+    is viable falls out of the speed differential and nothing else: an ember
+    sprite opens the gap on an ash-ram and cannot on a cinder-hound, so it kites
+    one and stands and fights the other without either being labelled.
 
-    **What this factor cannot do, and a reader will assume it does.** Danger
-    chooses between degrees of engagement; it cannot produce a disengagement,
-    because none of the three verbs this ticket owns expresses one. A unit
-    standing on its station under fire has exactly three options — hold, attack
-    something in reach, or advance, and the only advance on offer leads *toward*
-    an enemy, since it is already on its station. So every candidate is scored
-    and the least-bad wins, but "leave" was never among them: a wary mage at a
-    fifth of its health, surrounded, still picks a swing. See
-    `test_no_candidate_expresses_a_retreat`, which pins that.
-
-    This is faithful to the ticket — advance, attack, hold, and retreat lives
-    with positioning and bounded pursuit in JQ-329 — but it means a heavy danger
-    weight buys caution about where to *go*, not a survival instinct. Anyone
-    tuning these numbers expecting units to withdraw will be tuning the wrong
-    dial until that verb exists.
-
-    **And it does not keep units apart.** It is tempting to read this factor as
-    the thing standing between the sim and two units occupying one point, because
-    once a unit is acting on an intent it has bypassed the engage-en-route hold
-    that stops everything else walking into contact. It is not: danger makes
-    closing *unattractive*, and a unit whose objective weight outvotes it walks
-    all the way on. Measured, opposing units come to rest coincident for seconds
-    at a time. See "Movement does not guarantee separation" in `CONVENTIONS.md`
-    for both sets of numbers, and JQ-380 for the decision — this is a consequence
-    of the press-past capability rather than a defect in either rule.
+    **And it still does not keep units apart.** Danger makes closing
+    unattractive; a unit whose objective weight outvotes it walks all the way on.
+    See "Movement does not guarantee separation" in `CONVENTIONS.md`, and JQ-380
+    for the decision — that is a consequence of the press-past capability rather
+    than a defect in this rule.
     """
-    incoming = 0.0
-
-    for enemy in observation.enemies:
-        gap = distance(position, enemy.position)
-        if gap > enemy.range:
-            continue
-        depth = 1.0 if enemy.range <= 0 else 1.0 - gap / enemy.range
-        incoming += enemy.damage * (EDGE_EXPOSURE + (1.0 - EDGE_EXPOSURE) * depth)
+    incoming = sum(
+        threat.incoming
+        for threat in threats_against(observation.enemies, before, after, observation.seconds_per_tick)
+    )
 
     if incoming <= 0:
         return 0.0
@@ -240,26 +318,26 @@ def _exposure(observation: Observation, position: Vec2) -> float:
 
 
 def _danger(observation: Observation, candidate: Candidate, position: Vec2) -> float:
-    """Exposure over the whole tick, which for a move is both ends of it.
+    """Exposure over the whole tick, both ends of it.
 
-    An advance is scored on the worse of where it starts and where it ends,
-    because a unit that turns its back on something already in reach of it eats
-    the swing regardless. Scoring only the destination made walking away from a
-    fight strictly safer than standing in it, and two armies duly strolled
-    through each other and out the far side: every unit disengaged the moment it
-    was hit, nobody could re-engage, and a battle that ended in annihilation in
-    eighteen seconds without any decision loop ran the full ninety with one.
+    One call, because `threat.py` now prices each enemy against the pair of
+    positions rather than against one of them. The old shape here was
+    `min(standing, arriving)` — the worse of the two ends — which was the right
+    answer for enemies already in contact and the wrong one for everybody else.
+    Since standing still is never *less* exposed than leaving, that minimum was
+    always the standing figure, and every way of giving ground scored exactly
+    what holding scored. The rule now lives per-enemy, where the distinction
+    between "already swinging at me" and "still on its way" can actually be made.
 
-    Breaking off is still available — it just has to be worth something, rather
-    than being free. What it costs to be *chased* while doing it is JQ-329's
-    (bounded pursuit and screening), not this ticket's.
+    What it preserves is the reason the old rule existed. Scoring a move at its
+    destination alone made walking away from a fight strictly safer than standing
+    in it, and two armies duly strolled through each other and out the far side:
+    every unit disengaged the moment it was hit, nobody could re-engage, and a
+    battle that ended in annihilation in eighteen seconds without a decision loop
+    ran the full ninety with one. A unit in contact still cannot shed that
+    contact by walking, so breaking off still costs.
     """
-    here = _exposure(observation, observation.unit.position)
-    if candidate.kind != "advance":
-        return here
-
-    # Both are non-positive, so the more dangerous end is the smaller number.
-    return min(here, _exposure(observation, position))
+    return _exposure(observation, observation.unit.position, position)
 
 
 def _ally_support(observation: Observation, position: Vec2) -> float:

@@ -186,8 +186,14 @@ class Commitment:
     target_id: UnitId
     #: `world.tick` when this chase was committed to.
     started_tick: int
-    #: The station this chase departed from. The leash is measured from here.
+    #: Where the unit stood when it committed. The leash measures how far the
+    #: unit has roamed from here — not how far off the quarry is.
     origin: Vec2
+    #: The distance to the quarry at that moment. A chase that has not shut a
+    #: fraction of this after a second is not working, whatever the reason, and
+    #: is abandoned. It is the one number that makes "cannot catch it" a
+    #: measurement rather than a comparison of stat blocks.
+    opening_gap: float = 0.0
 
 
 @dataclass
@@ -199,3 +205,8 @@ class UnitAi:
     #: The chase in progress, if any. Outlives the tick that started it; that is
     #: the point of it. Cleared by `ai/pursuit.py` when a bound is exceeded.
     commitment: Commitment | None = None
+    #: Ticks left before a new chase may be committed to. Set when one ends on a
+    #: bound, counted down by the decision phase. Without it a chase that ends on
+    #: its timeout is simply re-committed on the next tick, which is the same
+    #: endless chase — and is exactly what repeated bait does.
+    recovery_remaining: int = 0
