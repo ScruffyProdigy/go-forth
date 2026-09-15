@@ -169,8 +169,15 @@ def test_text_renders_the_reason_when_one_is_present() -> None:
 
 
 def test_text_says_unexplained_when_no_reason_was_recorded() -> None:
-    """The other half, which is every decision on this branch."""
-    record = traced().records[0]
+    """The other half — a reason that is absent rather than merely short.
 
-    assert record.reason == ""
-    assert NO_REASON in render_text((record,))
+    The record is built with an empty reason rather than taken as it comes. An
+    earlier version asserted `record.reason == ""` on a freshly traced decision,
+    which is true on this branch and false the moment JQ-329's vocabulary lands —
+    a fact about when the test was written, encoded as an assertion. The trial
+    integration failed on exactly that.
+    """
+    record = traced().records[0]
+    unexplained = type(record)(**{**record.__dict__, "reason": ""})
+
+    assert NO_REASON in render_text((unexplained,))
