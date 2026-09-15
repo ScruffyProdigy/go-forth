@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.sim.config import DEFAULT_SIM_CONFIG
 from app.sim.context import TickContext, create_tick_context
 from app.sim.geometry import distance
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.orders import DEFEND_BASE, PUSH_ENEMY_BASE
 from app.sim.phases.movement import engagement_standoff, movement_phase, standoff_slack
 from app.sim.phases.targeting import acquire_target
@@ -39,7 +39,7 @@ CHARGE = BattleSetup(
 def context() -> TickContext:
     return create_tick_context(
         config=DEFAULT_SIM_CONFIG,
-        map_config=THREE_ZONE_MAP,
+        map_config=TWO_LANE_MAP,
         multipliers=resolve_side_multipliers([]),
         rng=create_rng(5),
     )
@@ -47,14 +47,14 @@ def context() -> TickContext:
 
 def field() -> tuple[World, Unit, Unit]:
     """A north hunter mid-map with a station at the far base, and one enemy."""
-    world = create_world(THREE_ZONE_MAP, CHARGE, create_rng(5))
+    world = create_world(TWO_LANE_MAP, CHARGE, create_rng(5))
     for unit in world.units:
         unit.position = OFF_THE_BOARD
 
     hunter = next(unit for unit in world.units if unit.side == "north" and unit.kind == "summon")
     enemy = next(unit for unit in world.units if unit.side == "south" and unit.kind == "summon")
     hunter.position = Vec2(187.5, 200)
-    hunter.destination = THREE_ZONE_MAP.bases["south"].position
+    hunter.destination = TWO_LANE_MAP.bases["south"].position
     return world, hunter, enemy
 
 
@@ -153,7 +153,7 @@ def test_that_gap_is_what_keeps_two_ranks_readable() -> None:
 
 def test_it_stops_at_the_edge_of_the_base_plate_rather_than_on_it() -> None:
     world, hunter, _ = field()
-    plate = THREE_ZONE_MAP.bases["south"]
+    plate = TWO_LANE_MAP.bases["south"]
     hunter.position = Vec2(plate.position.x, plate.position.y - plate.footprint_radius - STEP / 2)
 
     movement_phase.run(world, context())

@@ -24,7 +24,7 @@ import sys
 from collections.abc import Sequence
 
 from app.sim import (
-    THREE_ZONE_MAP,
+    TWO_LANE_MAP,
     SpellInjection,
     Vec2,
     ability_battle,
@@ -52,7 +52,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     battle = ability_battle([DEMO_SPELL]) if args.abilities else placeholder_battle()
-    result = run_battle(THREE_ZONE_MAP, [], battle, args.seed)
+    result = run_battle(TWO_LANE_MAP, [], battle, args.seed)
 
     sys.stdout.write(f"{serialize_battle(result)}\n")
 

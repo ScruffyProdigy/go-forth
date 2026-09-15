@@ -15,7 +15,7 @@ from app.sim.config import DEFAULT_SIM_CONFIG, max_ticks, to_ticks
 from app.sim.context import TickContext, create_tick_context
 from app.sim.events import BattleEvent
 from app.sim.fixtures import placeholder_battle
-from app.sim.map import THREE_ZONE_MAP, MapConfig
+from app.sim.map import TWO_LANE_MAP, MapConfig
 from app.sim.orders import PUSH_ENEMY_BASE
 from app.sim.phases import TICK_PHASES
 from app.sim.rng import create_rng
@@ -57,7 +57,7 @@ PINNED = [
 def context(unit_types: list[UnitType] | None = None) -> TickContext:
     return create_tick_context(
         config=DEFAULT_SIM_CONFIG,
-        map_config=THREE_ZONE_MAP,
+        map_config=TWO_LANE_MAP,
         multipliers=resolve_side_multipliers(PINNED),
         rng=create_rng(5),
         unit_types=unit_types if unit_types is not None else CARDS,
@@ -82,7 +82,7 @@ def world_of(mages: int, summons: int, cards: list[UnitType] | None = None) -> W
             for side in ("north", "south")
         ],
     )
-    world = create_world(THREE_ZONE_MAP, setup, create_rng(5))
+    world = create_world(TWO_LANE_MAP, setup, create_rng(5))
     park(world)
     return world
 
@@ -401,7 +401,7 @@ def test_a_same_school_mage_in_another_troop_does_not_prevent_the_dissolve() -> 
             ),
         ],
     )
-    world = create_world(THREE_ZONE_MAP, setup, create_rng(5))
+    world = create_world(TWO_LANE_MAP, setup, create_rng(5))
     park(world)
     ctx = context()
 
@@ -463,11 +463,14 @@ def narrow_map() -> MapConfig:
     file, which is what lets the mage stand in front of its own summons: the
     deployment strip fills the front rank first and mages are placed first.
     """
-    config = copy.deepcopy(THREE_ZONE_MAP)
+    config = copy.deepcopy(TWO_LANE_MAP)
     config.id = "test-lane"
     config.size_width = 40
-    for zone in config.zones:
-        zone.extent = Span(0, 40)
+    # One lane, because two will not fit side by side at this width, and a
+    # hotspot small enough to sit inside it (JQ-376).
+    config.hotspot_size = 20
+    config.zones = [config.zones[0]]
+    config.zones[0].extent = Span(0, 40)
     for side in ("north", "south"):
         config.deployment[side].extent = Span(0, 40)
         config.bases[side].position = config.bases[side].position._replace(x=20)
@@ -605,7 +608,7 @@ DEMO_SEEDS = (7, 11, 42, 99, 20260911)
 
 def test_the_shipped_placeholder_mirror_rebuilds_its_losses() -> None:
     """End to end on the real fixture: the mirror the headless demo runs."""
-    results = [run_battle(THREE_ZONE_MAP, [], placeholder_battle(), seed) for seed in DEMO_SEEDS]
+    results = [run_battle(TWO_LANE_MAP, [], placeholder_battle(), seed) for seed in DEMO_SEEDS]
     rebuilds = [event for result in results for event in result.events if event.type == "resummon"]
 
     assert rebuilds, "three Fire mages a side should have rebuilt something across five battles"

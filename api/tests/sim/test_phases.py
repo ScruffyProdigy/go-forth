@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from app.sim.config import DEFAULT_SIM_CONFIG
 from app.sim.context import TickContext, create_tick_context
 from app.sim.formation import station
-from app.sim.map import THREE_ZONE_MAP
+from app.sim.map import TWO_LANE_MAP
 from app.sim.orders import PUSH_ENEMY_BASE
 from app.sim.phase import TickPhase
 from app.sim.phases import TICK_PHASES
@@ -46,7 +46,7 @@ DUEL = BattleSetup(
 def context() -> TickContext:
     return create_tick_context(
         config=DEFAULT_SIM_CONFIG,
-        map_config=THREE_ZONE_MAP,
+        map_config=TWO_LANE_MAP,
         multipliers=resolve_side_multipliers([]),
         rng=create_rng(5),
         unit_types=[ADEPT, HOUND],
@@ -54,7 +54,7 @@ def context() -> TickContext:
 
 
 def duel() -> World:
-    return create_world(THREE_ZONE_MAP, DUEL, create_rng(5))
+    return create_world(TWO_LANE_MAP, DUEL, create_rng(5))
 
 
 def unit_of(world: World, side: Side, type_id: str) -> Unit:
@@ -330,7 +330,7 @@ def test_orders_give_every_unit_a_station_derived_from_its_troops_order() -> Non
 
     phase("orders").run(world, ctx)
 
-    assert hunter.destination == station(PUSH_ENEMY_BASE, "north", hunter.formation_offset, THREE_ZONE_MAP)
+    assert hunter.destination == station(PUSH_ENEMY_BASE, "north", hunter.formation_offset, TWO_LANE_MAP)
 
 
 def test_a_unit_pulled_off_its_station_is_sent_back_to_it_next_tick() -> None:
