@@ -1,17 +1,17 @@
 /**
  * The client's entry screen.
  *
- * The plan phase (JQ-293) is the first real surface to land. It runs on a local
- * fixture rather than the server: the plan -> sim contract is still open (orders
- * and placement are JQ-287, the spell loadout is JQ-297), and the battle screen
- * is JQ-190/JQ-294.
+ * The opening demo (JQ-311) owns the whole flow now: plan, lock in, watch the
+ * battle, read the result, leave. It runs on a fixture session — JQ-309 is the
+ * real Lobby contract and authoritative realtime session, and when it lands the
+ * only thing that changes is which session `MatchScreen` opens.
  */
-import { PlanScreen } from './plan/PlanScreen.tsx';
+import { MatchScreen } from './match/MatchScreen.tsx';
 
 export function App() {
   return (
     <main className="plan">
-      <PlanScreen />
+      <MatchScreen />
     </main>
   );
 }
