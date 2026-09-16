@@ -1,58 +1,47 @@
 /**
- * The plan as a board position, not a form (JQ-293).
+ * The plan as a board position, not a form (JQ-293; geometry corrected by JQ-312).
  *
- * Geometry follows the JQ-243 plates, which were drawn at true device pixels:
- * a 375-wide portrait map, three zone bands of ~106 px, a base at each end and
- * a deployment strip in front of the player's. Mages are 26-28 px and summons
- * 18-22 px — roughly a 1.8x ratio, which is what makes "where are their mages"
- * answerable at a glance.
+ * It used to draw its own map: three zone bands of ~106 px stacked down a
+ * 375-wide portrait board, sized off the JQ-243 plates. That map no longer
+ * exists. JQ-376 replaced the stacked bands with two lanes divided west to east,
+ * each scored by a mage standing in a hotspot at its centre, and a plan screen
+ * still showing bands would have had a player choosing orders against a board
+ * the battle then contradicts.
  *
- * This deliberately does not share code with JQ-294's battle renderer. The two
- * draw the same map in different states, and factoring across them before the
- * battle renderer exists would be guessing at the shared part.
+ * So the geometry now comes from `match/geometry.ts` — the same `TWO_LANE_MAP`
+ * the battle renderer draws and the sim runs. The original note here said this
+ * deliberately shared no code with the battle renderer, because factoring across
+ * them before that renderer existed would have been guessing at the shared part.
+ * It exists now, and the shared part turned out to be exactly this: *where the
+ * map's features are*. What each screen does with them still differs, and that
+ * is still not shared.
+ *
+ * The plan board is always drawn from your own seat, so no camera transform is
+ * needed here — your base is at the bottom because you are south of it.
  */
 
+import {
+  TWO_LANE_MAP,
+  ZONE_NAME,
+  hotspotBox,
+  zoneCentre,
+} from '../match/geometry.ts';
 import { orderLabel, placements } from './derive.ts';
 import { type PlanState, type ZoneId, ZONE_IDS } from './types.ts';
 
-const WIDTH = 375;
-const ENEMY_BASE_HEIGHT = 48;
-const BAND_HEIGHT = 106;
-/** Deep enough to show a formation, since the formation is part of the plan. */
-const STRIP_HEIGHT = 60;
-const OWN_BASE_HEIGHT = 56;
-const STRIP_TOP = ENEMY_BASE_HEIGHT + BAND_HEIGHT * 3;
-const OWN_BASE_TOP = STRIP_TOP + STRIP_HEIGHT;
-const HEIGHT = OWN_BASE_TOP + OWN_BASE_HEIGHT;
+const MAP = TWO_LANE_MAP;
 
-// The plate sizes: mages 26-28 px across, summons 18-22 px, ~1.8x ratio.
+// The plate sizes: mages 26 px across, summons 16 px — a 1.6x ratio, which is
+// what makes "where are their mages" answerable at a glance.
 const MAGE_RADIUS = 13;
 const SUMMON_RADIUS = 8;
 
-function bandTop(zone: ZoneId): number {
-  return ENEMY_BASE_HEIGHT + ZONE_IDS.indexOf(zone) * BAND_HEIGHT;
-}
-
-function bandCentre(zone: ZoneId): number {
-  return bandTop(zone) + BAND_HEIGHT / 2;
-}
-
-/** Where a troop's lane line ends, in map coordinates. */
-function laneEndY(towards: ZoneId | 'ownBase' | 'enemyBase'): number {
-  if (towards === 'ownBase') return OWN_BASE_TOP + 14;
-  if (towards === 'enemyBase') return ENEMY_BASE_HEIGHT - 10;
-  return bandCentre(towards);
-}
-
-/**
- * Order labels sit at the destination, which is roomy inside a zone band. The
- * two base orders get their own line clear of the base's own name, so "Defend
- * base" never lands on top of "YOUR BASE".
- */
-function orderLabelY(towards: ZoneId | 'ownBase' | 'enemyBase'): number {
-  if (towards === 'ownBase') return OWN_BASE_TOP + 14;
-  if (towards === 'enemyBase') return ENEMY_BASE_HEIGHT - 6;
-  return bandCentre(towards) - 10;
+/** Where a troop's lane line ends. A Hold aims at its lane's hotspot. */
+function destination(towards: ZoneId | 'ownBase' | 'enemyBase') {
+  if (towards === 'ownBase') return { x: MAP.width / 2, y: MAP.bases.south.y - 26 };
+  if (towards === 'enemyBase') return { x: MAP.width / 2, y: MAP.bases.north.y + 26 };
+  const zone = MAP.zones.find((candidate) => candidate.id === towards);
+  return zone ? zoneCentre(zone) : { x: MAP.width / 2, y: MAP.height / 2 };
 }
 
 export interface PlanMapProps {
@@ -64,34 +53,65 @@ export interface PlanMapProps {
 export function PlanMap({ plan, highlightMageId }: PlanMapProps) {
   const laid = placements(plan);
   const sightings = plan.opponentLastKnown ?? [];
+  const strip = MAP.deployment.south;
 
   return (
     <svg
       className="plan-map"
-      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      viewBox={`0 0 ${MAP.width} ${MAP.height}`}
       role="img"
       aria-label="The plan as a board position"
       preserveAspectRatio="xMidYMid meet"
     >
-      <rect x={0} y={0} width={WIDTH} height={HEIGHT} className="map-ground" />
+      <rect x={0} y={0} width={MAP.width} height={MAP.height} className="map-ground" />
 
       <g className="map-base map-base-enemy">
-        <rect x={0} y={0} width={WIDTH} height={ENEMY_BASE_HEIGHT} />
-        <text x={WIDTH / 2} y={ENEMY_BASE_HEIGHT / 2 + 4}>
+        <rect
+          x={0}
+          y={0}
+          width={MAP.width}
+          height={MAP.bases.north.y + MAP.baseFootprintRadius}
+        />
+        <text x={MAP.width / 2} y={MAP.bases.north.y + 4}>
           THEIR BASE
         </text>
       </g>
 
-      {ZONE_IDS.map((zone) => {
-        const sighting = sightings.find((entry) => entry.zone === zone);
+      {ZONE_IDS.map((zoneId) => {
+        const zone = MAP.zones.find((candidate) => candidate.id === zoneId);
+        if (!zone) return null;
+
+        const spot = hotspotBox(MAP, zone);
+        const sighting = sightings.find((entry) => entry.zone === zoneId);
+        const width = zone.extent.end - zone.extent.start;
+
         return (
-          <g key={zone} className="map-band">
-            <rect x={0} y={bandTop(zone)} width={WIDTH} height={BAND_HEIGHT} />
-            <text className="map-band-label" x={14} y={bandTop(zone) + 22}>
-              {zone}
+          <g key={zoneId} className="map-lane">
+            <rect
+              x={zone.extent.start}
+              y={zone.lane.start}
+              width={width}
+              height={zone.lane.end - zone.lane.start}
+            />
+            {/* The hotspot, drawn because it is the thing the lane is scored
+                on: a plan that sends nobody who can stand in it scores nothing,
+                and that should be visible while the order is being chosen. */}
+            <rect
+              className="map-hotspot"
+              x={spot.x}
+              y={spot.y}
+              width={spot.width}
+              height={spot.height}
+            />
+            <text className="map-lane-label" x={zone.extent.start + 10} y={zone.lane.start + 22}>
+              {ZONE_NAME[zoneId]}
             </text>
             {sighting ? (
-              <text className="map-sighting" x={WIDTH - 14} y={bandTop(zone) + 22}>
+              <text
+                className="map-sighting"
+                x={zone.extent.end - 10}
+                y={zone.lane.start + 22}
+              >
                 {`last seen ${sighting.mages}m · ${sighting.summons}s`}
               </text>
             ) : null}
@@ -100,23 +120,34 @@ export function PlanMap({ plan, highlightMageId }: PlanMapProps) {
       })}
 
       <g className="map-strip">
-        <rect x={0} y={STRIP_TOP} width={WIDTH} height={STRIP_HEIGHT} />
+        <rect
+          x={0}
+          y={strip.lane.start}
+          width={MAP.width}
+          height={strip.lane.end - strip.lane.start}
+        />
       </g>
 
       <g className="map-base map-base-own">
-        <rect x={0} y={OWN_BASE_TOP} width={WIDTH} height={OWN_BASE_HEIGHT} />
-        <text x={WIDTH / 2} y={OWN_BASE_TOP + 34}>
+        <rect
+          x={0}
+          y={MAP.bases.south.y - MAP.baseFootprintRadius}
+          width={MAP.width}
+          height={MAP.height - MAP.bases.south.y + MAP.baseFootprintRadius}
+        />
+        <text x={MAP.width / 2} y={MAP.bases.south.y + 8}>
           YOUR BASE
         </text>
       </g>
 
       {laid.map(({ troop, mage, lane, towards, formation }) => {
-        const x = lane * WIDTH;
+        const x = lane * MAP.width;
+        const end = destination(towards);
         // Formation follows the order: summons in front (towards the enemy,
         // which is up the screen) for Hold and Defend; mages close behind the
         // line for Push, so they keep resummoning at the front.
-        const summonY = STRIP_TOP + (formation === 'summonsForward' ? 18 : 26);
-        const mageY = STRIP_TOP + (formation === 'summonsForward' ? 42 : 40);
+        const summonY = strip.lane.start + (formation === 'summonsForward' ? 18 : 26);
+        const mageY = strip.lane.start + (formation === 'summonsForward' ? 42 : 40);
         const highlighted = highlightMageId === mage.id;
 
         return (
@@ -124,8 +155,10 @@ export function PlanMap({ plan, highlightMageId }: PlanMapProps) {
             key={mage.id}
             className={highlighted ? 'map-troop map-troop-highlighted' : 'map-troop'}
           >
-            <line className="map-lane" x1={x} y1={summonY} x2={x} y2={laneEndY(towards)} />
-            <text className="map-order" x={x} y={orderLabelY(towards)}>
+            {/* The line runs to where the order actually sends the troop, which
+                is now sideways as often as forwards. */}
+            <line className="map-lane-line" x1={x} y1={summonY} x2={end.x} y2={end.y} />
+            <text className="map-order" x={end.x} y={end.y - 12}>
               {orderLabel(troop.order)}
             </text>
 
@@ -149,7 +182,6 @@ export function PlanMap({ plan, highlightMageId }: PlanMapProps) {
           </g>
         );
       })}
-
     </svg>
   );
 }

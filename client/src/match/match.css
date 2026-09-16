@@ -74,11 +74,19 @@
 
 /* ---------------------------------------------------------------- battle -- */
 
+/*
+ * The battle fills the shell exactly and never scrolls: `min-height: 0` is what
+ * lets it shrink to the box rather than push past it, and `overflow: hidden`
+ * makes a mistake here visible as a clipped board rather than as a page that
+ * silently starts scrolling (JQ-312 AC 1).
+ */
 .battle {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .battle-header {
@@ -97,11 +105,57 @@
   position: relative;
 }
 
+/*
+ * Fixed and full-screen: the map takes whatever height is left once the header,
+ * the lane strip and the cast bar have theirs, and never scrolls or zooms
+ * (JQ-312 AC 1). `touch-action: none` is the part that matters on a phone —
+ * without it a thumb dragged across the board pans the page, and a pinch
+ * zooms it out of the seat-relative camera the whole renderer depends on.
+ *
+ * `min-height: 0` is what lets it shrink inside the flex column rather than
+ * pushing the cast bar off the bottom of a 667 px screen.
+ */
+.battle-map {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* The board and the panels that sit over it. */
+.battle-board {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/*
+ * Panels overlay the bottom of the board rather than taking height from it.
+ * The bottom of the board is your own deployment strip, which is the least
+ * informative part of it once the battle has started — and it is where the
+ * thumb already is, so the panel arrives under the hand that asked for it.
+ */
+.battle-board > .unit-inspector,
+.battle-board > .targeting {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  background: rgba(19, 16, 25, 0.94);
+  border-radius: 0.5rem;
+  backdrop-filter: blur(2px);
+}
+
 .battle-map svg {
   width: 100%;
-  height: auto;
+  flex: 1;
+  min-height: 0;
   border-radius: 0.6rem;
   display: block;
+  touch-action: none;
 }
 
 /* Stale is dimmed, never hidden: the last real board beats a spinner. */
@@ -109,10 +163,49 @@
   opacity: 0.45;
 }
 
-.battle-band rect {
+.battle-lane .lane-ground {
   fill: #171322;
   stroke: #241d31;
   stroke-width: 1;
+}
+
+/*
+ * The hotspot is the only part of a lane that scores, so it is the only part
+ * drawn brightly. A lane tinted as a whole would say "this area is what you are
+ * fighting for", which is exactly the thing JQ-376 stopped being true.
+ */
+.battle-lane .lane-hotspot {
+  fill: #221b2e;
+  stroke: #4a4157;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.battle-lane.held-you .lane-hotspot {
+  fill: #3a2f18;
+  stroke: var(--ember);
+  stroke-dasharray: none;
+}
+
+.battle-lane.held-them .lane-hotspot {
+  fill: #1c2e3c;
+  stroke: var(--them);
+  stroke-dasharray: none;
+}
+
+.map-strip rect {
+  fill: #1a1524;
+}
+
+.map-strip .map-strip-divide {
+  stroke: #2a2237;
+  stroke-width: 1;
+}
+
+/* The tap layer is invisible and catches everything the marks do not. */
+.map-tap-layer {
+  fill: transparent;
+  cursor: pointer;
 }
 
 .zone-chip rect {
@@ -140,17 +233,36 @@
   fill: var(--them);
 }
 
-.base-band rect {
+.base-plate rect {
   fill: #221a2c;
 }
 
-.base-band text {
+/*
+ * The base's own footprint — the circle nothing walks inside. Drawn as an
+ * outline: filled, it reads as a hole in the plate rather than as the thing a
+ * pusher has to reach.
+ */
+.base-plate .base-footprint {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-opacity: 0.5;
+}
+
+.base-plate.is-own .base-footprint {
+  stroke: var(--ember);
+}
+
+.base-plate.is-enemy .base-footprint {
+  stroke: var(--them);
+}
+
+.base-plate text {
   fill: var(--ink-2);
   font-size: 10px;
   letter-spacing: 0.12em;
 }
 
-.base-band .base-hp-value {
+.base-plate .base-hp-value {
   text-anchor: end;
   letter-spacing: 0.04em;
 }
@@ -159,11 +271,11 @@
   fill: #0e0b14;
 }
 
-.base-band.is-own .base-hp-fill {
+.base-plate.is-own .base-hp-fill {
   fill: var(--ember);
 }
 
-.base-band.is-enemy .base-hp-fill {
+.base-plate.is-enemy .base-hp-fill {
   fill: var(--them);
 }
 
@@ -191,8 +303,191 @@
   stroke: var(--them);
 }
 
-.unit .unit-hp {
-  fill: var(--danger);
+/*
+ * The energy ring, above 70% only (`marks.ts`). Brighter than the old always-on
+ * ring because it now means something: this unit's ability is about to fire.
+ */
+.unit .unit-energy-ring {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-opacity: 0.95;
+  stroke-dasharray: 3 3;
+}
+
+.unit.is-yours .unit-energy-ring {
+  stroke: var(--ember);
+}
+
+.unit.is-theirs .unit-energy-ring {
+  stroke: var(--them);
+}
+
+.unit .unit-selected-ring {
+  fill: none;
+  stroke: var(--ink-1);
+  stroke-width: 2;
+}
+
+/* Events linger and fade; the opacity is set per-frame from the event's age. */
+.event-mark .event-ring {
+  fill: none;
+  stroke-width: 2;
+}
+
+.event-mark .event-slash {
+  stroke-width: 2;
+}
+
+.event-mark.is-yours .event-ring,
+.event-mark.is-yours .event-slash {
+  stroke: var(--ember);
+}
+
+.event-mark.is-theirs .event-ring,
+.event-mark.is-theirs .event-slash {
+  stroke: var(--them);
+}
+
+.event-mark.is-troopDissolve .event-ring,
+.event-mark.is-troopDissolve .event-slash {
+  stroke: var(--danger);
+}
+
+/* ------------------------------------------------------------ lane strip -- */
+
+/*
+ * Fixed under the board, so it survives a thumb over the bottom third of the
+ * map — the one place the lane state is always readable (JQ-312 AC 3).
+ */
+.zone-strip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 0.35rem;
+}
+
+.zone-strip-entry {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.4rem;
+  background: var(--surface-2);
+  border-left: 3px solid #4a4157;
+  font-size: 0.72rem;
+}
+
+.zone-strip-entry.held-you {
+  border-left-color: var(--ember);
+}
+
+.zone-strip-entry.held-them {
+  border-left-color: var(--them);
+}
+
+.zone-strip-name {
+  color: var(--ink-1);
+  letter-spacing: 0.06em;
+}
+
+.zone-strip-entry.held-you .zone-strip-held {
+  color: var(--ember);
+}
+
+.zone-strip-entry.held-them .zone-strip-held {
+  color: var(--them);
+}
+
+.zone-strip-held,
+.zone-strip-counts {
+  color: var(--ink-2);
+}
+
+.zone-strip-empty-spot {
+  color: var(--danger);
+}
+
+/* -------------------------------------------------------------- inspector -- */
+
+/*
+ * Below the map, not over the tapped unit: a popover at the tap point lands
+ * under the thumb that opened it.
+ */
+.unit-inspector {
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.5rem;
+  background: var(--surface-2);
+  border-left: 3px solid #4a4157;
+}
+
+.unit-inspector.is-yours {
+  border-left-color: var(--ember);
+}
+
+.unit-inspector.is-theirs {
+  border-left-color: var(--them);
+}
+
+.unit-inspector header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.inspector-name {
+  color: var(--ink-1);
+  font-size: 0.85rem;
+}
+
+.inspector-side {
+  color: var(--ink-2);
+  font-size: 0.72rem;
+}
+
+.inspector-close {
+  margin-left: auto;
+  min-width: 44px;
+  min-height: 44px;
+  background: none;
+  border: none;
+  color: var(--ink-2);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.unit-inspector p {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.inspector-health-track {
+  display: inline-block;
+  width: 80px;
+  height: 6px;
+  border-radius: 3px;
+  background: #0e0b14;
+  overflow: hidden;
+}
+
+.inspector-health-fill {
+  display: block;
+  height: 100%;
+  background: var(--danger);
+}
+
+.inspector-ability-name {
+  color: var(--ink-1);
+}
+
+.inspector-ability-soon {
+  color: var(--ember);
 }
 
 .cast-mark {
@@ -223,10 +518,11 @@
 }
 
 .targeting {
-  margin-top: 0.5rem;
+  padding: 0.5rem 0.6rem;
 }
 
 .target-cancel {
+  width: 100%;
   min-height: 44px;
   background: none;
   border: 1px solid #4a4157;
@@ -247,15 +543,76 @@
   gap: 0.35rem;
 }
 
+/*
+ * One button per region, each carrying what it would do. Full width and stacked
+ * rather than wrapped in a row: the outcome line is the point of the button, and
+ * it does not fit beside a name at 375 px.
+ */
+/*
+ * Two columns. The panel sits over the board, so every row it takes is board the
+ * player cannot see while choosing where to aim — four full-width buttons
+ * covered the whole map, which made an outcome preview useless for the one
+ * decision it exists to serve.
+ */
+.target-regions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+}
+
+.target-regions > li:last-child {
+  grid-column: 1 / -1;
+}
+
 .target-region {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
   background: #2b2436;
   border: 1px solid var(--ember);
   border-radius: 0.5rem;
   color: var(--ink-1);
   font: inherit;
-  font-size: 0.78rem;
-  padding: 0.6rem 0.75rem;
+  font-size: 0.74rem;
+  padding: 0.4rem 0.5rem;
   cursor: pointer;
+  text-align: left;
+  height: 100%;
+}
+
+.target-region:disabled {
+  border-color: #4a4157;
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.target-region-outcome {
+  font-size: 0.66rem;
+  line-height: 1.25;
+  color: var(--ink-2);
+}
+
+/* An estimate is marked as one, rather than being styled like a fact. */
+.target-region-outcome.is-estimate {
+  font-style: italic;
+}
+
+.target-region-outcome.is-unavailable {
+  color: #7d7489;
+}
+
+/* A claimed clear is the strongest thing a preview says, so it looks like it. */
+.target-preview.clears {
+  fill-opacity: 0.14;
+  stroke-opacity: 0.9;
+  stroke-dasharray: none;
+}
+
+.target-preview.is-short {
+  stroke: #4a4157;
+  fill-opacity: 0.02;
 }
 
 /* -------------------------------------------------------------- cast bar -- */

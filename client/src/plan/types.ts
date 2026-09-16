@@ -8,9 +8,17 @@
  * its own shape and `fixtures/` is the single seam that gets replaced.
  */
 
-export type ZoneId = 'A' | 'B' | 'C';
+/**
+ * The map's lanes, as the sim names them (`api/app/sim/map.py`).
+ *
+ * Two, divided west to east — not the three stacked bands this screen was first
+ * built against. JQ-376 replaced those because a band next to your own
+ * deployment strip is free income nobody has to fight for; the ids moved with
+ * them, so `'A' | 'B' | 'C'` became `'W' | 'E'` (JQ-312).
+ */
+export type ZoneId = 'W' | 'E';
 
-export const ZONE_IDS: readonly ZoneId[] = ['A', 'B', 'C'];
+export const ZONE_IDS: readonly ZoneId[] = ['W', 'E'];
 
 /** Schools per design doc §4.4. Neutral units belong to none of them. */
 export type School = 'fire' | 'stone' | 'artifice' | 'time' | 'necromancy' | 'neutral';

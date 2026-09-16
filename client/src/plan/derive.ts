@@ -210,10 +210,17 @@ export function strandedSlots(plan: PlanState): number[] {
 
 /* ------------------------------------------------------------- placements -- */
 
+/**
+ * Lane names, spelled out. The sim's zone ids are single letters so that a map
+ * can add a lane without anyone inventing a word for it; a player reading an
+ * order on a phone wants the word.
+ */
+const LANE_NAME: Readonly<Record<ZoneId, string>> = { W: 'West', E: 'East' };
+
 export function orderLabel(order: Order): string {
   switch (order.kind) {
     case 'hold':
-      return `Hold ${order.zone}`;
+      return `Hold ${LANE_NAME[order.zone]}`;
     case 'defendBase':
       return 'Defend base';
     case 'pushEnemyBase':

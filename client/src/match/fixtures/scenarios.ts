@@ -11,7 +11,7 @@
 
 import type { PlanState } from '../../plan/types.ts';
 import { starterMirrorRound1 } from '../../plan/fixtures/starterMirror.ts';
-import { THREE_ZONE_MAP } from '../geometry.ts';
+import { TWO_LANE_MAP } from '../geometry.ts';
 import type { MapPoint, Side } from '../types.ts';
 
 export type ScenarioId = 'zoneControl' | 'baseDestruction' | 'claimFailure' | 'dropout';
@@ -43,17 +43,20 @@ export interface Scenario {
  */
 function opponentPlan(orders: 'holdTheLine' | 'allIn'): PlanState {
   const base = starterMirrorRound1();
+  // Three troops into two lanes: the opponent doubles up somewhere, which is
+  // the decision JQ-376 made the map to force. Here they weight the east lane,
+  // so the demo round is a real contest rather than a mirrored tie.
   const troops =
     orders === 'allIn'
       ? base.troops.map((troop) => ({ ...troop, order: { kind: 'pushEnemyBase' } as const }))
       : base.troops.map((troop, index) =>
-          index === 2 ? { ...troop, order: { kind: 'hold', zone: 'C' } as const } : troop,
+          index === 2 ? { ...troop, order: { kind: 'hold', zone: 'E' } as const } : troop,
         );
 
   return { ...base, troops };
 }
 
-const CENTRE = THREE_ZONE_MAP.width / 2;
+const CENTRE = TWO_LANE_MAP.width / 2;
 
 const SCENARIOS: Record<ScenarioId, Scenario> = {
   zoneControl: {

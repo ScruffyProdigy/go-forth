@@ -6,14 +6,26 @@
  * this is silhouettes and state, not a visual language.
  */
 
+/*
+ * The shell is exactly one viewport tall and scrolls *inside* itself.
+ *
+ * It used to be `min-height`, which let the page grow past the screen and the
+ * body scroll. That is right for the plan phase — a long form should scroll —
+ * but it broke the battle: JQ-312 AC 1 wants a fixed full-screen map, and a map
+ * inside a growing column has nothing to size itself against, so it overflowed
+ * and the enemy base scrolled off the top of a 375x667 phone. Bounding the
+ * shell and moving the scroll inside it gives the plan phase the same scrolling
+ * it had and gives the battle a box to fill.
+ */
 .plan {
-  min-height: 100dvh;
+  height: 100dvh;
   max-width: 430px;
   margin: 0 auto;
   padding: 0.75rem 0.75rem 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  overflow-y: auto;
 }
 
 .hub,
