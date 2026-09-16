@@ -129,35 +129,103 @@ complementary test too — that a unit whose path takes it inside range ends up
 able to fire — and stage it **off-axis**, because head-on is the one arrangement
 that works when this is broken.
 
-## Movement does not guarantee separation
+**And check that the break actually applied.** Breaking a test on purpose is the
+only way to learn whether it is evidence, and it has a failure mode of its own:
+the edit that was supposed to break the code does not land — a formatter has
+reflowed the line an anchor matched on, a patch script prints success over a file
+it never touched — and the suite runs green against unmodified source. "I broke
+it and the test passed" and "I believe I broke it and the test passed" are
+indistinguishable in a terminal, and only the first means anything.
+
+This happened twice in one hour on JQ-329, to two people, in opposite directions:
+once verifying a test (a green run read as "my test has a blind spot", when
+nothing had been modified) and once verifying a fix (a green run read as "the fix
+works", same cause). One of them was nearly reported as a finding. So: assert the
+injection matched before trusting the result, and treat a falsification
+experiment that cannot fail as exactly the same error as a test that cannot fail.
+
+A related blind spot in the test itself, from the same episode. "Nothing was
+dropped from this record" is naturally written as a walk over `dataclasses.fields`
+comparing each by name — and that cannot fail, because a dropped field holds its
+*default* on both sides of the comparison. Compare the records whole, with the
+field that legitimately varies normalised away.
+
+## Movement does not guarantee separation — the behaviour layer does
 
 Read the standoff clamp in `phases/movement.py` and it looks like the thing that
 keeps units apart. It is not, and the difference matters because it is invisible
 until a behaviour layer is attached.
 
-What actually holds a line is the **engage-en-route** rule: a unit stops the
+What holds a line without one is the **engage-en-route** rule: a unit stops the
 moment anything is within its weapon range. The standoff sits inside that range,
 so an ordinary unit has already stopped before the clamp could bind. Measured on
 the placeholder armies with no behaviour layer, closest approach between opposing
-units over a whole battle is 16.8 on every seed, and there is not a single tick
-where two of them are within 1 of each other.
+units over a whole battle is 16.8 on every seed.
 
 A unit acting on an *intent* (JQ-328) skips that check by design — that is what
 makes "press the objective past a weak enemy" possible, and pressing past
 something in a sim with no collision means passing through it. The clamp does not
 catch it either: since JQ-379 an enemy a unit is already inside the standoff of
-does not cap the step, which is what stopped the clamp freezing units in place.
+does not cap the step.
 
-So in a behaviour-driven battle, opposing units do overlap. Measured: coincident
-to 0.000, in episodes of 36 ticks at the median and 114 at the longest — nearly
-six seconds of a ninety-second battle with two units standing inside each other.
+**On JQ-328 that produced real overlap, and JQ-329 removed it.** Measured across
+five seeds, before and after:
 
-**Nothing in the sim prevents this.** Whether it should is a live question
-(JQ-380): it is squarely in JQ-243's readability territory, since overlapping
-sprites read as one unit, which is worse than the blob the engagement gap was
-protecting against. The point here is only that a reader of the clamp must not
-conclude the sim keeps units apart. It keeps units *from walking into contact on
-their own initiative*, which is a different and much smaller claim.
+```
+JQ-328   closest approach 0.00-0.79   overlap episodes 1-3 per battle
+JQ-329   closest approach 1.96-13.11  overlap episodes 0 on every seed
+```
+
+Nothing was added to prevent it. The cause was that the only way to close on an
+enemy was to walk at the enemy's own coordinates, so a unit that pressed on
+arrived exactly on top of it. JQ-329 aims every approach at the unit's own
+**useful range** from the target instead — the place it wants to stand to fight —
+and units stop where they can fight rather than where the target is standing.
+
+So the question JQ-380 was opened to decide, whether opposing units may come to
+rest on the same point, is answered in practice: on the current evaluator they do
+not. `tests/sim/ai/separation.py` still measures it, because the guarantee is
+emergent rather than enforced — nothing in the sim *prevents* overlap, and a
+future candidate that aims somewhere else would bring it back.
+
+## Boundaries in scoring are the same hazard as boundaries in geometry
+
+The rule two sections up — a stopping predicate and an acting predicate must
+overlap on an interval rather than at a point — has a second form, one layer up,
+and JQ-329 hit it twice.
+
+**A gradient with a kink oscillates even though its value is continuous.**
+`objective_progress` measured distance from a station through
+`max(0, gap - tolerance)`: smooth in value, but its slope jumps from zero to one
+at the tolerance. Inside, a step away from the post was free; one step outside,
+it cost a full stride. A unit walked out to the edge, found the next step
+expensive, walked back in, found the step out free again — and alternated between
+two positions one map unit apart for a hundred and seventy ticks, committing to a
+chase and abandoning it on every one of them. The fix is a ramp with no kink at
+all (`gap**2 / (gap + tolerance)`), not a smaller kink.
+
+**And a decision margin does not fix an equilibrium.** The obvious remedy —
+require a new action to beat the incumbent by some margin — only widens the band
+the unit wanders inside, because near an equilibrium the scores are close *by
+construction*. Measured on an iron-bulwark holding a post: the two competing
+candidates cross at three units off the post, both worth +0.0513, and either side
+of the crossing the leader changes by about 0.03 per unit travelled. No margin
+small enough to be honest covers that, and one large enough stops the unit
+noticing anything.
+
+What works is making one candidate win outright near the crossing, and the only
+candidate that can is **the one that does not move**. Every factor in the
+evaluator is a *rate* — ground gained this tick, not ground held — so `hold`
+scores zero however well placed a unit is, while both walking toward its post and
+walking toward an enemy score positive. Moving beats standing almost everywhere.
+`decide.MOVEMENT_THRESHOLD` requires a step to be clearly better than standing
+still, and the unit settles where no step is worth taking.
+
+**The general lesson.** A scoring function re-derived from scratch every tick has
+no memory, so anywhere two of its terms balance is a potential limit cycle. Look
+for them wherever a new factor is added, and test for them by running a unit to a
+settled state rather than by reading one tick — a single-tick assertion cannot
+tell a decision from an oscillation.
 
 ## Layout
 
@@ -174,7 +242,7 @@ api/
 │   ├── repository.py / pg_repository.py
 │   ├── lobby/       # the JoinQuest contract (JQ-309) — fixed, shared with rpslr
 │   ├── match/       # this game: wire schema, plan, round, session, clock
-│   └── sim/         # the battle sim (JQ-286)
+│   └── sim/         # the battle sim (JQ-286) — pure, deterministic
 ├── migrations/      # forward-only *.sql, applied in filename order
 └── tests/           # not co-located; the Python convention, unlike rpslr
 ```

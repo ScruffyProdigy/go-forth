@@ -47,6 +47,21 @@ def _action(candidate: CandidateRecord) -> str:
     return " ".join(parts)
 
 
+def _why(candidate: CandidateRecord, reason: str) -> str:
+    """The reason, and who it was done for when that is recorded.
+
+    Deliberately not parsed: JQ-329 owns the reason vocabulary and narrows it as
+    the behaviors grow — `screening` covered every screen until it came to mean
+    only the assigned kind. Appending "for <ally>" whenever an ally is present
+    reads correctly for any reason that has one, and stays correct for reasons
+    that do not exist yet.
+    """
+    text = reason or NO_REASON
+    if candidate.protecting_id is not None:
+        return f"{text} for {candidate.protecting_id}"
+    return text
+
+
 def _contributions(contributions: tuple[FactorContribution, ...]) -> str:
     """Each factor's raw verdict and the weight that scaled it, in one line.
 
@@ -117,7 +132,8 @@ def _record_text(record: TraceRecord) -> str:
         f"{_assignment_line(record.assignment)}",
         _behavior_line(record),
         f"    weights: {', '.join(f'{factor} {value:g}' for factor, value in record.weights)}",
-        f"    chose {_action(record.chosen)}  {record.chosen.score:+.3f}  ({record.reason or NO_REASON})",
+        f"    chose {_action(record.chosen)}  {record.chosen.score:+.3f}"
+        f"  ({_why(record.chosen, record.reason)})",
         f"      {_contributions(record.chosen.contributions)}",
     ]
 
@@ -161,6 +177,7 @@ def _candidate_dict(candidate: CandidateRecord) -> dict[str, object]:
             if candidate.destination is not None
             else None
         ),
+        "protecting": candidate.protecting_id,
         "score": candidate.score,
         "influences": [
             {"tag": i.tag, "context": i.context, "factor": i.factor, "delta": i.delta}

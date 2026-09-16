@@ -62,13 +62,36 @@ The two personality sorts        Redundant *with each other*: `totals` is
 A guarantee that survives a mutation sweep is not automatically a bug. It is a
 question: is this load-bearing, or is something else already holding it up? The
 table is the answers, so the next sweep does not have to re-derive them.
+
+**JQ-329 adds two below, swept the same way and with the same aimed re-run.** Its
+observation layer has orderings of its own, and they survived its whole suite
+until pinned:
+
+    enemies no longer sorted by id    here: CAUGHT   elsewhere: survived
+    answerable walks the wanted set   here: CAUGHT   elsewhere: survived
+
+The second is the serious one — `_answerable` unions nominations, the current
+chase and the nearest enemy into a set and then filters the *sorted* enemy list
+by it. Iterating the set instead puts hash order into the candidate list, and
+candidate order is tie-break order. The first is defensive rather than live:
+`world.units` is a deterministic list, so dropping that sort stays reproducible;
+it moves the guarantee from local to coupled and reaches output only through
+float summation order in `threat.threats_against`. A different claim from the
+other, and worth knowing which is which.
+
+JQ-329's third guarantee, a sort inside its own `_nominations`, is gone rather
+than untested: that field collapsed into `Observation.assignment` on merge, one
+assignment per unit, and a one-element tuple needs no sorting.
 """
 
 from __future__ import annotations
 
+from app.sim.ai.candidates import _answerable
 from app.sim.ai.coordination import _needs, baseline_profile, coordinate, nominated_target_ids
 from app.sim.ai.fixtures import PROTECTIVE, RECKLESS, combined_library, strength_library
 from app.sim.ai.intent import Assignment, TroopCoordination
+from app.sim.ai.observe import observe
+from app.sim.map import TWO_LANE_MAP
 from app.sim.orders import PUSH_ENEMY_BASE
 from app.sim.types import Vec2
 from app.sim.world import Troop, Unit, World
@@ -78,6 +101,9 @@ from tests.sim.ai.test_personalities import behavior_of, escort
 from tests.sim.fixtures_units import ADEPT, HOUND
 
 MAGE_AT = Vec2(180, 400)
+
+#: Where JQ-329's two observation-layer tests stage their field.
+HERE = Vec2(180, 300)
 
 
 def two_threats(*summons: tuple[str, Vec2]) -> World:
@@ -191,3 +217,55 @@ def test_resolved_personalities_come_out_sorted_by_tag() -> None:
     assert [p.tag for p in resolved] == [PROTECTIVE, RECKLESS]
     # The authored order is the opposite, so this is not agreeing by accident.
     assert [PROTECTIVE, RECKLESS] != [RECKLESS, PROTECTIVE]
+
+
+def test_observed_enemies_are_sorted_even_when_the_world_is_not() -> None:
+    """`world.units` is deterministic but its order is not this module's to rely on.
+
+    Staged with a unit list whose order differs from id order, so an observation
+    that simply passed the world's order through would be visibly wrong.
+    """
+    unsorted = ["south-c", "south-a", "south-d", "south-b"]
+    world = make_world(
+        [make_unit("north-x", HOUND, "north", HERE)]
+        + [make_unit(name, HOUND, "south", Vec2(HERE.x + 20 + i, HERE.y)) for i, name in enumerate(unsorted)]
+    )
+    assert [u.id for u in world.units if u.side == "south"] == unsorted, "fixture is not scrambled"
+
+    observation = observe(world, world.units[0], TWO_LANE_MAP, SECONDS_PER_TICK)
+
+    assert [enemy.id for enemy in observation.enemies] == sorted(unsorted)
+
+
+def test_answerable_walks_the_enemies_not_the_nomination_set() -> None:
+    """The set is for membership; the order comes from the sorted enemy list.
+
+    `_answerable` unions nominations, the current chase and the nearest enemy
+    into a set, then filters `observation.enemies` by it. Iterating the set
+    instead would put hash order into the candidate list — and candidate order is
+    tie-break order, so two actions a unit is indifferent between would resolve
+    differently in different interpreters.
+    """
+    hound = make_unit("north-x", HOUND, "north", HERE)
+    enemies = ["south-c", "south-a", "south-d", "south-b"]
+    world = make_world(
+        [hound]
+        + [
+            make_unit(name, HOUND, "south", Vec2(HERE.x + 20 + i * 3, HERE.y))
+            for i, name in enumerate(enemies)
+        ]
+    )
+
+    observation = observe(
+        world,
+        hound,
+        TWO_LANE_MAP,
+        SECONDS_PER_TICK,
+        assignment=Assignment(
+            unit_id="north-x", target_id=enemies[-1], protecting_id="north-x", since_tick=0
+        ),
+    )
+    answerable = [enemy.id for enemy in _answerable(observation)]
+
+    assert answerable, "nothing was answerable, so the ordering claim is untested"
+    assert answerable == sorted(answerable)

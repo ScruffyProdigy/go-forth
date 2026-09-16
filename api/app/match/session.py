@@ -306,7 +306,8 @@ class MatchSession:
         zone_score = {side: self._round.world.zone_score[side] for side in SIDES}
 
         if ending.kind == "baseDestroyed":
-            assert ending.winner is not None
+            # No assertion on the winner: a tick that took both bases ends the
+            # match with nobody having won it.
             wire_ending = wire.base_destroyed(ending.winner)
         else:
             assert ending.reason is not None
@@ -347,7 +348,8 @@ class MatchSession:
         win would quietly roll into a second round and never stop.
         """
         if ending.kind == "baseDestroyed":
-            assert ending.winner is not None
+            # Winner may be None: both bases fell on one tick, which is a draw
+            # and still terminal.
             # Takes precedence over the round count, and over the test profile:
             # a base destroyed is a real terminal outcome even in a demo, and
             # reporting it as "the test finished" would hide the game's rule.

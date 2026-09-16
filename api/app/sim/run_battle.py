@@ -7,13 +7,22 @@ asserts that by walking this module's import graph.
 
 The loop itself does nothing but walk `TICK_PHASES` — see `phases/__init__.py`
 for the order and for where the remaining slices attach.
+
+Two ways in, one loop. `run_battle` runs a battle to its end and hands back the
+whole of it, which is what a headless demo and the determinism harness want.
+`BattleRunner` is the same battle advanced a tick at a time, which is what a
+live round wants: a match controller running on a real clock has to accept a
+spell cast *during* the battle, and a function that has already returned cannot
+be handed one. `run_battle` is written in terms of the runner, so there is one
+loop rather than two that drift.
 """
 
 from __future__ import annotations
 
+import bisect
 import copy
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from app.sim.abilities import build_ability_catalog
@@ -32,7 +41,7 @@ from app.sim.schools import (
     SideMultiplierTable,
     resolve_side_multipliers,
 )
-from app.sim.spells import build_spell_catalog
+from app.sim.spells import SpellCatalog, SpellInjection, build_spell_catalog, injection_order
 from app.sim.types import SIDES, Side
 from app.sim.units import build_unit_type_catalog
 from app.sim.world import BattleSetup, World, create_world
@@ -103,28 +112,132 @@ def _side_is_wiped_out(world: World) -> bool:
 def _base_destroyed(world: World) -> Side | None:
     """Whose base has fallen, walking `SIDES` so the answer never depends on
     dict order. North is checked first; a tie is not a thing two separate
-    attackers can produce in one tick, since damage resolves in list order."""
+    attackers can produce in one tick, since damage resolves in list order.
+
+    Two *spells* landing on one tick can, though — nothing serialises those
+    against each other — so a caller that has to tell a double destruction from
+    a single one reads the bases itself rather than this. The match layer does
+    exactly that (JQ-308); within the sim, north-first is only ever asked to
+    name a side for `destroyed_base`, and the loop stops either way.
+    """
     for side in SIDES:
         if world.bases[side].hp <= 0:
             return side
     return None
 
 
-def run_battle(
+@dataclass
+class BattleRunner:
+    """One battle, advanced a tick at a time.
+
+    Holds exactly what `run_battle` used to hold in local variables, so that a
+    caller running on a clock can sit between two ticks — which is the whole
+    point: `inject` is only reachable from there.
+    """
+
+    seed: int
+    world: World
+    ctx: TickContext
+    map: MapConfig
+    config: SimConfig
+    multipliers: SideMultiplierTable
+    resonance: SideResonanceCounts
+    energy_rules: SchoolEnergyRuleTable
+    spells: SpellCatalog
+    ticks: list[BattleTick] = field(default_factory=list)
+    events: list[BattleEvent] = field(default_factory=list)
+    outcome: BattleOutcome = "timeUp"
+    destroyed_base: Side | None = None
+    #: Set once a terminal condition has been seen, so `step` is a no-op after
+    #: the battle has ended rather than quietly running on past its own result.
+    stopped: bool = False
+
+    @property
+    def limit(self) -> int:
+        """The tick the loop stops at, so a battle always terminates."""
+        return max_ticks(self.config)
+
+    @property
+    def finished(self) -> bool:
+        return self.stopped or self.world.tick >= self.limit
+
+    def step(self) -> tuple[BattleEvent, ...]:
+        """Advances one tick, or does nothing if the battle is already over."""
+        if self.finished:
+            return ()
+
+        tick_events = step_battle(self.world, self.ctx)
+        self.events.extend(tick_events)
+        self.ticks.append(
+            BattleTick(tick=self.world.tick, state=copy.deepcopy(self.world), events=tuple(tick_events))
+        )
+
+        # A base falling ends the match, so it is settled before anything else
+        # that happened on the same tick.
+        self.destroyed_base = _base_destroyed(self.world)
+        if self.destroyed_base is not None:
+            self.outcome = "baseDestroyed"
+            self.stopped = True
+        elif _side_is_wiped_out(self.world):
+            self.outcome = "annihilation"
+            self.stopped = True
+
+        return tuple(tick_events)
+
+    def run_to_end(self) -> None:
+        while not self.finished:
+            self.step()
+
+    def inject(self, injection: SpellInjection) -> None:
+        """Schedules a cast that was accepted after the battle had started.
+
+        Kept in the same order `schedule_injections` puts the opening set in, so
+        that a spell cast live and the same spell scheduled up front resolve
+        identically. Landing it strictly in the future is not politeness: the
+        spells phase for the current tick has already run, so a cast dated to it
+        would be swept up by the *next* tick and silently land late.
+        """
+        if injection.spell_id not in self.spells:
+            raise ValueError(f"spell {injection.spell_id} is injected but is not in the spell catalog")
+        if injection.tick <= self.world.tick:
+            raise ValueError(
+                f"spell {injection.spell_id} is injected at tick {injection.tick}, "
+                f"which is not still ahead of tick {self.world.tick}"
+            )
+
+        pending = self.world.pending_spells
+        keys = [injection_order(existing) for existing in pending]
+        pending.insert(bisect.bisect_right(keys, injection_order(injection)), injection)
+
+    def result(self) -> BattleResult:
+        return BattleResult(
+            seed=self.seed,
+            ticks=tuple(self.ticks),
+            events=tuple(self.events),
+            final_state=self.world,
+            outcome=self.outcome,
+            map=self.map,
+            config=self.config,
+            multipliers=self.multipliers,
+            resonance=self.resonance,
+            destroyed_base=self.destroyed_base,
+            energy_rules=self.energy_rules,
+        )
+
+
+def create_runner(
     map_config: MapConfig,
     school_configs: Sequence[SchoolConfig],
     battle_state: BattleSetup,
     seed: int,
     config: SimConfig = DEFAULT_SIM_CONFIG,
     trace: DecisionTrace | None = None,
-) -> BattleResult:
-    """Runs a battle to its end.
-
-    `seed` is the whole of the battle's randomness: same seed, same battle.
+) -> BattleRunner:
+    """Builds a battle and stops at tick 0, before any phase has run.
 
     `trace` is a developer's window onto the decision phase (JQ-331) and nothing
-    more: it is written to, never read, and a battle run with one produces the
-    same result as the same battle run without. `tests/sim/ai/
+    more: it is written to, never read, and a battle built with one produces the
+    same result as the same battle built without. `tests/sim/ai/
     test_inspect_determinism.py` holds that to byte-identical output in fresh
     processes.
     """
@@ -143,6 +256,7 @@ def run_battle(
     # battle's draws are unaffected by the order.
     established = count_resonance(world)
     multipliers = resolve_side_multipliers(configs, established)
+    spells = build_spell_catalog(battle_state.spells)
 
     ctx = create_tick_context(
         config=config,
@@ -156,42 +270,37 @@ def run_battle(
         # Honours a committed cast and holds otherwise, falling through to
         # the default for units with no behaviour data (JQ-328).
         cast_policy=FollowsIntent(),
-        spells=build_spell_catalog(battle_state.spells),
+        spells=spells,
         trace=trace,
     )
 
-    ticks: list[BattleTick] = [BattleTick(tick=0, state=copy.deepcopy(world), events=())]
-    events: list[BattleEvent] = []
-    limit = max_ticks(config)
-    outcome: BattleOutcome = "timeUp"
-    destroyed_base: Side | None = None
-
-    while world.tick < limit:
-        tick_events = step_battle(world, ctx)
-        events.extend(tick_events)
-        ticks.append(BattleTick(tick=world.tick, state=copy.deepcopy(world), events=tuple(tick_events)))
-
-        # A base falling ends the match, so it is settled before anything else
-        # that happened on the same tick.
-        destroyed_base = _base_destroyed(world)
-        if destroyed_base is not None:
-            outcome = "baseDestroyed"
-            break
-
-        if _side_is_wiped_out(world):
-            outcome = "annihilation"
-            break
-
-    return BattleResult(
+    return BattleRunner(
         seed=seed,
-        ticks=tuple(ticks),
-        events=tuple(events),
-        final_state=world,
-        outcome=outcome,
+        world=world,
+        ctx=ctx,
         map=map_config,
         config=config,
         multipliers=multipliers,
         resonance=established,
-        destroyed_base=destroyed_base,
         energy_rules=energy_rules,
+        spells=spells,
+        ticks=[BattleTick(tick=0, state=copy.deepcopy(world), events=())],
     )
+
+
+def run_battle(
+    map_config: MapConfig,
+    school_configs: Sequence[SchoolConfig],
+    battle_state: BattleSetup,
+    seed: int,
+    config: SimConfig = DEFAULT_SIM_CONFIG,
+    trace: DecisionTrace | None = None,
+) -> BattleResult:
+    """Runs a battle to its end.
+
+    `seed` is the whole of the battle's randomness: same seed, same battle.
+    See `create_runner` on `trace`, which changes nothing about the battle.
+    """
+    runner = create_runner(map_config, school_configs, battle_state, seed, config, trace)
+    runner.run_to_end()
+    return runner.result()

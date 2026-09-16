@@ -36,6 +36,7 @@ both only ever shorten a step along the direction the unit was already going.
 
 from __future__ import annotations
 
+from app.sim.ai.intent import MOVING_ACTIONS, movement_scale
 from app.sim.blocking import clamp_to_blockers
 from app.sim.context import TickContext
 from app.sim.geometry import distance, move_toward
@@ -127,18 +128,23 @@ class MovementPhase:
                 continue
 
             intent = unit.ai.intent if unit.ai is not None else None
+            scale = 1.0
             if intent is not None:
                 # The decision phase already weighed standing still against
-                # moving, danger included. Attacking and holding mean stay put;
-                # advancing means go, even with an enemy in reach.
-                if intent.kind != "advance":
+                # moving, danger included. Attacking, casting and holding mean
+                # stay put; the three moving verbs mean go, even with an enemy in
+                # reach. `withdraw` goes at half pace — backing away from
+                # something while still facing it is slower than running from it,
+                # and that cost is the reason giving ground is two verbs.
+                if intent.kind not in MOVING_ACTIONS:
                     continue
+                scale = movement_scale(intent.kind)
             elif acquire_target(world, unit) is not None:
                 # No decision loop: hold the gap and let combat work. The unit
                 # resumes on the tick nothing is in range any more.
                 continue
 
-            step = min(unit.speed * ctx.seconds_per_tick, standoff_slack(world, unit, ctx))
+            step = min(unit.speed * ctx.seconds_per_tick * scale, standoff_slack(world, unit, ctx))
             if step <= 0:
                 continue
 

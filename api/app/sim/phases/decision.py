@@ -70,6 +70,13 @@ class DecisionPhase:
             intent = intent_of(decision)
             unit.ai.intent = intent
 
+            # The chase, and the bar on starting another. `decide` works these
+            # out and writes nothing; this is the one place they are stored, so
+            # that a unit's commitment is as reproducible as the rest of the
+            # world it is snapshotted with (JQ-329).
+            unit.ai.commitment = decision.commitment
+            unit.ai.recovery_remaining = decision.recovery_remaining
+
             # Movement reads `unit.destination`, which the orders phase rewrites
             # next tick — so a diversion undoes itself and "return to your
             # station" needs no code at all.

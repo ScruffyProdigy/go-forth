@@ -241,13 +241,19 @@ def round_complete(winner: Side | None, reason: RoundReason) -> dict[str, Any]:
     return {"kind": "roundComplete", "winner": winner, "reason": reason}
 
 
-def base_destroyed(winner: Side) -> dict[str, Any]:
+def base_destroyed(winner: Side | None) -> dict[str, Any]:
     """A base fell. This ends the **match**, not the round (Ryan, 2026-09-13).
 
     Its own ending kind rather than a `reason` on `roundComplete`, because the
     two are different events: presenting base destruction as one round lost
     would misreport the game's central rule, and a client given a `reason`
     string would have to know which strings were terminal.
+
+    `winner` is null when **both** bases fell on the same tick — reachable,
+    since two spells can land on one tick with nothing serialising them. It
+    stays this kind rather than gaining one of its own: what a client has to
+    know is that the match is over and how, and `winner: null` already means "a
+    draw" everywhere else on this wire.
     """
     return {"kind": "baseDestroyed", "winner": winner}
 
@@ -286,7 +292,8 @@ def match_result(
     }
 
 
-def match_ending_base_destroyed(winner: Side) -> dict[str, Any]:
+def match_ending_base_destroyed(winner: Side | None) -> dict[str, Any]:
+    """Null `winner` is a mutual destruction — see `base_destroyed`."""
     return {"kind": "baseDestroyed", "winner": winner}
 
 

@@ -198,7 +198,8 @@ cd client && npm run lint && npm run typecheck && npm test
 │   │   ├── match/            # this game: wire, plan, round, session, clock
 │   │   ├── sim/              # the battle sim — pure, deterministic, headless
 │   │   └── scripts/
-│   │       └── battle_demo.py  # runs a battle, prints the event stream
+│   │       ├── battle_demo.py  # runs a battle, prints the event stream
+│   │       └── match_demo.py   # runs a whole match: plans, casts, outcome
 │   └── tests/                # outside the package, per Python convention
 │       ├── lobby/            # one module per integration-guide §8 row
 │       ├── match/            # wire, plan, round, session, clock, realtime
@@ -433,6 +434,61 @@ cd api && python -m app.scripts.battle_demo --seed 7   # both sides are led diff
 **Scope.** Slice A (JQ-286) ships the world model, the tick loop, map config, the
 event envelope, and move-and-fight. Orders, formations, and zone scoring are
 JQ-287; energy and abilities JQ-288; resummoning and resonance JQ-289.
+
+---
+
+## Round rules and outcomes
+
+JQ-309 built the match layer — `wire`, `plan`, `round`, `session`, `clock`. JQ-308
+is the depth underneath it: *which* ending wins when two land on the same tick,
+and what the server does with a round nobody can win.
+
+`AuthoritativeRound` drives the sim a tick at a time, because a round the server
+has already finished cannot accept a cast at tick 400. It builds that battle with
+the sim's own [`create_runner`](api/app/sim/run_battle.py) rather than assembling
+one itself: the rng, the resonance count, the multipliers, the catalogues and the
+tick context are `run_battle`'s opening sequence, and a second copy of it could
+drift silently. It already had — the copy left `cast_policy` at its default, so a
+unit in a live round decided its casts by a different rule from the same unit in
+a headless replay of the same battle.
+
+A cast is inserted into the already-sorted injection queue rather than re-sorting
+it, so a cast taken live lands exactly where a pre-scheduled one would. Two spells
+on one tick must not resolve differently depending on how they arrived.
+
+**How a round ends**, in precedence order — the order *is* the policy:
+
+| | Ends | |
+|---|---|---|
+| Both bases at zero | **match** | A draw, still under `baseDestroyed` |
+| One base at zero | **match** | That side loses on the spot |
+| A side wiped out | round | `annihilation` |
+| Score threshold | round | `zoneControl` |
+| The backstop | round | `timeUp` — zone score, then base HP, then a draw |
+
+Two of those are JQ-308's corrections to a rule that looked right and was not.
+Both bases can fall on one tick — two spells land with nothing serialising them —
+and the loop that walked `SIDES` and returned on the first awarded that match to
+south, which is an accident of iteration order rather than a rule anyone chose.
+And an exact score tie at the backstop is reachable, because the demo is a mirror
+match on a symmetric map; it breaks on the base each side has left, which rewards
+chip damage a pure zone comparison throws away. Level on both is a genuine draw
+and is reported as one.
+
+Seat energy is kept as two ledgers — `start + generated - spent` — rather than a
+running total. At 4 a second on a 20 Hz tick the increment is 0.2, which is not
+representable in binary, and a balance mutated 1800 times over a round drifts
+away from its own history.
+
+Play one headlessly:
+
+```bash
+cd api && python -m app.scripts.match_demo --seconds 12
+```
+
+**Scope.** The five-choose-three package draw is *not* here: the plan phase
+currently composes freely from a roster, and packages are JQ-307's to define.
+JQ-187 grows this into best-of-five with the reset and availability matrix.
 
 ---
 

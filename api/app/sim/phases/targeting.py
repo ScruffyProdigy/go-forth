@@ -10,14 +10,36 @@ quietly overrule every choice the evaluator made — a unit that decided to fini
 a wounded mage would swing at whichever hound wandered closest instead. The
 fallback is unchanged, so a battle with no behavior data acquires exactly the
 targets it always did.
+
+**An intent may also decline a target outright (JQ-329),** which the fallback
+above made impossible. `acquire_target` used to hand back the nearest enemy in
+range for every intent that was not an `attack`, so advance, hold and cast all
+swung anyway — and a unit that had decided to run would have gone on shooting the
+thing it was running from. That is the difference between the two ways of giving
+ground: `withdraw` keeps firing and therefore keeps acquiring, `retreat` does not
+fire and therefore acquires nothing. The refusal has to live here rather than in
+the candidate set, because it is the *fallback* that needed overruling.
 """
 
 from __future__ import annotations
 
+from app.sim.ai.intent import ATTACK_SUPPRESSING_ACTIONS
 from app.sim.geometry import distance
 from app.sim.world import Unit, World, is_alive
 
-__all__ = ["acquire_target", "is_alive"]
+__all__ = ["acquire_target", "declines_target", "is_alive"]
+
+
+def declines_target(unit: Unit) -> bool:
+    """Whether this unit's committed intent refuses to swing at anything.
+
+    Only `retreat` does. A unit with no behaviour data, or none that has decided
+    anything yet, declines nothing — a battle that ships no behaviour library
+    acquires targets exactly as it did before any of this existed.
+    """
+    ai = unit.ai
+    intent = ai.intent if ai is not None else None
+    return intent is not None and intent.kind in ATTACK_SUPPRESSING_ACTIONS
 
 
 def _intended_target(world: World, unit: Unit, limit: float) -> Unit | None:
@@ -47,7 +69,13 @@ def acquire_target(world: World, unit: Unit, reach: float | None = None) -> Unit
 
     Reach defaults to the unit's weapon range. An ability passes its own, so a
     card can reach further than it swings without a second search written for it.
+
+    A retreating unit acquires nothing, whatever is standing next to it and
+    whatever reach is asked for. See `declines_target`.
     """
+    if declines_target(unit):
+        return None
+
     limit = unit.range if reach is None else reach
 
     intended = _intended_target(world, unit, limit)

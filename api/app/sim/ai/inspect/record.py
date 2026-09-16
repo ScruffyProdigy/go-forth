@@ -81,6 +81,12 @@ class CandidateRecord:
     destination: Vec2 | None
     score: float
     contributions: tuple[FactorContribution, ...]
+    #: The ally this candidate covers, when it covers one (JQ-329). Recorded
+    #: beside the reason rather than parsed out of it: which reasons imply a
+    #: protected ally is JQ-329's vocabulary to narrow — `screening` covered
+    #: every screen until it came to mean only the assigned kind — and nothing
+    #: here branches on the string.
+    protecting_id: UnitId | None = None
     #: Which authored tags spoke to *this* candidate, and in which situation
     #: (JQ-330). Per candidate rather than per unit because that is the whole
     #: point of a contextual rule: the same tag is loud on one candidate and
@@ -184,15 +190,14 @@ def _personalities_of(behavior: ResolvedBehavior) -> tuple[PersonalityRecord, ..
 
 
 def _reason_of(decision: Decision) -> str:
-    """JQ-329's reason vocabulary, once `Intent` carries it.
+    """JQ-329's reason vocabulary, straight off the decision.
 
-    `Decision` does not hold the intent — `intent_of` builds it afterwards — so
-    there is nothing to read yet and nothing to invent. Returning empty is the
-    honest answer, and the report renders it as unexplained rather than as a
-    reason called "".
+    Always one of `intent.REASONS`, which JQ-329 pins in a test of its own, or
+    empty for a decision that predates a reason. Never branched on here — the
+    report prints it and nothing else reads it, so adding a reason can never
+    change what a unit does.
     """
-    reason = getattr(decision, "reason", "")
-    return reason if isinstance(reason, str) else ""
+    return decision.reason
 
 
 class DecisionTrace:
@@ -294,6 +299,7 @@ def _split(decision: Decision, keep: int) -> tuple[CandidateRecord, tuple[Candid
             target_id=entry.candidate.target_id,
             ability_id=entry.candidate.ability_id,
             destination=entry.candidate.destination,
+            protecting_id=entry.candidate.protecting_id,
             score=entry.score,
             contributions=entry.contributions,
             influences=entry.influences,
@@ -305,6 +311,7 @@ def _split(decision: Decision, keep: int) -> tuple[CandidateRecord, tuple[Candid
                 target_id=record.target_id,
                 ability_id=record.ability_id,
                 destination=record.destination,
+                protecting_id=record.protecting_id,
                 score=decision.score,
                 contributions=decision.contributions,
                 influences=decision.influences,

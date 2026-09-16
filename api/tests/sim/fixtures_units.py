@@ -23,6 +23,32 @@ HOUND = UnitType(
     speed=60,
     attack_cooldown_seconds=1,
 )
+#: Quick and fragile, and it shoots. The creature that *can* give ground: faster
+#: than the RAM below and slower than the HOUND above, which is what lets one
+#: pair of tests show a kite working and the same kite failing with no flag
+#: anywhere saying which is which (JQ-329).
+SPRITE = UnitType(
+    id="ember-sprite",
+    kind="summon",
+    schools=("fire",),
+    max_hp=40,
+    damage=9,
+    range=70,
+    speed=45,
+    attack_cooldown_seconds=1,
+)
+#: Slow, tough, and it has to walk into contact. The thing a SPRITE outruns.
+RAM = UnitType(
+    id="ash-ram",
+    kind="summon",
+    schools=("fire",),
+    max_hp=120,
+    damage=16,
+    range=18,
+    speed=25,
+    attack_cooldown_seconds=1,
+)
+
 #: A mage that cannot fight back: makes "one side is wiped out" easy to stage.
 WISP = UnitType(
     id="dying-wisp",

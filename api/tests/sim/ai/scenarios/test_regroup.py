@@ -18,6 +18,7 @@ committed, on whose behalf, and when the commitment ended.
 from __future__ import annotations
 
 from app.sim.ai.fixtures import PROTECTIVE, SAMPLE_PERSONALITIES, SAMPLE_PROFILES, SAMPLE_TRAITS
+from app.sim.ai.intent import INTERCEPTING, SCREENING, SCREENING_INFERRED
 from app.sim.ai.profiles import BehaviorLibrary, MagePersonality, PersonalityRef
 from app.sim.geometry import distance
 from app.sim.types import Vec2
@@ -31,6 +32,12 @@ TICKS = 90
 UNIT_TYPES = (ADEPT, HOUND, WISP)
 STAGED = tuple(p for p in SAMPLE_PROFILES if p.type_id in {t.id for t in UNIT_TYPES})
 TROOP = "north-t0"
+
+#: Reasons that mean a unit is still answering a threat on someone's behalf.
+#: Read from JQ-329's published vocabulary rather than spelled out, because
+#: they narrowed `screening` mid-flight and a hand-written list would have
+#: gone on matching the old meaning.
+DEFENDING = (SCREENING, SCREENING_INFERRED, INTERCEPTING)
 
 
 def scattered() -> list[Unit]:
@@ -119,23 +126,37 @@ def test_no_decision_after_the_death_still_carries_an_assignment() -> None:
     assert stale == [], f"{len(stale)} decisions still cited an assignment after the threat died"
 
 
-def test_the_guards_end_the_run_nearer_their_stations_than_the_threat() -> None:
-    """Returning to post, stated as a comparison rather than as a coordinate.
+def test_the_guards_go_back_to_the_troops_business_once_released() -> None:
+    """What "returns to coordinated positions" actually means here.
 
-    The station is what JQ-287's orders phase writes, and a guard that came home
-    is nearer to it than to the place it was drawn out to. Asserted this way
-    because the exact station drifts with formation work, and "came back" is the
-    invariant that survives retuning.
+    An earlier version asserted each guard ended nearer its station than the
+    place it had been drawn to, and it was wrong about the sim rather than about
+    the guards. JQ-287's station is a formation slot that **advances with the
+    troop**, not a fixed home: by the end of this run the stations are 250 units
+    down the field, so a guard marching dutifully toward one is a long way from
+    it, and the comparison measured how far the objective had moved.
+
+    Both guards had in fact regrouped — the trace shows them back on
+    `pressing_objective` and `holding_station`. So that is the assertion: after
+    release they are doing the troop's business and defending nobody, and they
+    have left the place the threat drew them to rather than camping on it.
     """
     result = run()
+    died = death_tick(result)
+    assert died is not None
     drawn_to = Vec2(112, 100)
 
     for guard_id in ("guard-a", "guard-b"):
-        guard = result.unit(guard_id)
-        to_station = distance(guard.position, guard.destination)
-        to_threat = distance(guard.position, drawn_to)
+        after = [r for r in result.by_unit(guard_id) if r.tick > died + 1]
 
-        assert to_station <= to_threat, f"{guard_id} ended nearer the threat than its post"
+        assert after, f"{guard_id} decided nothing after the threat died"
+        defending = [r.reason for r in after if r.reason in DEFENDING]
+        assert defending == [], f"{guard_id} was still defending: {sorted(set(defending))}"
+
+        guard = result.unit(guard_id)
+        assert distance(guard.position, drawn_to) > guard.range, (
+            f"{guard_id} is still sitting where the threat drew it"
+        )
 
 
 def test_a_troop_with_no_threat_is_never_committed_at_all() -> None:

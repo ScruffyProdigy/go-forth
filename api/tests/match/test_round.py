@@ -11,7 +11,7 @@ import pytest
 
 from app.match import fixtures
 from app.match.plan import default_plan, resolve_loadout
-from app.match.round import ENERGY_CAP, AuthoritativeRound
+from app.match.round import ENERGY_CAP, SCORE_THRESHOLD, AuthoritativeRound
 from app.match.wire import CastCommand
 from app.sim.config import SimConfig
 from app.sim.types import SIDES, Vec2
@@ -284,3 +284,167 @@ def test_base_hp_is_carried_out_of_the_round_untouched() -> None:
     # Nothing between here and the next round refills a base (JQ-187), so what
     # comes out is what the next round opens on.
     assert rnd.base_hp()["north"] <= 812.5
+
+
+# --- the outcome policies (JQ-308) -----------------------------------------
+#
+# Staged by putting the world into the state under test rather than by finding a
+# round that happens to reach it. That is the only way to put two endings on the
+# *same tick*, which is exactly where the precedence rules live.
+
+
+def test_both_bases_falling_on_one_tick_is_a_draw() -> None:
+    """Ryan, 2026-09-15: symmetric event, symmetric result. Reachable, because
+    two spells can land on one tick with nothing serialising them."""
+    rnd = make_round()
+    rnd.step()
+    for side in SIDES:
+        rnd.world.bases[side].hp = 0
+    rnd.step()
+
+    ending = rnd.ending
+    assert ending is not None
+    assert ending.kind == "baseDestroyed"
+    assert ending.winner is None
+
+
+def test_a_mutual_destruction_does_not_quietly_become_a_south_win() -> None:
+    """The bug this replaces: a loop walking SIDES returned on the first base at
+    zero, so a double destruction was awarded to `opposing("north")`. An
+    accident of iteration order, not a rule anyone chose."""
+    rnd = make_round()
+    rnd.step()
+    for side in SIDES:
+        rnd.world.bases[side].hp = 0
+    rnd.step()
+
+    assert rnd.ending is not None and rnd.ending.winner is None
+
+
+def test_one_base_falling_still_loses_the_match_for_that_side() -> None:
+    """The complement: making mutual destruction a draw must not stop an
+    ordinary base destruction naming a winner."""
+    rnd = make_round()
+    rnd.step()
+    rnd.world.bases["south"].hp = 0
+    rnd.step()
+
+    ending = rnd.ending
+    assert ending is not None
+    assert ending.kind == "baseDestroyed"
+    assert ending.winner == "north"
+
+
+def test_a_fallen_base_beats_a_score_threshold_on_the_same_tick() -> None:
+    """Precedence, and the one that matters: the side whose base just fell does
+    not get to win on points for the same tick."""
+    rnd = make_round()
+    rnd.step()
+    rnd.world.zone_score["south"] = SCORE_THRESHOLD + 100
+    rnd.world.bases["south"].hp = 0
+    rnd.step()
+
+    assert rnd.ending is not None
+    assert rnd.ending.kind == "baseDestroyed"
+    assert rnd.ending.winner == "north"
+
+
+def test_an_exact_score_tie_at_the_backstop_breaks_on_base_hp() -> None:
+    """Ryan, 2026-09-15. Rewards the chip damage a pure zone comparison throws
+    away, using a number already carried across rounds."""
+    rnd = make_round(seconds=1)
+    run_to_end(rnd)
+    assert rnd.ending is not None and rnd.ending.reason == "timeUp"
+
+    rnd = make_round(seconds=1)
+    while not rnd.over:
+        rnd.world.zone_score["north"] = 40
+        rnd.world.zone_score["south"] = 40
+        rnd.world.bases["north"].hp = 900
+        rnd.world.bases["south"].hp = 700
+        rnd.step()
+
+    ending = rnd.ending
+    assert ending is not None
+    assert ending.reason == "timeUp"
+    assert ending.winner == "north"
+
+
+def test_a_tie_on_score_and_base_hp_is_still_a_draw() -> None:
+    """Never invent a winner. A draw is a real answer."""
+    rnd = make_round(seconds=1)
+    while not rnd.over:
+        rnd.world.zone_score["north"] = 40
+        rnd.world.zone_score["south"] = 40
+        rnd.world.bases["north"].hp = 800
+        rnd.world.bases["south"].hp = 800
+        rnd.step()
+
+    assert rnd.ending is not None
+    assert rnd.ending.winner is None
+
+
+def test_zone_score_still_decides_when_it_is_not_tied() -> None:
+    """The base-HP tiebreak is a tiebreak, not a second criterion: a side ahead
+    on zone score wins even with the weaker base."""
+    rnd = make_round(seconds=1)
+    while not rnd.over:
+        rnd.world.zone_score["north"] = 10
+        rnd.world.zone_score["south"] = 90
+        rnd.world.bases["north"].hp = 1000
+        rnd.world.bases["south"].hp = 200
+        rnd.step()
+
+    assert rnd.ending is not None
+    assert rnd.ending.winner == "south"
+
+
+# --- seat energy accounting -------------------------------------------------
+
+
+def test_the_energy_books_balance_over_a_whole_round() -> None:
+    """JQ-308 asks for energy accounting to be tested. The balance is derived
+    from two ledgers, so this asserts neither ledger was skipped — and that the
+    derived form does not drift the way an accumulated total did."""
+    rnd = make_round(seconds=6, energy=100.0)
+    spell = rnd.loadout_for("north")[0]
+
+    casts = 0
+    while not rnd.over:
+        outcome = rnd.cast(
+            "north",
+            CastCommand(
+                command_id=f"c{rnd.world.tick}",
+                spell_id=spell.spell_id,
+                at=Vec2(187.5, 290.0),
+                tick=rnd.world.tick,
+            ),
+        )
+        casts += 1 if outcome.accepted else 0
+        rnd.step()
+
+    pool = rnd._energy["north"]
+    assert casts > 0
+    assert pool.spent == casts * spell.cost
+    assert pool.current == pool.start + pool.generated - pool.spent
+
+
+def test_energy_never_exceeds_the_cap_however_long_the_round_runs() -> None:
+    rnd = make_round(seconds=20, energy=ENERGY_CAP)
+    for _ in range(200):
+        rnd.step()
+    assert rnd.energy_for("north") == ENERGY_CAP
+
+
+def test_a_refused_cast_spends_nothing() -> None:
+    rnd = make_round(energy=0.0)
+    spell = rnd.loadout_for("north")[0]
+    rnd.step()
+    before = rnd.energy_for("north")
+
+    outcome = rnd.cast(
+        "north",
+        CastCommand(command_id="x", spell_id=spell.spell_id, at=Vec2(187.5, 290.0), tick=rnd.world.tick),
+    )
+    assert not outcome.accepted and outcome.rejection == "notEnoughEnergy"
+    assert rnd.energy_for("north") == before

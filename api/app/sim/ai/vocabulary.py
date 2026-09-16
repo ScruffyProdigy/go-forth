@@ -51,7 +51,7 @@ TraitTag = NewType("TraitTag", str)
 #: definition, never by editing an enum.
 PersonalityTag = NewType("PersonalityTag", str)
 
-ActionKind = Literal["advance", "attack", "cast", "hold"]
+ActionKind = Literal["advance", "attack", "cast", "withdraw", "retreat", "hold"]
 
 #: Declared order, which is also the order candidates are generated in and the
 #: order ties break in. `hold` sits last because it is the fallback, and `cast`
@@ -59,6 +59,12 @@ ActionKind = Literal["advance", "attack", "cast", "hold"]
 #: is merely *as good as* swinging is worth keeping for a moment that is better.
 #: Preferring the ability when it is actually better is scoring's job, not the
 #: tie-break's.
+#:
+#: The two ways of giving ground (JQ-329) sit below both, so that fighting wins an
+#: exact tie against backing off. A unit that is genuinely indifferent between
+#: swinging and leaving should swing: leaving concedes ground, and conceding
+#: ground on a coin-flip is how a line dissolves without anything having decided
+#: to break it.
 ACTION_KINDS: tuple[ActionKind, ...] = get_args(ActionKind)
 
 Context = Literal[
@@ -95,9 +101,19 @@ CONTEXTS: tuple[Context, ...] = get_args(Context)
 
 #: Which verbs count as taking a swing, and which as going to get one. Declared
 #: here rather than matched as literals inside the predicates, so that adding a
-#: verb to `ActionKind` (JQ-329 is adding `withdraw` and `retreat`) is a decision
-#: made once, in the open, about what that verb *is* — rather than a silent
-#: change of meaning wherever a predicate happened to spell the old list out.
+#: verb to `ActionKind` is a decision made once, in the open, about what that
+#: verb *is* — rather than a silent change of meaning wherever a predicate
+#: happened to spell the old list out.
+#:
+#: **Neither of JQ-329's two verbs joins either tuple, and that was decided with
+#: the verbs in hand rather than in advance.** `withdraw` keeps attacking, so it
+#: is tempting to call it committing; it is not, because what it commits to is
+#: *leaving slowly*, and a personality that discounts danger at the moment of a
+#: swing should not thereby discount the danger of backing away. `retreat`
+#: suppresses attacking outright. And neither closes. An author who wants a rule
+#: scoped to giving ground names it in that rule's `actions` field, which says so
+#: out loud instead of inheriting a meaning from a tuple it was never weighed
+#: against.
 COMMITTING_ACTIONS: tuple[ActionKind, ...] = ("attack", "cast")
 CLOSING_ACTIONS: tuple[ActionKind, ...] = ("advance",)
 HOLDING_ACTIONS: tuple[ActionKind, ...] = ("hold",)

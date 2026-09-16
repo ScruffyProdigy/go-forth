@@ -16,6 +16,7 @@ import subprocess
 import sys
 
 from app.sim.ai.fixtures import placeholder_behavior
+from app.sim.ai.intent import ACTION_KINDS
 from app.sim.config import SimConfig
 from app.sim.fixtures import placeholder_battle
 from app.sim.map import TWO_LANE_MAP
@@ -42,6 +43,7 @@ SHORT = SimConfig(max_battle_seconds=SECONDS)
 #: drift that only shows up once two numbers are close enough to change a choice.
 DECISIONS_SCRIPT = """
 from app.sim.ai.fixtures import placeholder_behavior
+from app.sim.ai.intent import ACTION_KINDS
 from app.sim.fixtures import placeholder_battle
 from app.sim.config import SimConfig
 from app.sim.map import TWO_LANE_MAP
@@ -140,7 +142,11 @@ def test_the_decisions_are_not_empty() -> None:
 
     assert units and troops
     assert len(kinds) == len(units)
-    assert all(kind[len("kind=") :] in ("advance", "attack", "hold") for kind in kinds)
+    # Against the declared vocabulary rather than a hand-written list: JQ-329
+    # added `withdraw` and `retreat`, and a literal list has to be edited by
+    # every ticket that adds a verb — failing for the good reason and the bad
+    # one alike.
+    assert all(kind[len("kind=") :] in ACTION_KINDS for kind in kinds)
 
 
 def test_behavior_data_changes_the_battle() -> None:
@@ -159,10 +165,17 @@ def test_the_sample_battle_actually_engages() -> None:
     they never meet, and every determinism test here would stay green while the
     thing they are meant to be checking quietly stopped happening.
 
-    So: across several seeds, the armies must actually fight, and all three
-    verbs must be exercised somewhere in the battle. Sampled rather than pinned
+    So: across several seeds, the armies must actually fight, and the verbs that
+    carry a battle must be exercised somewhere in it. Sampled rather than pinned
     to one seed, because a single-seed assertion is the same trap one layer down.
+
+    Asserted as "at least these", not "exactly these". JQ-329 added `withdraw`
+    and `retreat`, and both are meant to be uncommon — measured at well under one
+    percent of decisions across these seeds, which is what a last resort should
+    look like. An equality here would have to be edited by every ticket that adds
+    a verb, and would fail for the good reason and the bad one alike.
     """
+    carrying = {"advance", "attack", "hold"}
     for seed in (SEED, SEED + 1, SEED + 2, 1, 7):
         battle = placeholder_battle()
         battle.behavior = placeholder_behavior()
@@ -177,4 +190,7 @@ def test_the_sample_battle_actually_engages() -> None:
         }
 
         assert defeats, f"seed {seed}: the two armies never engaged"
-        assert verbs == {"advance", "attack", "hold"}, f"seed {seed}: only {sorted(verbs)} were ever chosen"
+        assert carrying <= verbs, f"seed {seed}: only {sorted(verbs)} were ever chosen"
+        assert verbs <= set(ACTION_KINDS), (
+            f"seed {seed}: {sorted(verbs - set(ACTION_KINDS))} is not an action"
+        )

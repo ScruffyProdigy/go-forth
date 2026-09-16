@@ -8,10 +8,10 @@ invariants rather than on score values**. A scenario that asserted `score ==
 "the ranged unit never ends a tick inside the melee unit's reach" survives
 retuning and still catches the regression.
 
-Four of the seven run today. The other three need JQ-329's positioning, which is
-still in review, and are registered here as pending against it rather than
-quietly left out — `test_registry.py` holds the list honest, so this package says
-what it does not yet cover.
+All seven run. The registry is kept because it is what made the gap legible while
+three of them were blocked — each entry naming the ticket that owed it and the
+invariant it would assert — and because `test_registry.py` still holds the list
+honest against the ticket's own wording.
 """
 
 from __future__ import annotations
@@ -52,18 +52,18 @@ SCENARIOS: tuple[Scenario, ...] = (
     Scenario(
         name="ranged spacing",
         asserts="a ranged unit keeps useful firing distance instead of closing to melee",
-        blocked_on="JQ-329",
+        module="test_ranged_spacing",
     ),
     Scenario(
         name="screening",
         asserts="a durable unit interposes between a threat and what it threatens",
-        blocked_on="JQ-329",
+        module="test_screening",
     ),
     Scenario(
         name="repeated bait",
         asserts="bounded pursuit means a unit cannot be walked away from its station "
         "indefinitely by repeated bait",
-        blocked_on="JQ-329",
+        module="test_repeated_bait",
     ),
     Scenario(
         name="regroup",

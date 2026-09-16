@@ -31,21 +31,14 @@ from typing import Any, Literal
 from app.match import fixtures
 from app.match.plan import SubmittedPlan, to_army_setup
 from app.match.wire import CastCommand, CastRejection, LoadoutSpell, ResolvedCast
-from app.sim.abilities import build_ability_catalog
 from app.sim.ai.fixtures import sample_library
-from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig, max_ticks
-from app.sim.context import create_tick_context
-from app.sim.energy import resolve_school_energy_rules
+from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig
 from app.sim.events import BattleEvent
 from app.sim.map import MapConfig
-from app.sim.resonance import count_resonance
-from app.sim.rng import create_rng
-from app.sim.run_battle import step_battle
-from app.sim.schools import resolve_side_multipliers
-from app.sim.spells import SpellInjection, build_spell_catalog, schedule_injections
+from app.sim.run_battle import BattleResult, create_runner
+from app.sim.spells import SpellInjection
 from app.sim.types import SIDES, Side, Vec2, opposing
-from app.sim.units import build_unit_type_catalog
-from app.sim.world import BattleSetup, World, create_world, is_alive
+from app.sim.world import BattleSetup, World, is_alive
 
 #: Seat energy regained per second of battle. Provisional (JQ-309's scheduling
 #: note): fast enough that a 90-second round affords two or three casts, slow
@@ -63,6 +56,43 @@ ENERGY_CAP = 120.0
 SCORE_THRESHOLD = 240.0
 
 
+@dataclass(slots=True)
+class SeatEnergy:
+    """One seat's spell pool, kept as two ledgers rather than a running total.
+
+    `current` is derived from `start + generated - spent` instead of being a
+    field the two sides adjust, so the books cannot come apart. That is not
+    fastidiousness: at 4 energy a second on a 20 Hz tick the increment is 0.2,
+    which is not representable in binary, and a balance mutated 1800 times over
+    a single round drifts away from its own history. Measured on the previous
+    accumulating version: off by 7e-15 after ten ticks and one spend — enough to
+    make a cast at exactly the cost boundary land differently depending on how
+    long the round had been going, which is the kind of bug nobody reproduces.
+
+    The same hazard `sim/config.to_ticks` calls out for durations ("subtracting
+    0.05 twenty times does not reliably land on zero"), answered the same way.
+    """
+
+    start: float
+    cap: float
+    generated: float = 0.0
+    spent: float = 0.0
+
+    @property
+    def current(self) -> float:
+        return self.start + self.generated - self.spent
+
+    def accrue(self, gain: float) -> None:
+        """Adds a tick's worth, clipped at the cap."""
+        self.generated += min(gain, max(0.0, self.cap - self.current))
+
+    def can_afford(self, cost: float) -> bool:
+        return self.current >= cost
+
+    def spend(self, cost: float) -> None:
+        self.spent += cost
+
+
 @dataclass(frozen=True, slots=True)
 class RoundEnding:
     """Why the round stopped, and what that did to the match.
@@ -74,7 +104,9 @@ class RoundEnding:
     """
 
     kind: Literal["roundComplete", "baseDestroyed"]
-    #: The side that won. None only on a drawn `roundComplete`.
+    #: The side that won. None on a drawn `roundComplete`, and on a
+    #: `baseDestroyed` where *both* bases fell on the same tick — a draw that is
+    #: still a match ending rather than a round one.
     winner: Side | None
     #: Present on `roundComplete` only.
     reason: Literal["zoneControl", "annihilation", "timeUp"] | None = None
@@ -107,10 +139,11 @@ class AuthoritativeRound:
         self.sim_config = sim_config
         self.seed = seed
         self._loadouts = {side: list(loadouts.get(side, [])) for side in SIDES}
-        self._energy = {side: min(starting_energy, ENERGY_CAP) for side in SIDES}
+        self._energy = {
+            side: SeatEnergy(start=min(starting_energy, ENERGY_CAP), cap=ENERGY_CAP) for side in SIDES
+        }
         self._casts: list[ResolvedCast] = []
         self._ending: RoundEnding | None = None
-        self._limit = max_ticks(sim_config)
 
         setup = BattleSetup(
             unit_types=fixtures.unit_types(),
@@ -123,28 +156,23 @@ class AuthoritativeRound:
             spells=fixtures.sim_spells(),
         )
 
-        rng = create_rng(seed)
-        self.world: World = create_world(map_config, setup, rng)
-        self._spell_catalog = build_spell_catalog(setup.spells)
-
-        # Resonance is established off the opening world and never recounted, so
-        # a mage falling at tick 400 costs the mage and not the resonance the
-        # side brought (Ryan, 2026-09-15). Same order as `run_battle`: nothing
-        # between `create_world` and here touches the rng.
-        established = count_resonance(self.world)
-        self._ctx = create_tick_context(
-            config=sim_config,
-            map_config=map_config,
-            multipliers=resolve_side_multipliers([], established),
-            rng=rng,
-            resonance=established,
-            unit_types=build_unit_type_catalog(setup.unit_types),
-            energy_rules=resolve_school_energy_rules([]),
-            abilities=build_ability_catalog(setup.abilities),
-            spells=self._spell_catalog,
-        )
+        # Built by the sim rather than assembled here. The rng, the resonance
+        # count, the multipliers, the catalogs and the tick context are all
+        # `run_battle`'s opening sequence, and a second copy of it in this file
+        # was a copy that could drift — silently, since nothing compares the
+        # two. It already had: the copy left `cast_policy` at its default, so a
+        # unit in a live round decided its casts by a different rule from the
+        # same unit in a headless replay of the same battle.
+        self._runner = create_runner(map_config, [], setup, seed, sim_config)
+        self._limit = self._runner.limit
 
     # ------------------------------------------------------------- reading --
+
+    @property
+    def world(self) -> World:
+        """The live world. Owned by the runner; exposed because everything that
+        projects a snapshot reads it."""
+        return self._runner.world
 
     @property
     def ending(self) -> RoundEnding | None:
@@ -156,7 +184,7 @@ class AuthoritativeRound:
         return self._ending is not None
 
     def energy_for(self, side: Side) -> float:
-        return self._energy[side]
+        return self._energy[side].current
 
     def loadout_for(self, side: Side) -> list[LoadoutSpell]:
         return list(self._loadouts[side])
@@ -168,6 +196,16 @@ class AuthoritativeRound:
     def base_hp(self) -> dict[Side, float]:
         return {side: self.world.bases[side].hp for side in SIDES}
 
+    def result(self) -> BattleResult:
+        """The battle so far, in the sim's own result shape.
+
+        What `run_battle` would have returned, so a played round can be
+        serialised, digested or diffed with the same tools as a headless one —
+        which is what the cross-process determinism check needs, and what a
+        replay will need after it.
+        """
+        return self._runner.result()
+
     # ------------------------------------------------------------- stepping --
 
     def step(self) -> tuple[BattleEvent, ...]:
@@ -175,13 +213,13 @@ class AuthoritativeRound:
         if self._ending is not None:
             return ()
 
-        events = tuple(step_battle(self.world, self._ctx))
+        events = self._runner.step()
 
         # Seat energy accrues on the same clock as the battle, so a round that
         # is paused is not a round in which everyone quietly gets rich.
-        gain = ENERGY_PER_SECOND * self._ctx.seconds_per_tick
+        gain = ENERGY_PER_SECOND * self._runner.ctx.seconds_per_tick
         for side in SIDES:
-            self._energy[side] = min(ENERGY_CAP, self._energy[side] + gain)
+            self._energy[side].accrue(gain)
 
         self._ending = self._decide_ending()
         return events
@@ -192,10 +230,28 @@ class AuthoritativeRound:
         A base falling is settled before anything else that happened on the same
         tick, matching `run_battle`. It has to be: a tick in which a base falls
         *and* a side is wiped out is a match lost, not a round won.
+
+        The order is the policy, so it is written out rather than left to be
+        read off the branches:
+
+        1. **Both bases at zero** — a draw, still under `baseDestroyed`. Two
+           spells can land on one tick and nothing serialises them against each
+           other, so this is reachable rather than theoretical (Ryan,
+           2026-09-15). Checked before the single-base case because a loop that
+           walked `SIDES` and returned on the first would silently award the
+           match to south, which is an accident of iteration order rather than
+           a rule anyone chose.
+        2. **One base at zero** — that side loses the match on the spot, beating
+           a score threshold crossed on the same tick.
+        3. **A side wiped out.**
+        4. **The score threshold**, then the backstop. Both are settled by
+           `_outcome_on_score`, which breaks an exact tie on remaining base HP.
         """
-        for side in SIDES:
-            if self.world.bases[side].hp <= 0:
-                return RoundEnding(kind="baseDestroyed", winner=opposing(side))
+        fallen = tuple(side for side in SIDES if self.world.bases[side].hp <= 0)
+        if len(fallen) == len(SIDES):
+            return RoundEnding(kind="baseDestroyed", winner=None)
+        if fallen:
+            return RoundEnding(kind="baseDestroyed", winner=opposing(fallen[0]))
 
         living = {side: any(u.side == side and is_alive(u) for u in self.world.units) for side in SIDES}
         if not all(living.values()):
@@ -208,18 +264,37 @@ class AuthoritativeRound:
             return RoundEnding(kind="roundComplete", winner=leader, reason="zoneControl")
 
         if self.world.tick >= self._limit:
-            return RoundEnding(kind="roundComplete", winner=self._score_leader(), reason="timeUp")
+            return RoundEnding(kind="roundComplete", winner=self._outcome_on_score(), reason="timeUp")
 
         return None
 
     def _score_leader(self) -> Side | None:
-        """Whoever is ahead on zone score, or None on an exact tie.
-
-        An exact tie is a draw rather than a coin flip. It is reachable — the
-        demo is a mirror match — and a round awarded to whichever side the code
-        happened to check first would be the least explicable loss in the game.
-        """
+        """Whoever is ahead on zone score, or None on an exact tie."""
         north, south = (self.world.zone_score[side] for side in SIDES)
+        if north > south:
+            return "north"
+        if south > north:
+            return "south"
+        return None
+
+    def _outcome_on_score(self) -> Side | None:
+        """The backstop's winner: zone score, then remaining base HP, then a draw.
+
+        An exact score tie is reachable — the demo is a mirror match — and Ryan
+        settled it on 2026-09-15: break it on the base each side has left. A
+        side that spent the round chipping the enemy base has done something a
+        pure zone comparison throws away, and the number is already carried
+        across rounds, so nothing new has to be tracked to read it.
+
+        Level on both is a genuine draw and is reported as one. Awarding it to
+        whichever side the code checked first would be the least explicable loss
+        in the game.
+        """
+        leader = self._score_leader()
+        if leader is not None:
+            return leader
+
+        north, south = (self.world.bases[side].hp for side in SIDES)
         if north > south:
             return "north"
         if south > north:
@@ -249,7 +324,7 @@ class AuthoritativeRound:
         if not self._on_map(command.at):
             return CastOutcome(False, command.command_id, "outOfBounds")
 
-        if self._energy[side] < spell.cost:
+        if not self._energy[side].can_afford(spell.cost):
             return CastOutcome(False, command.command_id, "notEnoughEnergy")
 
         # Scheduled on the next tick, never the tick the client named. The sim
@@ -265,11 +340,13 @@ class AuthoritativeRound:
             # could name its own side could cast as its opponent.
             side=side,
         )
-        self.world.pending_spells = schedule_injections(
-            [*self.world.pending_spells, injection], self._spell_catalog
-        )
+        # Inserted into the already-sorted queue rather than re-sorting it, so a
+        # cast taken live lands exactly where the opening `schedule_injections`
+        # would have put it. Two spells on one tick must not resolve differently
+        # depending on whether they were scheduled up front or arrived live.
+        self._runner.inject(injection)
 
-        self._energy[side] -= spell.cost
+        self._energy[side].spend(spell.cost)
         self._casts.append(
             ResolvedCast(
                 command_id=command.command_id,

@@ -53,8 +53,14 @@ def test_every_runnable_scenario_module_is_a_file_in_this_package() -> None:
 
 
 def test_every_pending_scenario_names_the_ticket_that_unblocks_it() -> None:
+    """Vacuous today, since nothing is pending — and kept deliberately.
+
+    It costs nothing and it is the check that matters the moment somebody adds a
+    scenario for behaviour that does not exist yet, which is how four of these
+    seven started life.
+    """
     for scenario in PENDING:
-        assert scenario.blocked_on == "JQ-329", scenario.name
+        assert scenario.blocked_on, scenario.name
 
 
 def test_every_scenario_says_what_it_asserts() -> None:
@@ -63,10 +69,10 @@ def test_every_scenario_says_what_it_asserts() -> None:
         assert len(scenario.asserts.split()) >= 6, scenario.name
 
 
-def test_the_split_is_four_runnable_and_three_pending() -> None:
-    """Pinned so that landing a pending scenario is a deliberate edit here too."""
-    assert len(RUNNABLE) == 4
-    assert len(PENDING) == 3
+def test_every_scenario_the_ticket_named_now_runs() -> None:
+    """The acceptance criterion, stated as the registry sees it."""
+    assert len(RUNNABLE) == len(SCENARIOS) == len(REQUIRED)
+    assert PENDING == ()
 
 
 def test_no_scenario_module_is_registered_twice() -> None:

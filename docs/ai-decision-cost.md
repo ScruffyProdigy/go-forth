@@ -2,9 +2,9 @@
 
 Two things the JQ-331 acceptance asks to be written down rather than asserted:
 what the decision loop costs at opening-demo density, and what watching it
-through the inspector actually turned up. Both are **provisional** — the numbers
-are one machine's, and the findings are against JQ-328's loop before JQ-329 and
-JQ-330 land.
+through the inspector actually turned up. The numbers are one machine's and the
+tuning is provisional, but the tree is the merged one — JQ-328, JQ-329 and
+JQ-330 all landed.
 
 Reproduce the measurement with:
 
@@ -14,7 +14,7 @@ python -m app.scripts.decision_report --cost
 
 ## Measured cost
 
-Recorded 2026-09-15, on the default two-lane map and the placeholder roster.
+Recorded 2026-09-15 on the merged tree, default two-lane map, placeholder roster.
 
 | | |
 |---|---|
@@ -22,35 +22,37 @@ Recorded 2026-09-15, on the default two-lane map and the placeholder roster.
 | Python | 3.12.14 |
 | Map / seed | `two-lane` / 20260911 |
 | Units at open | 18 |
-| Battle length | 1457 ticks at 20/s |
+| Battle length | 1324 ticks at 20/s |
 | Tick budget | 50.0 ms |
 
 | | |
 |---|---|
-| Decisions traced | 17,924 |
-| Candidates per decision | min 2, mean 2.4, max 9 |
-| Whole battle, untraced | 11,147 ms |
-| Whole battle, traced | 14,477 ms |
-| **Per tick, untraced** | **7.65 ms — 15.3% of budget** |
-| Per tick, traced | 9.94 ms |
-| **Headroom** | **42.35 ms/tick** |
+| Decisions traced | 19,569 |
+| Candidates per decision | min 2, mean 2.5, max 9 |
+| Whole battle, untraced | 17,071 ms |
+| Whole battle, traced | 17,314 ms |
+| **Per tick, untraced** | **12.89 ms — 25.8% of budget** |
+| Per tick, traced | 13.08 ms |
+| **Headroom** | **37.11 ms/tick** |
 
-Two things worth saying plainly about these numbers.
+Three things worth saying plainly.
 
 **The whole battle is timed, not the decision phase alone.** Movement, combat,
-abilities, energy and the per-tick world deep-copy are all inside the 7.65 ms.
-That makes the headroom figure the real one rather than a flattering slice, and
-it means the decision loop's own share is *smaller* than the number shown.
+abilities, energy, coordination and the per-tick world deep-copy are all inside
+the 12.89 ms. That makes the headroom the real one rather than a flattering
+slice, and the decision loop's own share is smaller than the number shown.
 
-**Tracing costs about 2.3 ms/tick, and nobody pays it in a match.** Tracing is
-off unless a developer asks for it; a battle with no trace pays one `is None`
-check per unit per tick.
+**Cost has tripled across the three tickets and is still comfortable.** JQ-328
+alone measured 7.65 ms/tick; JQ-329's oscillation fix took it to 5.63 by
+shortening battles; the merged tree with coordination and threat modelling is
+12.89. A quarter of budget, with the demo's full roster, on a four-year-old
+laptop.
 
-The candidate counts are the number to watch as JQ-329 adds positional
-candidates and JQ-330 adds coordination. A mean of 2.4 says the loop is
-currently choosing between "walk at my post", "walk at that enemy" and "hit the
-thing in reach" — there is a great deal of room under the budget, and the
-ceiling asserted in `tests/sim/ai/test_inspect_cost.py` is 40.
+**Tracing now costs almost nothing** — 0.18 ms/tick, down from 2.3 — because the
+recorder flattens fewer per-candidate structures than it did before `influences`
+moved onto `ScoredCandidate`. Nobody pays it in a match either way: a battle with
+no trace pays one `is None` per unit per tick.
+
 
 ## What the inspector found
 
@@ -58,7 +60,7 @@ These came out of reading actual reports, and are recorded for JQ-313's
 playtests. **None of them is fixed here** — JQ-331 is the tool, and each of
 these belongs to the ticket that owns the behavior.
 
-### 1. `danger` is inert at the opening-demo roster (JQ-329 owns this) — **fixed, in review**
+### 1. `danger` is inert at the opening-demo roster (JQ-329 owns this) — **fixed and merged**
 
 Every report shows the same thing:
 
@@ -76,7 +78,7 @@ from a skirmisher reads as perfectly safe. Recorded here because it means **any
 danger-related tuning done before JQ-329 lands is tuning a number that never
 reaches a decision**.
 
-### 2. Aggressive creatures saturate the danger weight floor — **half-fixed, in review**
+### 2. Aggressive creatures saturate the danger weight floor — **half-fixed and merged**
 
 `cinder-hound` opens at danger 0.75; the `aggressive` trait takes 0.5 off it,
 and a single `reckless` mage takes off the remaining 0.25 and more. The weight
@@ -101,7 +103,7 @@ danger of 0.25 instead of being fearless in every context for a whole battle. A
 better failure rather than an absent one, and both halves are now pinned as
 tests here and on JQ-330's side.
 
-### 3. `hold` and `advance` on the station tie more often than expected — **fixed, in review**
+### 3. `hold` and `advance` on the station tie more often than expected — **fixed and merged**
 
 With danger inert and ally support saturated, a unit already at its post often
 scores `hold` and `advance`-on-station within a rounding error of each other, and
@@ -123,58 +125,66 @@ in geometry".
 ## Profile descriptions vs. visible behavior
 
 The acceptance asks to confirm the one-sentence profile descriptions match what
-units visibly do. Measured over a 20-second battle on seed 20260911, as the
-share of each type's decisions:
+units visibly do. **Re-measured on the merged tree**, one seed, a full 1324-tick
+battle, as the share of each type's chosen actions:
 
-| Profile | advance→enemy | advance→station | attack | hold |
-|---|---|---|---|---|
-| `cinder-hound` | 35% | 7% | **24%** | 35% |
-| `ember-adept` | 48% | 20% | 4% | 28% |
-| `ember-sprite` | 50% | 10% | 6% | 35% |
-| `ash-ram` | 18% | 12% | 0% | **70%** |
-
-Against what the profiles claim:
+| Profile | hold | advance→station | advance→enemy | attack | retreat |
+|---|---|---|---|---|---|
+| `ash-ram` | 90% | 7% | 2% | 1% | — |
+| `cinder-hound` | 82% | 7% | 3% | **9%** | — |
+| `ember-adept` | 50% | 46% | 3% | 0% | 0% |
+| `ember-sprite` | 58% | 37% | 3% | 1% | **2%** |
 
 | Profile | Description says | Verdict |
 |---|---|---|
-| `cinder-hound` | fast, short-ranged, so it closes | **matches.** Highest attack share of any type by a factor of four, and it closes rather than holding station. |
-| `ash-ram` | slow and tough, walks at the objective | **matches, for a non-obvious reason.** The 70% hold looks wrong until you read a record: by tick 118 it has *arrived*, and its only other candidate walks it backwards (advance→enemy scoring −0.515 against hold's +0.078, because that enemy is away from the objective). It walks at the objective and then stands on it. The "ignores what shoots at it" half is untestable while (1) stands. |
-| `ember-sprite` | has reach and keeps it | **cannot be confirmed.** Keeping range is JQ-329's behavior and does not exist yet; today the sprite closes like everything else (50% advance→enemy). |
-| `ember-adept` | wary | **does not match.** A wary mage closes on enemies in 48% of its decisions — more often than the aggressive hound does. This is finding (1) seen from the other end: `wary` buys danger weight 2.5, and 2.5 × 0.00 is 0.00, so the trait that defines this profile currently changes nothing about what it does. |
+| `cinder-hound` | fast, short-ranged, so it closes | **matches.** Nine times the attack share of the adept, and the only type that fights rather than positions. |
+| `ash-ram` | slow and tough, walks at the objective | **matches.** It arrives and then stands on its post — 90% hold is what "arrived" looks like for the slowest creature on the field. |
+| `ember-sprite` | has reach and keeps it | **matches, and only became checkable on this tree.** It is the one type that retreats at all, which is range management showing up in the action mix rather than in a weight. |
+| `ember-adept` | wary | **matches now.** It closes on enemies 3% of the time against the hound's 3% but attacks 0% against the hound's 9% — it positions and declines fights. On JQ-328's tree it closed 48% of the time, more often than the aggressive hound, because `danger` scored 0.00 and the trait that defines it bought nothing. |
 
-One confirmed outright, one confirmed once the report explains it, one blocked on
-JQ-329, and one genuine mismatch that is a symptom of (1) rather than a separate
-problem. Re-run this table once JQ-329 and JQ-330 land — it is the cheapest check
-that the authored descriptions still describe the thing.
+All four confirmed. Two of them were not confirmable before JQ-329, and the
+fourth was an outright mismatch — recorded below as finding (1), fixed by the
+work it prompted.
 
-**Status — re-measured against JQ-329's branch while it was in review.** Both
-outstanding rows resolve, and the whole table should be regenerated here on merge:
+**Reason mix** — 1 seed, full 90-second battle, and *always quote the run length
+beside one of these*: `holding_station` 62.8%, `pressing_objective` 31.4%,
+`pursuing` 1.9%, `engaging` 1.8%, `retreating` 0.8%, `screening_inferred` 0.6%,
+`returned_to_station` 0.3%, `screening` 0.2%, `pursuit_started` 0.1%,
+`intercepting` 0.1%, then `target_switched` and two pursuit-abandonment reasons
+under 0.1%.
 
-| Profile | then | now | |
-|---|---|---|---|
-| `ember-adept` (*wary*) | 48% advance→enemy | **11%**, 62% advance→station | mismatch gone |
-| `cinder-hound` (*aggressive*) | 24% attack | **40%** | still the type that fights most |
-| `ember-sprite` (*keeps reach*) | unconfirmable | **11% attack**, 1% retreat | confirmed |
+Both screen provenances appear in one battle, which is the distinction working
+end to end: `screening` where JQ-330's coordinator named the ally, and
+`screening_inferred` where the unit worked it out for itself.
 
-The wary mage used to close on enemies *more often than the aggressive hound*,
-which was the sharpest single symptom of (1). It now closes less than the hound,
-which is the ordering the descriptions claim.
-
-One caution carried over from that re-run, because it nearly went into this
-document as a fact: an earlier measurement showed the sprite retreating 5% of the
-time and that was cited as confirming "keeps its reach". It was partly an
-artifact — the gate was on useful range rather than on weapon reach, leaving a
-band where a ranged unit could already shoot and was still offered a step, so
-some of that 5% was fidgeting rather than spacing. With the gate on reach it
-falls to 1% while attacks nearly triple. **A row marked confirmed on evidence
-that is partly an artifact is worse than one marked unconfirmable.**
-
-Reproduce the table with:
+Reproduce with:
 
 ```bash
-python -m app.scripts.decision_report --json --seconds 20
+python -m app.scripts.decision_report --cost
+python -m app.scripts.decision_report --json
 ```
 
+### 4. Ranged spacing does not survive a whole battle (open)
+
+Found by packaging the scenarios, and the clearest example of why this ticket
+assembles runs rather than trusting per-behaviour tests.
+
+JQ-329's `a_ranged_unit_keeps_its_distance_from_something_that_has_to_close`
+stages an adept thirty units from a ram and asserts the gap has **grown** by the
+end. It holds on their fixture. Played through the real phase pipeline for sixty
+ticks, with the orders phase rewriting stations underneath, it does not: the
+adept ends **2.4** units from the ram and the sprite **17.0**, both inside its
+reach of 18. `maintaining_range` fires — 14 of the sprite's 60 decisions — and
+then loses to `engaging`.
+
+Neither result is wrong about its own fixture. The divergence is what sixty ticks
+do to a one-decision claim, and it is invisible from either end alone. Recorded
+rather than asserted away in `tests/sim/ai/scenarios/test_ranged_spacing.py`,
+which pins the invariants that do hold: range management is named in the trace, a
+ranged unit hurts a melee unit before contact, and more reach buys more distance.
+
+Worth a look before JQ-313 playtests, since a skirmisher dying in melee is the
+kind of thing a player notices and a test does not.
 
 ## How to read these numbers, and how they were checked
 

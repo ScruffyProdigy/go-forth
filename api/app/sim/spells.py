@@ -59,13 +59,26 @@ def build_spell_catalog(spells: Sequence[Spell]) -> SpellCatalog:
     return MappingProxyType(catalog)
 
 
-def schedule_injections(injections: Sequence[SpellInjection], catalog: SpellCatalog) -> list[SpellInjection]:
-    """Orders the battle's injections so two on the same tick resolve the same way.
+def injection_order(injection: SpellInjection) -> tuple[int, str, str, float, float]:
+    """The sort key two injections are compared on.
 
-    Sorted on the whole envelope rather than on tick alone: two spells landing
-    on one tick must not depend on the order the match layer happened to hand
-    them over in.
+    The whole envelope rather than the tick alone: two spells landing on one
+    tick must not depend on the order the match layer happened to hand them
+    over in. Named rather than inlined because a cast accepted mid-battle is
+    inserted into an already-sorted list (`BattleRunner.inject`) and has to land
+    where this same key would have put it.
     """
+    return (
+        injection.tick,
+        injection.spell_id,
+        injection.side,
+        injection.location.x,
+        injection.location.y,
+    )
+
+
+def schedule_injections(injections: Sequence[SpellInjection], catalog: SpellCatalog) -> list[SpellInjection]:
+    """Orders the battle's injections so two on the same tick resolve the same way."""
     for injection in injections:
         if injection.spell_id not in catalog:
             raise ValueError(f"spell {injection.spell_id} is injected but is not in the spell catalog")
@@ -75,7 +88,4 @@ def schedule_injections(injections: Sequence[SpellInjection], catalog: SpellCata
                 "tick 0 is the opening state, before any phase has run"
             )
 
-    return sorted(
-        injections,
-        key=lambda i: (i.tick, i.spell_id, i.side, i.location.x, i.location.y),
-    )
+    return sorted(injections, key=injection_order)

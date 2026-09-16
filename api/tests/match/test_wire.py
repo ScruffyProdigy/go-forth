@@ -54,12 +54,25 @@ def test_no_module_outside_the_sim_imports_serialize_battle() -> None:
     """The rule holds for the whole server, not just for `wire.py`.
 
     Checked on the import graph rather than on the text, so this file and
-    `wire.py` may go on *explaining* the rule without tripping it. The headless
-    demo is the one legitimate caller outside the sim: printing a battle's
-    canonical text is precisely what it is for.
+    `wire.py` may go on *explaining* the rule without tripping it.
+
+    The headless demos are the legitimate callers outside the sim: printing a
+    battle's canonical text is precisely what they are for, and the determinism
+    checks compare that text across fresh interpreters. What the rule is
+    actually about is the *server* — `wire.py`, `session.py`, `round.py`,
+    `routes.py`, `ws.py` — none of which may put the sim's own serialisation in
+    front of a client. Anything added to this list should be a CLI that prints
+    to stdout and nothing else.
     """
     api_root = WIRE_SOURCE.parents[1]
-    allowed = {Path("scripts/battle_demo.py")}
+    allowed = {
+        Path("scripts/battle_demo.py"),
+        Path("scripts/match_demo.py"),
+        # JQ-331's decision inspector. `--emit battle` prints the canonical text
+        # and nothing else, which is what its determinism checks compare across
+        # fresh interpreters — the same reason the two demos are here.
+        Path("scripts/decision_report.py"),
+    }
 
     offenders = []
     for path in sorted(api_root.rglob("*.py")):
