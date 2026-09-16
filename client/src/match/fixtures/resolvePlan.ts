@@ -1,66 +1,46 @@
 /**
- * The fixture's stand-in for the server's plan resolver (JQ-311).
+ * The local plan resolver the screens ask before a server is connected.
  *
- * It answers the same question `PlanResolver` will be asked over the wire, which
- * is the only thing that has to be true for the screens to be built against it.
- * The magnitudes are invented demo tuning, recorded here (JQ-311's 2026-09-12
- * scheduling note) rather than sent for balance approval: what a spell's numbers
- * *are* is JQ-292 and JQ-297's, and the point of this file is that the client
- * does not decide them either way.
+ * Until JQ-297 this file invented its own magnitudes — a base of 30 plus 11 per
+ * contributing mage — because nothing said what a spell's numbers actually were.
+ * Something does now: `plan/spellResolver.ts` is the calculation, checked case
+ * for case against the server's through `conformance/spell-resolver.json`. So
+ * what is left here is assembly, not rules.
  *
- * Eligibility reuses `plan/derive.ts` because JQ-293 already tested that logic
- * against the design doc, and duplicating it here would mean two client-side
- * answers instead of one. It stays inside `fixtures/` so that when the real
- * resolver lands, the TypeScript copy of the rules leaves with it.
+ * It stays a fixture because of *where* it sits, not what it computes. The
+ * authoritative answer comes from the server at lock-in and the battle runs the
+ * server's snapshot; this is the preview the plan screen shows between taps,
+ * which has to be instant and therefore local (JQ-297: "client consumes resolved
+ * previews or an equivalent local calculation"). JQ-190 wires the screen to the
+ * live session; nothing in `plan/` changes when it does.
  */
 
-import { fieldedMages, spellMenu } from '../../plan/derive.ts';
-import type { PlanState, SpellOption } from '../../plan/types.ts';
-import type { LockBlocker, ResolvedPlan, ResolvedSpell, SpellContributor } from '../resolve.ts';
+import { effectSummary, resolveMenu, resolveSlots } from '../../plan/spellResolver.ts';
+import { deployedMages, displayReason } from '../../plan/derive.ts';
+import type { PlanState } from '../../plan/types.ts';
+import type { LockBlocker, ResolvedPlan, ResolvedSpell } from '../resolve.ts';
 import type { LoadoutSpell } from '../types.ts';
 
-/** Base magnitude of a spell before any fielded mage adds to it. */
-const BASE_MAGNITUDE = 30;
-/** What each fielded mage carrying a tag the spell reads adds to it. */
-const PER_CONTRIBUTOR = 11;
-
-function contributors(plan: PlanState, spell: SpellOption): SpellContributor[] {
-  const reads = spell.reads ?? [];
-  // Mage order, then tag order as the spell lists them — no set iteration, so
-  // the same plan always resolves to the same sentence.
-  return fieldedMages(plan).flatMap((mage) =>
-    reads
-      .filter((tag) => mage.tags.includes(tag))
-      .map((tag) => ({ mageId: mage.id, mageName: mage.name, tag })),
-  );
-}
-
-function effectText(spell: SpellOption, found: readonly SpellContributor[]): string {
-  const magnitude = BASE_MAGNITUDE + PER_CONTRIBUTOR * found.length;
-  if (found.length === 0) return `${spell.text} At ${magnitude}, with nothing fielded to raise it.`;
-  const tags = [...new Set(found.map((entry) => entry.tag))].join(', ');
-  return `${spell.text} At ${magnitude} — ${tags} from ${found.length} fielded mage${
-    found.length === 1 ? '' : 's'
-  }.`;
-}
-
 export function resolvePlanLocally(plan: PlanState): ResolvedPlan {
-  const spells: ResolvedSpell[] = spellMenu(plan).map((entry) => {
-    const found = contributors(plan, entry.spell);
-    return {
-      spellId: entry.spell.id,
-      name: entry.spell.name,
-      cost: entry.spell.cost,
-      effect: effectText(entry.spell, found),
-      eligible: entry.eligible,
-      reason: entry.reason,
-      affordable: entry.affordable,
-      contributors: found,
-    };
+  const menu = resolveMenu({
+    mages: deployedMages(plan),
+    rosterAccess: plan.roster.independentSpellAccess,
+    definitions: plan.roster.spells,
   });
 
-  const slots = plan.spellSlots.map((spellId) =>
-    spellId === null ? null : (spells.find((spell) => spell.spellId === spellId) ?? null),
+  const spells: ResolvedSpell[] = menu.entries.map((entry, index) => ({
+    spellId: entry.spell.spellId,
+    name: entry.spell.name,
+    cost: entry.spell.cost,
+    effect: effectSummary(entry.spell, plan.roster.spells[index].text),
+    eligible: entry.eligible,
+    reason: displayReason(plan.roster.spells[index], entry, plan),
+    affordable: entry.spell.cost <= plan.energy,
+    contributors: entry.spell.contributors,
+  }));
+
+  const slots = resolveSlots(menu, plan.spellSlots).map(
+    (slot) => spells.find((spell) => spell.spellId === slot.spellId) ?? null,
   );
 
   const blockers: LockBlocker[] = [];

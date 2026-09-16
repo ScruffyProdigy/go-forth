@@ -225,7 +225,11 @@ describe('a resolved plan', () => {
     expect(contributors).toHaveTextContent('Emberwright (Evocation)');
     expect(contributors).toHaveTextContent('Emberwright (Reckless)');
     expect(contributors).toHaveTextContent('Pyre Magus (Evocation)');
-    expect(screen.getByText(/At 63 — Evocation, Reckless from 3 fielded mages/)).toBeInTheDocument();
+    // Two Evocation mages raise the damage, one Reckless mage the radius —
+    // separately, each on its own curve, which is JQ-297's whole point.
+    expect(
+      screen.getByText(/damage amount 40 \(\+20 from 2 Evocation mages\); radius 45 \(\+5 from 1 Reckless mage\)/),
+    ).toBeInTheDocument();
   });
 
   it('updates the moment the troops change', async () => {
@@ -238,7 +242,11 @@ describe('a resolved plan', () => {
     await user.click(screen.getByRole('button', { name: /Choose spells/ }));
 
     expect(screen.getByTestId('contributors-fireball')).not.toHaveTextContent('Pyre Magus');
-    expect(screen.getByText(/At 52 — Evocation, Reckless from 2 fielded mages/)).toBeInTheDocument();
+    // Benching Pyre Magus drops Evocation to one and takes 10 off the damage.
+    // The radius is untouched: he was never Reckless.
+    expect(
+      screen.getByText(/damage amount 30 \(\+10 from 1 Evocation mage\); radius 45 \(\+5 from 1 Reckless mage\)/),
+    ).toBeInTheDocument();
   });
 
   it('refuses lock-in while a slot holds a spell the plan no longer grants', async () => {

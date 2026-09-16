@@ -182,7 +182,7 @@ def test_locking_in_after_the_planning_phase_is_refused() -> None:
 
 def test_a_cast_before_the_battle_is_refused() -> None:
     session = make_session()
-    outcome = session.cast("north", CastCommand("c1", "meteor", Vec2(180, 280), 0))
+    outcome = session.cast("north", CastCommand("c1", "fireball", Vec2(180, 280), 0))
     assert outcome["outcome"] == "rejected"
     assert outcome["reason"] == "roundOver"
 
@@ -193,7 +193,7 @@ def test_a_cast_during_the_battle_is_answered_exactly_once() -> None:
     session.lock_in("south", valid_plan())
     session.tick()
 
-    outcome = session.cast("north", CastCommand("c1", "meteor", Vec2(180, 280), 0))
+    outcome = session.cast("north", CastCommand("c1", "fireball", Vec2(180, 280), 0))
     assert outcome["type"] == "castOutcome"
     assert outcome["commandId"] == "c1"
     assert outcome["outcome"] in ("accepted", "rejected")
@@ -204,7 +204,7 @@ def test_an_accepted_cast_appears_in_both_seats_snapshots() -> None:
     session.lock_in("north", valid_plan())
     session.lock_in("south", valid_plan())
     session.tick()
-    session.cast("north", CastCommand("c1", "meteor", Vec2(180, 280), 0))
+    session.cast("north", CastCommand("c1", "fireball", Vec2(180, 280), 0))
 
     for side in SIDES:
         casts = session.snapshot_for(side)["phase"]["battle"]["casts"]

@@ -1,12 +1,16 @@
 /**
  * Plan-phase domain types (JQ-293).
  *
- * These live client-side on purpose. The plan -> sim contract is still moving:
- * orders, formations and deployment placement are JQ-287, and spell selection is
- * JQ-297. Neither has landed, and the JQ-286 sim slice defines neither. Guessing
- * the server's field names now would just be a rename later, so the screen owns
- * its own shape and `fixtures/` is the single seam that gets replaced.
+ * Orders, formations and deployment placement are still the screen's own shape:
+ * JQ-287 settles them server-side and `fixtures/` is the seam that gets replaced.
+ *
+ * **Spells are no longer among them.** JQ-297 landed the resolver, so a spell is
+ * a `SpellDefinition` from `spellResolver.ts` — the same schema the server
+ * authors them in — and eligibility and numbers come from the shared
+ * calculation rather than from a client-side guess at the rules.
  */
+
+import type { SpellDefinition } from './spellResolver.ts';
 
 export type ZoneId = 'A' | 'B' | 'C';
 
@@ -56,31 +60,20 @@ export interface MageOption {
 }
 
 /**
- * What a spell needs before it can be equipped. A spell that reads a tag needs
- * at least one *fielded* mage carrying it — mages left on the bench grant
- * nothing, which is the whole reason troops precede spells (§10 #31).
+ * A player spell, as the roster offers it (JQ-297).
+ *
+ * The whole definition — access rule, base effects and per-effect curves —
+ * rather than a pre-resolved card. The screen has to re-price a spell on every
+ * tap of a troop, and a definition is what `spellResolver.ts` needs to do that
+ * without asking the server. Its authoritative twin is Python's
+ * `SpellDefinition`, and `conformance/spell-resolver.json` is what keeps the two
+ * readings of it the same.
+ *
+ * Replaces JQ-293's `requires` / `reads` pair, which said *which* tags a spell
+ * read and could not say by how much.
  */
-export type SpellRequirement =
-  | { readonly kind: 'always' }
-  | { readonly kind: 'signature'; readonly mageId: string }
-  | { readonly kind: 'tag'; readonly tag: string };
-
-export interface SpellOption {
-  readonly id: string;
-  readonly name: string;
-  readonly cost: number;
-  readonly text: string;
-  readonly requires: SpellRequirement;
-  /**
-   * The tags whose *count among fielded mages* sets this spell's numbers (§4.8).
-   *
-   * Added by JQ-311: a spell's printed text says which tags matter, but nothing
-   * could say by how much, and the opening demo has to show "actual resolved
-   * costs/effects/contributors" rather than a card's printed ones. Resolution
-   * itself belongs to the server — this only names what it reads.
-   */
-  readonly reads?: readonly string[];
-}
+export type { SpellAccess, SpellDefinition } from './spellResolver.ts';
+export type SpellOption = SpellDefinition;
 
 export interface Roster {
   readonly mages: readonly MageOption[];
@@ -88,6 +81,14 @@ export interface Roster {
   readonly summonCounts: Readonly<Record<string, number>>;
   readonly summons: Readonly<Record<string, SummonOption>>;
   readonly spells: readonly SpellOption[];
+  /**
+   * The independent spells this side owns (JQ-292). Explicit data: a spell
+   * absent from this list is not eligible however the field is arranged, and no
+   * tag ever adds it. Preconstructed fills it; a constructed or draft mode would
+   * fill it differently, which is the whole reason it is a roster field rather
+   * than a rule.
+   */
+  readonly independentSpellAccess: readonly string[];
 }
 
 /** A mage plus the summons it supports, plus what it has been told to do. */

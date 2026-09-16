@@ -30,7 +30,7 @@ import sys
 from collections.abc import Sequence
 
 from app.match import fixtures
-from app.match.plan import default_plan, resolve_loadout
+from app.match.plan import default_plan, resolve_snapshot
 from app.match.round import AuthoritativeRound
 from app.match.wire import CastCommand
 from app.sim.config import SimConfig
@@ -53,14 +53,14 @@ SCRIPT: tuple[tuple[int, Side, Vec2], ...] = (
 def play(seed: int, seconds: float | None) -> AuthoritativeRound:
     map_config = fixtures.map_config()
     plan = default_plan(map_config)
-    loadout = resolve_loadout(plan)
+    snapshots = {side: resolve_snapshot(plan, side) for side in SIDES}
 
     sim_config = SimConfig() if seconds is None else SimConfig(max_battle_seconds=seconds)
     rnd = AuthoritativeRound(
         round_number=1,
         map_config=map_config,
         plans={side: plan for side in SIDES},
-        loadouts={side: loadout for side in SIDES},
+        snapshots=snapshots,
         base_hp={side: map_config.bases[side].max_hp for side in SIDES},
         seed=seed,
         sim_config=sim_config,

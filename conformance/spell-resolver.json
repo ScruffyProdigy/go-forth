@@ -1,0 +1,3713 @@
+{
+  "version": 1,
+  "rules": {
+    "slots": 2,
+    "reselectEachRound": true,
+    "snapshotAtLockIn": true
+  },
+  "namespace": "north",
+  "spells": [
+    {
+      "id": "fireball",
+      "name": "Fireball",
+      "cost": 35.0,
+      "text": "A burst of fire, and ground that keeps burning.",
+      "access": {
+        "kind": "signature",
+        "mageTypeId": "adept"
+      },
+      "effects": [
+        {
+          "kind": "areaDamage",
+          "radius": 40,
+          "damage": {
+            "amount": 20,
+            "bonusVsMage": 1.0,
+            "bonusVsBase": 1.5
+          },
+          "hitsBase": true
+        },
+        {
+          "kind": "burningGround",
+          "radius": 40,
+          "damagePerSecond": 4,
+          "durationSeconds": 3,
+          "bonusVsMage": 1.0
+        }
+      ],
+      "scaling": [
+        {
+          "effectIndex": 0,
+          "field": "damage.amount",
+          "tag": "evocation",
+          "perMage": 10,
+          "cap": 30,
+          "threshold": 0
+        },
+        {
+          "effectIndex": 0,
+          "field": "radius",
+          "tag": "reckless",
+          "perMage": 5,
+          "cap": 10,
+          "threshold": 0
+        },
+        {
+          "effectIndex": 1,
+          "field": "damagePerSecond",
+          "tag": "evocation",
+          "perMage": 1.5,
+          "cap": 4.5,
+          "threshold": 0
+        }
+      ]
+    },
+    {
+      "id": "spark",
+      "name": "Spark",
+      "cost": 5.0,
+      "text": "A cheap jolt of flame.",
+      "access": {
+        "kind": "fallback"
+      },
+      "effects": [
+        {
+          "kind": "areaDamage",
+          "radius": 15,
+          "damage": {
+            "amount": 6,
+            "bonusVsMage": 1.0,
+            "bonusVsBase": 1.0
+          },
+          "hitsBase": true
+        }
+      ],
+      "scaling": []
+    },
+    {
+      "id": "veil",
+      "name": "Smoke Veil",
+      "cost": 20.0,
+      "text": "A shove of hot smoke.",
+      "access": {
+        "kind": "independent",
+        "requiresTag": "warding",
+        "minimum": 1
+      },
+      "effects": [
+        {
+          "kind": "knockback",
+          "radius": 30,
+          "distance": 20
+        }
+      ],
+      "scaling": [
+        {
+          "effectIndex": 0,
+          "field": "distance",
+          "tag": "warding",
+          "perMage": 5,
+          "cap": 15,
+          "threshold": 1
+        }
+      ]
+    },
+    {
+      "id": "rite",
+      "name": "Ashen Rite",
+      "cost": 30.0,
+      "text": "A debt called in.",
+      "access": {
+        "kind": "independent",
+        "requiresTag": "necromancy",
+        "minimum": 2
+      },
+      "effects": [
+        {
+          "kind": "areaDamage",
+          "radius": 20,
+          "damage": {
+            "amount": 15,
+            "bonusVsMage": 1.0,
+            "bonusVsBase": 1.0
+          },
+          "hitsBase": true
+        }
+      ],
+      "scaling": []
+    }
+  ],
+  "cases": [
+    {
+      "name": "zero-support",
+      "why": "Nothing fielded: every number is its base, and only the fallback is eligible.",
+      "mages": [],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        null,
+        null
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [],
+          "entries": [
+            {
+              "eligible": false,
+              "reason": "needs its mage on the field",
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 40.0,
+                    "damage": {
+                      "amount": 20.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 4.0,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 0,
+                    "base": 40.0,
+                    "bonus": 0,
+                    "value": 40.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 4.0,
+                    "bonus": 0.0,
+                    "value": 4.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs a fielded warding mage",
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 20.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [],
+          "spells": [],
+          "simSpellIds": []
+        },
+        "snapshotError": null
+      }
+    },
+    {
+      "name": "one-evocation-mage",
+      "why": "One tag at one step. Damage and the burning ground both move; radius does not.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "adept",
+          "name": "m1",
+          "tags": [
+            "evocation"
+          ]
+        }
+      ],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        "fireball",
+        "spark"
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "evocation",
+              "count": 1
+            }
+          ],
+          "entries": [
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 40.0,
+                    "damage": {
+                      "amount": 30.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 5.5,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 1,
+                    "base": 20.0,
+                    "bonus": 10,
+                    "value": 30.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 0,
+                    "base": 40.0,
+                    "bonus": 0,
+                    "value": 40.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 1,
+                    "base": 4.0,
+                    "bonus": 1.5,
+                    "value": 5.5,
+                    "capped": false
+                  }
+                ],
+                "contributors": [
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "evocation"
+                  }
+                ],
+                "grantedBy": [
+                  "m1"
+                ]
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs a fielded warding mage",
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 20.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": "fireball",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": "spark",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [
+            {
+              "tag": "evocation",
+              "count": 1
+            }
+          ],
+          "spells": [
+            {
+              "spellId": "fireball",
+              "name": "Fireball",
+              "cost": 35.0,
+              "access": "signature",
+              "effects": [
+                {
+                  "kind": "areaDamage",
+                  "radius": 40.0,
+                  "damage": {
+                    "amount": 30.0,
+                    "bonusVsMage": 1.0,
+                    "bonusVsBase": 1.5
+                  },
+                  "hitsBase": true
+                },
+                {
+                  "kind": "burningGround",
+                  "radius": 40,
+                  "damagePerSecond": 5.5,
+                  "durationSeconds": 3,
+                  "bonusVsMage": 1.0
+                }
+              ],
+              "scaled": [
+                {
+                  "effectIndex": 0,
+                  "field": "damage.amount",
+                  "tag": "evocation",
+                  "support": 1,
+                  "base": 20.0,
+                  "bonus": 10,
+                  "value": 30.0,
+                  "capped": false
+                },
+                {
+                  "effectIndex": 0,
+                  "field": "radius",
+                  "tag": "reckless",
+                  "support": 0,
+                  "base": 40.0,
+                  "bonus": 0,
+                  "value": 40.0,
+                  "capped": false
+                },
+                {
+                  "effectIndex": 1,
+                  "field": "damagePerSecond",
+                  "tag": "evocation",
+                  "support": 1,
+                  "base": 4.0,
+                  "bonus": 1.5,
+                  "value": 5.5,
+                  "capped": false
+                }
+              ],
+              "contributors": [
+                {
+                  "mageId": "m1",
+                  "mageName": "m1",
+                  "tag": "evocation"
+                }
+              ],
+              "grantedBy": [
+                "m1"
+              ]
+            },
+            {
+              "spellId": "spark",
+              "name": "Spark",
+              "cost": 5.0,
+              "access": "fallback",
+              "effects": [
+                {
+                  "kind": "areaDamage",
+                  "radius": 15,
+                  "damage": {
+                    "amount": 6,
+                    "bonusVsMage": 1.0,
+                    "bonusVsBase": 1.0
+                  },
+                  "hitsBase": true
+                }
+              ],
+              "scaled": [],
+              "contributors": [],
+              "grantedBy": []
+            }
+          ],
+          "simSpellIds": [
+            "north:fireball",
+            "north:spark"
+          ]
+        },
+        "snapshotError": null
+      }
+    },
+    {
+      "name": "multi-tag-split",
+      "why": "One Evocation mage and two Reckless ones move damage and radius by different amounts.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "adept",
+          "name": "m1",
+          "tags": [
+            "evocation"
+          ]
+        },
+        {
+          "instanceId": "m2",
+          "typeId": "brute",
+          "name": "m2",
+          "tags": [
+            "reckless"
+          ]
+        },
+        {
+          "instanceId": "m3",
+          "typeId": "brute",
+          "name": "m3",
+          "tags": [
+            "reckless"
+          ]
+        }
+      ],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        "fireball",
+        null
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "evocation",
+              "count": 1
+            },
+            {
+              "tag": "reckless",
+              "count": 2
+            }
+          ],
+          "entries": [
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 50.0,
+                    "damage": {
+                      "amount": 30.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 5.5,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 1,
+                    "base": 20.0,
+                    "bonus": 10,
+                    "value": 30.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 2,
+                    "base": 40.0,
+                    "bonus": 10,
+                    "value": 50.0,
+                    "capped": true
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 1,
+                    "base": 4.0,
+                    "bonus": 1.5,
+                    "value": 5.5,
+                    "capped": false
+                  }
+                ],
+                "contributors": [
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "evocation"
+                  },
+                  {
+                    "mageId": "m2",
+                    "mageName": "m2",
+                    "tag": "reckless"
+                  },
+                  {
+                    "mageId": "m3",
+                    "mageName": "m3",
+                    "tag": "reckless"
+                  }
+                ],
+                "grantedBy": [
+                  "m1"
+                ]
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs a fielded warding mage",
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 20.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": "fireball",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [
+            {
+              "tag": "evocation",
+              "count": 1
+            },
+            {
+              "tag": "reckless",
+              "count": 2
+            }
+          ],
+          "spells": [
+            {
+              "spellId": "fireball",
+              "name": "Fireball",
+              "cost": 35.0,
+              "access": "signature",
+              "effects": [
+                {
+                  "kind": "areaDamage",
+                  "radius": 50.0,
+                  "damage": {
+                    "amount": 30.0,
+                    "bonusVsMage": 1.0,
+                    "bonusVsBase": 1.5
+                  },
+                  "hitsBase": true
+                },
+                {
+                  "kind": "burningGround",
+                  "radius": 40,
+                  "damagePerSecond": 5.5,
+                  "durationSeconds": 3,
+                  "bonusVsMage": 1.0
+                }
+              ],
+              "scaled": [
+                {
+                  "effectIndex": 0,
+                  "field": "damage.amount",
+                  "tag": "evocation",
+                  "support": 1,
+                  "base": 20.0,
+                  "bonus": 10,
+                  "value": 30.0,
+                  "capped": false
+                },
+                {
+                  "effectIndex": 0,
+                  "field": "radius",
+                  "tag": "reckless",
+                  "support": 2,
+                  "base": 40.0,
+                  "bonus": 10,
+                  "value": 50.0,
+                  "capped": true
+                },
+                {
+                  "effectIndex": 1,
+                  "field": "damagePerSecond",
+                  "tag": "evocation",
+                  "support": 1,
+                  "base": 4.0,
+                  "bonus": 1.5,
+                  "value": 5.5,
+                  "capped": false
+                }
+              ],
+              "contributors": [
+                {
+                  "mageId": "m1",
+                  "mageName": "m1",
+                  "tag": "evocation"
+                },
+                {
+                  "mageId": "m2",
+                  "mageName": "m2",
+                  "tag": "reckless"
+                },
+                {
+                  "mageId": "m3",
+                  "mageName": "m3",
+                  "tag": "reckless"
+                }
+              ],
+              "grantedBy": [
+                "m1"
+              ]
+            }
+          ],
+          "simSpellIds": [
+            "north:fireball"
+          ]
+        },
+        "snapshotError": null
+      }
+    },
+    {
+      "name": "dual-tagged-mage",
+      "why": "One mage carrying both tags raises each number once. Nothing multiplies.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "adept",
+          "name": "m1",
+          "tags": [
+            "evocation",
+            "reckless"
+          ]
+        }
+      ],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        "fireball",
+        "spark"
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "evocation",
+              "count": 1
+            },
+            {
+              "tag": "reckless",
+              "count": 1
+            }
+          ],
+          "entries": [
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 45.0,
+                    "damage": {
+                      "amount": 30.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 5.5,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 1,
+                    "base": 20.0,
+                    "bonus": 10,
+                    "value": 30.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 1,
+                    "base": 40.0,
+                    "bonus": 5,
+                    "value": 45.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 1,
+                    "base": 4.0,
+                    "bonus": 1.5,
+                    "value": 5.5,
+                    "capped": false
+                  }
+                ],
+                "contributors": [
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "evocation"
+                  },
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "reckless"
+                  }
+                ],
+                "grantedBy": [
+                  "m1"
+                ]
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs a fielded warding mage",
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 20.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": "fireball",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": "spark",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [
+            {
+              "tag": "evocation",
+              "count": 1
+            },
+            {
+              "tag": "reckless",
+              "count": 1
+            }
+          ],
+          "spells": [
+            {
+              "spellId": "fireball",
+              "name": "Fireball",
+              "cost": 35.0,
+              "access": "signature",
+              "effects": [
+                {
+                  "kind": "areaDamage",
+                  "radius": 45.0,
+                  "damage": {
+                    "amount": 30.0,
+                    "bonusVsMage": 1.0,
+                    "bonusVsBase": 1.5
+                  },
+                  "hitsBase": true
+                },
+                {
+                  "kind": "burningGround",
+                  "radius": 40,
+                  "damagePerSecond": 5.5,
+                  "durationSeconds": 3,
+                  "bonusVsMage": 1.0
+                }
+              ],
+              "scaled": [
+                {
+                  "effectIndex": 0,
+                  "field": "damage.amount",
+                  "tag": "evocation",
+                  "support": 1,
+                  "base": 20.0,
+                  "bonus": 10,
+                  "value": 30.0,
+                  "capped": false
+                },
+                {
+                  "effectIndex": 0,
+                  "field": "radius",
+                  "tag": "reckless",
+                  "support": 1,
+                  "base": 40.0,
+                  "bonus": 5,
+                  "value": 45.0,
+                  "capped": false
+                },
+                {
+                  "effectIndex": 1,
+                  "field": "damagePerSecond",
+                  "tag": "evocation",
+                  "support": 1,
+                  "base": 4.0,
+                  "bonus": 1.5,
+                  "value": 5.5,
+                  "capped": false
+                }
+              ],
+              "contributors": [
+                {
+                  "mageId": "m1",
+                  "mageName": "m1",
+                  "tag": "evocation"
+                },
+                {
+                  "mageId": "m1",
+                  "mageName": "m1",
+                  "tag": "reckless"
+                }
+              ],
+              "grantedBy": [
+                "m1"
+              ]
+            },
+            {
+              "spellId": "spark",
+              "name": "Spark",
+              "cost": 5.0,
+              "access": "fallback",
+              "effects": [
+                {
+                  "kind": "areaDamage",
+                  "radius": 15,
+                  "damage": {
+                    "amount": 6,
+                    "bonusVsMage": 1.0,
+                    "bonusVsBase": 1.0
+                  },
+                  "hitsBase": true
+                }
+              ],
+              "scaled": [],
+              "contributors": [],
+              "grantedBy": []
+            }
+          ],
+          "simSpellIds": [
+            "north:fireball",
+            "north:spark"
+          ]
+        },
+        "snapshotError": null
+      }
+    },
+    {
+      "name": "duplicate-signature-grants",
+      "why": "Two of the same mage: one menu entry, two grantors, support counted twice.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "adept",
+          "name": "m1",
+          "tags": [
+            "evocation",
+            "reckless"
+          ]
+        },
+        {
+          "instanceId": "m2",
+          "typeId": "adept",
+          "name": "m2",
+          "tags": [
+            "evocation",
+            "reckless"
+          ]
+        }
+      ],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        "fireball",
+        null
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "evocation",
+              "count": 2
+            },
+            {
+              "tag": "reckless",
+              "count": 2
+            }
+          ],
+          "entries": [
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 50.0,
+                    "damage": {
+                      "amount": 40.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 7.0,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 2,
+                    "base": 20.0,
+                    "bonus": 20,
+                    "value": 40.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 2,
+                    "base": 40.0,
+                    "bonus": 10,
+                    "value": 50.0,
+                    "capped": true
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 2,
+                    "base": 4.0,
+                    "bonus": 3.0,
+                    "value": 7.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "evocation"
+                  },
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "reckless"
+                  },
+                  {
+                    "mageId": "m2",
+                    "mageName": "m2",
+                    "tag": "evocation"
+                  },
+                  {
+                    "mageId": "m2",
+                    "mageName": "m2",
+                    "tag": "reckless"
+                  }
+                ],
+                "grantedBy": [
+                  "m1",
+                  "m2"
+                ]
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs a fielded warding mage",
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 20.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": "fireball",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [
+            {
+              "tag": "evocation",
+              "count": 2
+            },
+            {
+              "tag": "reckless",
+              "count": 2
+            }
+          ],
+          "spells": [
+            {
+              "spellId": "fireball",
+              "name": "Fireball",
+              "cost": 35.0,
+              "access": "signature",
+              "effects": [
+                {
+                  "kind": "areaDamage",
+                  "radius": 50.0,
+                  "damage": {
+                    "amount": 40.0,
+                    "bonusVsMage": 1.0,
+                    "bonusVsBase": 1.5
+                  },
+                  "hitsBase": true
+                },
+                {
+                  "kind": "burningGround",
+                  "radius": 40,
+                  "damagePerSecond": 7.0,
+                  "durationSeconds": 3,
+                  "bonusVsMage": 1.0
+                }
+              ],
+              "scaled": [
+                {
+                  "effectIndex": 0,
+                  "field": "damage.amount",
+                  "tag": "evocation",
+                  "support": 2,
+                  "base": 20.0,
+                  "bonus": 20,
+                  "value": 40.0,
+                  "capped": false
+                },
+                {
+                  "effectIndex": 0,
+                  "field": "radius",
+                  "tag": "reckless",
+                  "support": 2,
+                  "base": 40.0,
+                  "bonus": 10,
+                  "value": 50.0,
+                  "capped": true
+                },
+                {
+                  "effectIndex": 1,
+                  "field": "damagePerSecond",
+                  "tag": "evocation",
+                  "support": 2,
+                  "base": 4.0,
+                  "bonus": 3.0,
+                  "value": 7.0,
+                  "capped": false
+                }
+              ],
+              "contributors": [
+                {
+                  "mageId": "m1",
+                  "mageName": "m1",
+                  "tag": "evocation"
+                },
+                {
+                  "mageId": "m1",
+                  "mageName": "m1",
+                  "tag": "reckless"
+                },
+                {
+                  "mageId": "m2",
+                  "mageName": "m2",
+                  "tag": "evocation"
+                },
+                {
+                  "mageId": "m2",
+                  "mageName": "m2",
+                  "tag": "reckless"
+                }
+              ],
+              "grantedBy": [
+                "m1",
+                "m2"
+              ]
+            }
+          ],
+          "simSpellIds": [
+            "north:fireball"
+          ]
+        },
+        "snapshotError": null
+      }
+    },
+    {
+      "name": "independent-threshold-unlocks-without-raising",
+      "why": "One warding mage makes the Veil legal and adds nothing to it.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "warden",
+          "name": "m1",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        }
+      ],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        "veil",
+        "spark"
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "patient",
+              "count": 1
+            },
+            {
+              "tag": "warding",
+              "count": 1
+            }
+          ],
+          "entries": [
+            {
+              "eligible": false,
+              "reason": "needs its mage on the field",
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 40.0,
+                    "damage": {
+                      "amount": 20.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 4.0,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 0,
+                    "base": 40.0,
+                    "bonus": 0,
+                    "value": 40.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 4.0,
+                    "bonus": 0.0,
+                    "value": 4.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 20.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 1,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "warding"
+                  }
+                ],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": "veil",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": "spark",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [
+            {
+              "tag": "patient",
+              "count": 1
+            },
+            {
+              "tag": "warding",
+              "count": 1
+            }
+          ],
+          "spells": [
+            {
+              "spellId": "veil",
+              "name": "Smoke Veil",
+              "cost": 20.0,
+              "access": "independent",
+              "effects": [
+                {
+                  "kind": "knockback",
+                  "radius": 30,
+                  "distance": 20.0
+                }
+              ],
+              "scaled": [
+                {
+                  "effectIndex": 0,
+                  "field": "distance",
+                  "tag": "warding",
+                  "support": 1,
+                  "base": 20.0,
+                  "bonus": 0,
+                  "value": 20.0,
+                  "capped": false
+                }
+              ],
+              "contributors": [
+                {
+                  "mageId": "m1",
+                  "mageName": "m1",
+                  "tag": "warding"
+                }
+              ],
+              "grantedBy": []
+            },
+            {
+              "spellId": "spark",
+              "name": "Spark",
+              "cost": 5.0,
+              "access": "fallback",
+              "effects": [
+                {
+                  "kind": "areaDamage",
+                  "radius": 15,
+                  "damage": {
+                    "amount": 6,
+                    "bonusVsMage": 1.0,
+                    "bonusVsBase": 1.0
+                  },
+                  "hitsBase": true
+                }
+              ],
+              "scaled": [],
+              "contributors": [],
+              "grantedBy": []
+            }
+          ],
+          "simSpellIds": [
+            "north:veil",
+            "north:spark"
+          ]
+        },
+        "snapshotError": null
+      }
+    },
+    {
+      "name": "independent-exactly-on-the-cap",
+      "why": "Four warding mages land on the cap exactly. Reported as capped.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "warden",
+          "name": "m1",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        },
+        {
+          "instanceId": "m2",
+          "typeId": "warden",
+          "name": "m2",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        },
+        {
+          "instanceId": "m3",
+          "typeId": "warden",
+          "name": "m3",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        },
+        {
+          "instanceId": "m4",
+          "typeId": "warden",
+          "name": "m4",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        }
+      ],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        "veil",
+        null
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "patient",
+              "count": 4
+            },
+            {
+              "tag": "warding",
+              "count": 4
+            }
+          ],
+          "entries": [
+            {
+              "eligible": false,
+              "reason": "needs its mage on the field",
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 40.0,
+                    "damage": {
+                      "amount": 20.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 4.0,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 0,
+                    "base": 40.0,
+                    "bonus": 0,
+                    "value": 40.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 4.0,
+                    "bonus": 0.0,
+                    "value": 4.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 35.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 4,
+                    "base": 20.0,
+                    "bonus": 15,
+                    "value": 35.0,
+                    "capped": true
+                  }
+                ],
+                "contributors": [
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "warding"
+                  },
+                  {
+                    "mageId": "m2",
+                    "mageName": "m2",
+                    "tag": "warding"
+                  },
+                  {
+                    "mageId": "m3",
+                    "mageName": "m3",
+                    "tag": "warding"
+                  },
+                  {
+                    "mageId": "m4",
+                    "mageName": "m4",
+                    "tag": "warding"
+                  }
+                ],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": "veil",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [
+            {
+              "tag": "patient",
+              "count": 4
+            },
+            {
+              "tag": "warding",
+              "count": 4
+            }
+          ],
+          "spells": [
+            {
+              "spellId": "veil",
+              "name": "Smoke Veil",
+              "cost": 20.0,
+              "access": "independent",
+              "effects": [
+                {
+                  "kind": "knockback",
+                  "radius": 30,
+                  "distance": 35.0
+                }
+              ],
+              "scaled": [
+                {
+                  "effectIndex": 0,
+                  "field": "distance",
+                  "tag": "warding",
+                  "support": 4,
+                  "base": 20.0,
+                  "bonus": 15,
+                  "value": 35.0,
+                  "capped": true
+                }
+              ],
+              "contributors": [
+                {
+                  "mageId": "m1",
+                  "mageName": "m1",
+                  "tag": "warding"
+                },
+                {
+                  "mageId": "m2",
+                  "mageName": "m2",
+                  "tag": "warding"
+                },
+                {
+                  "mageId": "m3",
+                  "mageName": "m3",
+                  "tag": "warding"
+                },
+                {
+                  "mageId": "m4",
+                  "mageName": "m4",
+                  "tag": "warding"
+                }
+              ],
+              "grantedBy": []
+            }
+          ],
+          "simSpellIds": [
+            "north:veil"
+          ]
+        },
+        "snapshotError": null
+      }
+    },
+    {
+      "name": "independent-past-the-cap",
+      "why": "Nine warding mages get no more than four did.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "warden",
+          "name": "m1",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        },
+        {
+          "instanceId": "m2",
+          "typeId": "warden",
+          "name": "m2",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        },
+        {
+          "instanceId": "m3",
+          "typeId": "warden",
+          "name": "m3",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        },
+        {
+          "instanceId": "m4",
+          "typeId": "warden",
+          "name": "m4",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        },
+        {
+          "instanceId": "m5",
+          "typeId": "warden",
+          "name": "m5",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        },
+        {
+          "instanceId": "m6",
+          "typeId": "warden",
+          "name": "m6",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        },
+        {
+          "instanceId": "m7",
+          "typeId": "warden",
+          "name": "m7",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        },
+        {
+          "instanceId": "m8",
+          "typeId": "warden",
+          "name": "m8",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        },
+        {
+          "instanceId": "m9",
+          "typeId": "warden",
+          "name": "m9",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        }
+      ],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        "veil",
+        null
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "patient",
+              "count": 9
+            },
+            {
+              "tag": "warding",
+              "count": 9
+            }
+          ],
+          "entries": [
+            {
+              "eligible": false,
+              "reason": "needs its mage on the field",
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 40.0,
+                    "damage": {
+                      "amount": 20.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 4.0,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 0,
+                    "base": 40.0,
+                    "bonus": 0,
+                    "value": 40.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 4.0,
+                    "bonus": 0.0,
+                    "value": 4.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 35.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 9,
+                    "base": 20.0,
+                    "bonus": 15,
+                    "value": 35.0,
+                    "capped": true
+                  }
+                ],
+                "contributors": [
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "warding"
+                  },
+                  {
+                    "mageId": "m2",
+                    "mageName": "m2",
+                    "tag": "warding"
+                  },
+                  {
+                    "mageId": "m3",
+                    "mageName": "m3",
+                    "tag": "warding"
+                  },
+                  {
+                    "mageId": "m4",
+                    "mageName": "m4",
+                    "tag": "warding"
+                  },
+                  {
+                    "mageId": "m5",
+                    "mageName": "m5",
+                    "tag": "warding"
+                  },
+                  {
+                    "mageId": "m6",
+                    "mageName": "m6",
+                    "tag": "warding"
+                  },
+                  {
+                    "mageId": "m7",
+                    "mageName": "m7",
+                    "tag": "warding"
+                  },
+                  {
+                    "mageId": "m8",
+                    "mageName": "m8",
+                    "tag": "warding"
+                  },
+                  {
+                    "mageId": "m9",
+                    "mageName": "m9",
+                    "tag": "warding"
+                  }
+                ],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": "veil",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [
+            {
+              "tag": "patient",
+              "count": 9
+            },
+            {
+              "tag": "warding",
+              "count": 9
+            }
+          ],
+          "spells": [
+            {
+              "spellId": "veil",
+              "name": "Smoke Veil",
+              "cost": 20.0,
+              "access": "independent",
+              "effects": [
+                {
+                  "kind": "knockback",
+                  "radius": 30,
+                  "distance": 35.0
+                }
+              ],
+              "scaled": [
+                {
+                  "effectIndex": 0,
+                  "field": "distance",
+                  "tag": "warding",
+                  "support": 9,
+                  "base": 20.0,
+                  "bonus": 15,
+                  "value": 35.0,
+                  "capped": true
+                }
+              ],
+              "contributors": [
+                {
+                  "mageId": "m1",
+                  "mageName": "m1",
+                  "tag": "warding"
+                },
+                {
+                  "mageId": "m2",
+                  "mageName": "m2",
+                  "tag": "warding"
+                },
+                {
+                  "mageId": "m3",
+                  "mageName": "m3",
+                  "tag": "warding"
+                },
+                {
+                  "mageId": "m4",
+                  "mageName": "m4",
+                  "tag": "warding"
+                },
+                {
+                  "mageId": "m5",
+                  "mageName": "m5",
+                  "tag": "warding"
+                },
+                {
+                  "mageId": "m6",
+                  "mageName": "m6",
+                  "tag": "warding"
+                },
+                {
+                  "mageId": "m7",
+                  "mageName": "m7",
+                  "tag": "warding"
+                },
+                {
+                  "mageId": "m8",
+                  "mageName": "m8",
+                  "tag": "warding"
+                },
+                {
+                  "mageId": "m9",
+                  "mageName": "m9",
+                  "tag": "warding"
+                }
+              ],
+              "grantedBy": []
+            }
+          ],
+          "simSpellIds": [
+            "north:veil"
+          ]
+        },
+        "snapshotError": null
+      }
+    },
+    {
+      "name": "independent-not-on-the-roster",
+      "why": "The tag is carried and the spell is still refused: access is explicit data.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "warden",
+          "name": "m1",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        }
+      ],
+      "rosterAccess": [],
+      "selection": [
+        null,
+        null
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "patient",
+              "count": 1
+            },
+            {
+              "tag": "warding",
+              "count": 1
+            }
+          ],
+          "entries": [
+            {
+              "eligible": false,
+              "reason": "needs its mage on the field",
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 40.0,
+                    "damage": {
+                      "amount": 20.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 4.0,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 0,
+                    "base": 40.0,
+                    "bonus": 0,
+                    "value": 40.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 4.0,
+                    "bonus": 0.0,
+                    "value": 4.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "is not on this roster",
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 20.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 1,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "warding"
+                  }
+                ],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "is not on this roster",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [
+            {
+              "tag": "patient",
+              "count": 1
+            },
+            {
+              "tag": "warding",
+              "count": 1
+            }
+          ],
+          "spells": [],
+          "simSpellIds": []
+        },
+        "snapshotError": null
+      }
+    },
+    {
+      "name": "independent-minimum-not-met",
+      "why": "One necromancy mage against a minimum of two, reported in the plural.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "acolyte",
+          "name": "m1",
+          "tags": [
+            "necromancy"
+          ]
+        }
+      ],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        null,
+        null
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "necromancy",
+              "count": 1
+            }
+          ],
+          "entries": [
+            {
+              "eligible": false,
+              "reason": "needs its mage on the field",
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 40.0,
+                    "damage": {
+                      "amount": 20.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 4.0,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 0,
+                    "base": 40.0,
+                    "bonus": 0,
+                    "value": 40.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 4.0,
+                    "bonus": 0.0,
+                    "value": 4.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs a fielded warding mage",
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 20.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [
+            {
+              "tag": "necromancy",
+              "count": 1
+            }
+          ],
+          "spells": [],
+          "simSpellIds": []
+        },
+        "snapshotError": null
+      }
+    },
+    {
+      "name": "a-tag-is-not-a-faction",
+      "why": "A mage tagged `artifice` unlocks nothing but the fallback.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "smith",
+          "name": "m1",
+          "tags": [
+            "artifice"
+          ]
+        }
+      ],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        null,
+        null
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "artifice",
+              "count": 1
+            }
+          ],
+          "entries": [
+            {
+              "eligible": false,
+              "reason": "needs its mage on the field",
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 40.0,
+                    "damage": {
+                      "amount": 20.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 4.0,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 0,
+                    "base": 40.0,
+                    "bonus": 0,
+                    "value": 40.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 4.0,
+                    "bonus": 0.0,
+                    "value": 4.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs a fielded warding mage",
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 20.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": null,
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [
+            {
+              "tag": "artifice",
+              "count": 1
+            }
+          ],
+          "spells": [],
+          "simSpellIds": []
+        },
+        "snapshotError": null
+      }
+    },
+    {
+      "name": "troop-edit-strands-a-slot",
+      "why": "The Adept has been swapped out and the Fireball slot is now illegal.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "warden",
+          "name": "m1",
+          "tags": [
+            "warding",
+            "patient"
+          ]
+        }
+      ],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        "fireball",
+        "veil"
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "patient",
+              "count": 1
+            },
+            {
+              "tag": "warding",
+              "count": 1
+            }
+          ],
+          "entries": [
+            {
+              "eligible": false,
+              "reason": "needs its mage on the field",
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 40.0,
+                    "damage": {
+                      "amount": 20.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 4.0,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 0,
+                    "base": 40.0,
+                    "bonus": 0,
+                    "value": 40.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 0,
+                    "base": 4.0,
+                    "bonus": 0.0,
+                    "value": 4.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 20.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 1,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "warding"
+                  }
+                ],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": "fireball",
+            "eligible": false,
+            "reason": "needs its mage on the field",
+            "stranded": true
+          },
+          {
+            "index": 1,
+            "spellId": "veil",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": null,
+        "snapshotError": "spell 1 — fireball needs its mage on the field"
+      }
+    },
+    {
+      "name": "one-spell-in-both-slots",
+      "why": "Two buttons for one spell collapse to one entry in the battle's catalog.",
+      "mages": [
+        {
+          "instanceId": "m1",
+          "typeId": "adept",
+          "name": "m1",
+          "tags": [
+            "evocation",
+            "reckless"
+          ]
+        }
+      ],
+      "rosterAccess": [
+        "veil",
+        "rite"
+      ],
+      "selection": [
+        "spark",
+        "spark"
+      ],
+      "expected": {
+        "menu": {
+          "tagSupport": [
+            {
+              "tag": "evocation",
+              "count": 1
+            },
+            {
+              "tag": "reckless",
+              "count": 1
+            }
+          ],
+          "entries": [
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "fireball",
+                "name": "Fireball",
+                "cost": 35.0,
+                "access": "signature",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 45.0,
+                    "damage": {
+                      "amount": 30.0,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.5
+                    },
+                    "hitsBase": true
+                  },
+                  {
+                    "kind": "burningGround",
+                    "radius": 40,
+                    "damagePerSecond": 5.5,
+                    "durationSeconds": 3,
+                    "bonusVsMage": 1.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "damage.amount",
+                    "tag": "evocation",
+                    "support": 1,
+                    "base": 20.0,
+                    "bonus": 10,
+                    "value": 30.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 0,
+                    "field": "radius",
+                    "tag": "reckless",
+                    "support": 1,
+                    "base": 40.0,
+                    "bonus": 5,
+                    "value": 45.0,
+                    "capped": false
+                  },
+                  {
+                    "effectIndex": 1,
+                    "field": "damagePerSecond",
+                    "tag": "evocation",
+                    "support": 1,
+                    "base": 4.0,
+                    "bonus": 1.5,
+                    "value": 5.5,
+                    "capped": false
+                  }
+                ],
+                "contributors": [
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "evocation"
+                  },
+                  {
+                    "mageId": "m1",
+                    "mageName": "m1",
+                    "tag": "reckless"
+                  }
+                ],
+                "grantedBy": [
+                  "m1"
+                ]
+              }
+            },
+            {
+              "eligible": true,
+              "reason": null,
+              "spell": {
+                "spellId": "spark",
+                "name": "Spark",
+                "cost": 5.0,
+                "access": "fallback",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 15,
+                    "damage": {
+                      "amount": 6,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs a fielded warding mage",
+              "spell": {
+                "spellId": "veil",
+                "name": "Smoke Veil",
+                "cost": 20.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "knockback",
+                    "radius": 30,
+                    "distance": 20.0
+                  }
+                ],
+                "scaled": [
+                  {
+                    "effectIndex": 0,
+                    "field": "distance",
+                    "tag": "warding",
+                    "support": 0,
+                    "base": 20.0,
+                    "bonus": 0,
+                    "value": 20.0,
+                    "capped": false
+                  }
+                ],
+                "contributors": [],
+                "grantedBy": []
+              }
+            },
+            {
+              "eligible": false,
+              "reason": "needs 2 fielded necromancy mages",
+              "spell": {
+                "spellId": "rite",
+                "name": "Ashen Rite",
+                "cost": 30.0,
+                "access": "independent",
+                "effects": [
+                  {
+                    "kind": "areaDamage",
+                    "radius": 20,
+                    "damage": {
+                      "amount": 15,
+                      "bonusVsMage": 1.0,
+                      "bonusVsBase": 1.0
+                    },
+                    "hitsBase": true
+                  }
+                ],
+                "scaled": [],
+                "contributors": [],
+                "grantedBy": []
+              }
+            }
+          ]
+        },
+        "slots": [
+          {
+            "index": 0,
+            "spellId": "spark",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          },
+          {
+            "index": 1,
+            "spellId": "spark",
+            "eligible": true,
+            "reason": null,
+            "stranded": false
+          }
+        ],
+        "snapshot": {
+          "namespace": "north",
+          "tagSupport": [
+            {
+              "tag": "evocation",
+              "count": 1
+            },
+            {
+              "tag": "reckless",
+              "count": 1
+            }
+          ],
+          "spells": [
+            {
+              "spellId": "spark",
+              "name": "Spark",
+              "cost": 5.0,
+              "access": "fallback",
+              "effects": [
+                {
+                  "kind": "areaDamage",
+                  "radius": 15,
+                  "damage": {
+                    "amount": 6,
+                    "bonusVsMage": 1.0,
+                    "bonusVsBase": 1.0
+                  },
+                  "hitsBase": true
+                }
+              ],
+              "scaled": [],
+              "contributors": [],
+              "grantedBy": []
+            }
+          ],
+          "simSpellIds": [
+            "north:spark"
+          ]
+        },
+        "snapshotError": null
+      }
+    }
+  ]
+}

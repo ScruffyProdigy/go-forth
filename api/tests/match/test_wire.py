@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from app.match import fixtures, wire
-from app.match.plan import default_plan, resolve_loadout
+from app.match.plan import default_plan, resolve_snapshot
 from app.match.round import AuthoritativeRound
 from app.match.wire import CommandError, parse_cast_command
 from app.sim.config import SimConfig
@@ -88,12 +88,12 @@ def test_no_module_outside_the_sim_imports_serialize_battle() -> None:
 @pytest.fixture
 def live_round() -> AuthoritativeRound:
     plan = default_plan(fixtures.map_config())
-    loadout = resolve_loadout(plan)
+    snapshots = {side: resolve_snapshot(plan, side) for side in SIDES}
     return AuthoritativeRound(
         round_number=1,
         map_config=fixtures.map_config(),
         plans={side: plan for side in SIDES},
-        loadouts={side: loadout for side in SIDES},
+        snapshots=snapshots,
         base_hp={side: 1000.0 for side in SIDES},
         seed=11,
         sim_config=SimConfig(max_battle_seconds=4),
@@ -217,7 +217,7 @@ def test_a_snapshot_says_whether_the_run_is_a_test() -> None:
 
 def test_a_cast_command_parses() -> None:
     command = parse_cast_command(
-        {"commandId": "c1", "spellId": "meteor", "at": {"x": 100, "y": 200}, "tick": 42}
+        {"commandId": "c1", "spellId": "fireball", "at": {"x": 100, "y": 200}, "tick": 42}
     )
     assert command.command_id == "c1"
     assert command.at == Vec2(100.0, 200.0)
@@ -225,7 +225,7 @@ def test_a_cast_command_parses() -> None:
 
 def test_a_cast_command_may_not_name_its_own_side() -> None:
     command = parse_cast_command(
-        {"commandId": "c1", "spellId": "meteor", "at": {"x": 1, "y": 2}, "side": "south"}
+        {"commandId": "c1", "spellId": "fireball", "at": {"x": 1, "y": 2}, "side": "south"}
     )
     # `side` is filled in on the server from the seat. A client trusted to name
     # its own side is a client that can cast as its opponent, so the field is
@@ -238,11 +238,11 @@ def test_a_cast_command_may_not_name_its_own_side() -> None:
     [
         None,
         {},
-        {"commandId": "c1", "spellId": "meteor"},
-        {"commandId": "", "spellId": "meteor", "at": {"x": 1, "y": 1}},
-        {"commandId": "c1", "spellId": "meteor", "at": {"x": "left", "y": 1}},
-        {"commandId": "c1", "spellId": "meteor", "at": {"x": float("nan"), "y": 1}},
-        {"commandId": "c1", "spellId": "meteor", "at": {"x": float("inf"), "y": 1}},
+        {"commandId": "c1", "spellId": "fireball"},
+        {"commandId": "", "spellId": "fireball", "at": {"x": 1, "y": 1}},
+        {"commandId": "c1", "spellId": "fireball", "at": {"x": "left", "y": 1}},
+        {"commandId": "c1", "spellId": "fireball", "at": {"x": float("nan"), "y": 1}},
+        {"commandId": "c1", "spellId": "fireball", "at": {"x": float("inf"), "y": 1}},
     ],
 )
 def test_a_malformed_cast_is_refused(raw: object) -> None:

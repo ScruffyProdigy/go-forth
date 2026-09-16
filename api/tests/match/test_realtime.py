@@ -112,7 +112,7 @@ def test_acting_before_subscribing_is_refused(client: TestClient) -> None:
     _both_seats(client)
     with client.websocket_connect("/api/v1/ws") as ws:
         ws.send_json(
-            {"type": "cast", "cast": {"commandId": "c", "spellId": "meteor", "at": {"x": 1, "y": 1}}}
+            {"type": "cast", "cast": {"commandId": "c", "spellId": "fireball", "at": {"x": 1, "y": 1}}}
         )
         assert ws.receive_json() == {"type": "error", "error": "subscribe before acting"}
 
@@ -158,7 +158,7 @@ def test_both_seats_locking_in_starts_the_battle_over_the_socket(client: TestCli
         assert battle["units"]
         assert {unit["side"] for unit in battle["units"]} == {"north", "south"}
         assert "energy" in battle
-        assert battle["loadout"][0]["spellId"] == "meteor"
+        assert battle["loadout"][0]["spellId"] == "fireball"
 
 
 def test_an_illegal_plan_is_answered_and_does_not_kill_the_socket(client: TestClient) -> None:
@@ -195,7 +195,7 @@ def test_a_cast_is_answered_exactly_once(client: TestClient) -> None:
         north_ws.send_json(
             {
                 "type": "cast",
-                "cast": {"commandId": "c1", "spellId": "meteor", "at": {"x": 180, "y": 280}, "tick": 1},
+                "cast": {"commandId": "c1", "spellId": "fireball", "at": {"x": 180, "y": 280}, "tick": 1},
             }
         )
         outcome = _await_message(north_ws, "castOutcome")
@@ -225,7 +225,7 @@ def test_a_cast_can_never_be_made_for_the_other_seat(client: TestClient, service
                 "side": "south",
                 "cast": {
                     "commandId": "forged",
-                    "spellId": "meteor",
+                    "spellId": "fireball",
                     "at": {"x": 180, "y": 100},
                     "tick": 1,
                     "side": "south",
@@ -251,7 +251,7 @@ def test_a_malformed_cast_is_answered_without_closing_the_socket(client: TestCli
         ws.send_json({"type": "subscribe", "matchId": MATCH, "playerId": north["playerId"]})
         ws.receive_json()
 
-        ws.send_json({"type": "cast", "cast": {"spellId": "meteor"}})
+        ws.send_json({"type": "cast", "cast": {"spellId": "fireball"}})
         assert ws.receive_json()["type"] == "error"
 
         ws.send_json({"type": "ping"})

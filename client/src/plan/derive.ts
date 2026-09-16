@@ -8,6 +8,13 @@
  */
 
 import {
+  type DeployedMage,
+  type MenuEntry,
+  type SpellDefinition,
+  resolveMenu,
+  resolveSlots,
+} from './spellResolver.ts';
+import {
   type MageOption,
   type Order,
   type PlanState,
@@ -147,47 +154,92 @@ export interface SpellAvailability {
   /** Why it is greyed. Shown rather than hidden, so the link teaches itself. */
   readonly reason?: string;
   readonly affordable: boolean;
+  /** The resolved menu entry: actual numbers, contributors, and who granted it. */
+  readonly resolved: MenuEntry;
 }
 
-function tagCount(mages: readonly MageOption[], tag: string): number {
-  return mages.filter((mage) => mage.tags.includes(tag)).length;
+/**
+ * This plan's mages as the resolver wants them (JQ-297).
+ *
+ * Instance ids are the troop's position in the plan, so fielding the same mage
+ * card twice is two deployed mages — counted twice for every tag they carry,
+ * and granting one menu entry between them.
+ *
+ * Summons are not here, and this is the only place they could have been: the
+ * resolver never sees the roster, so "never count summons" is a property of the
+ * shape rather than of a filter somebody has to remember.
+ */
+export function deployedMages(plan: PlanState): DeployedMage[] {
+  return plan.troops.flatMap((troop, index) => {
+    const mage = plan.roster.mages.find((candidate) => candidate.id === troop.mageId);
+    if (!mage) return [];
+    return [
+      {
+        instanceId: `troop-${index + 1}`,
+        typeId: mage.id,
+        name: mage.name,
+        tags: mage.tags,
+      },
+    ];
+  });
+}
+
+/**
+ * The resolver's reason, with the mage named where the screen can name it.
+ *
+ * The server's reason for a missing signature is "needs its mage on the field",
+ * and it has to be: it travels on the wire to a client whose roster may not be
+ * loaded, and it is pinned by the conformance fixtures. Here the roster *is*
+ * loaded, and "needs Emberwright fielded" tells the player what to change while
+ * the generic sentence does not.
+ *
+ * Rebuilt from the access rule rather than by rewriting the server's string. A
+ * display layer that pattern-matched on prose would break silently the first
+ * time somebody reworded it.
+ */
+export function displayReason(
+  definition: SpellDefinition,
+  entry: MenuEntry,
+  plan: PlanState,
+): string | undefined {
+  if (entry.eligible) return undefined;
+  if (definition.access.kind === 'signature') {
+    const { mageTypeId } = definition.access;
+    const mage = plan.roster.mages.find((candidate) => candidate.id === mageTypeId);
+    if (mage) return `needs ${mage.name} fielded`;
+  }
+  return entry.reason ?? undefined;
 }
 
 /**
  * §4.8: a deployed mage contributes its signature spell to the menu; other
- * spells read tags carried by deployed mages. Ineligible spells stay on the menu
- * with their reason — hiding them would hide the mage-to-spell link that is the
- * point of choosing troops first.
+ * spells read tags carried by deployed mages, and independents need explicit
+ * roster access on top. Ineligible spells stay on the menu with their reason —
+ * hiding them would hide the mage-to-spell link that is the point of choosing
+ * troops first.
+ *
+ * Derived on every call rather than cached, which is what makes "editing troops
+ * updates eligibility and previews immediately" (JQ-297) true by construction:
+ * there is no stale answer to invalidate.
  */
 export function spellMenu(plan: PlanState): SpellAvailability[] {
-  const mages = fieldedMages(plan);
+  const menu = resolveMenu({
+    mages: deployedMages(plan),
+    rosterAccess: plan.roster.independentSpellAccess,
+    definitions: plan.roster.spells,
+  });
 
-  return plan.roster.spells.map((spell) => {
-    const affordable = spell.cost <= plan.energy;
-
-    if (spell.requires.kind === 'always') {
-      return { spell, eligible: true, affordable };
-    }
-
-    if (spell.requires.kind === 'signature') {
-      const { mageId } = spell.requires;
-      const eligible = mages.some((mage) => mage.id === mageId);
-      const name = plan.roster.mages.find((mage) => mage.id === mageId)?.name ?? 'its mage';
-      return {
-        spell,
-        eligible,
-        affordable,
-        reason: eligible ? undefined : `needs ${name} fielded`,
-      };
-    }
-
-    const tag = spell.requires.tag;
-    const eligible = tagCount(mages, tag) > 0;
+  return menu.entries.map((entry, index) => {
+    const spell = plan.roster.spells[index];
     return {
       spell,
-      eligible,
-      affordable,
-      reason: eligible ? undefined : `needs a fielded ${tag} mage`,
+      eligible: entry.eligible,
+      reason: displayReason(spell, entry, plan),
+      // The *resolved* cost, not the card's. They are the same today — nothing
+      // discounts a spell yet (JQ-297 defers that) — and reading the resolved
+      // one means they stay right when something does.
+      affordable: entry.spell.cost <= plan.energy,
+      resolved: entry,
     };
   });
 }
@@ -203,9 +255,15 @@ export function isSpellEligible(plan: PlanState, spellId: string): boolean {
  * away, not discover an empty slot.
  */
 export function strandedSlots(plan: PlanState): number[] {
-  return plan.spellSlots
-    .map((spellId, index) => (spellId !== null && !isSpellEligible(plan, spellId) ? index : -1))
-    .filter((index) => index >= 0);
+  const menu = resolveMenu({
+    mages: deployedMages(plan),
+    rosterAccess: plan.roster.independentSpellAccess,
+    definitions: plan.roster.spells,
+  });
+
+  return resolveSlots(menu, plan.spellSlots)
+    .filter((slot) => slot.stranded)
+    .map((slot) => slot.index);
 }
 
 /* ------------------------------------------------------------- placements -- */
