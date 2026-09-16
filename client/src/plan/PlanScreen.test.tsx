@@ -38,7 +38,7 @@ describe('a round with no changes', () => {
 
     expect(screen.getByRole('button', { name: /Choose troops/ })).toHaveTextContent('Emberwright');
     expect(screen.getByRole('button', { name: /Choose spells/ })).toHaveTextContent('Fireball');
-    expect(screen.getByRole('button', { name: /Give orders/ })).toHaveTextContent('Hold A');
+    expect(screen.getByRole('button', { name: /Give orders/ })).toHaveTextContent('Hold West');
   });
 });
 
@@ -196,9 +196,9 @@ describe('no hard timer', () => {
 describe('the opponent', () => {
   it("shows last round's sighting on the map, and nothing live", () => {
     const withSighting: PlanState = {
-      ...planReducer(starterMirrorRound1(), { type: 'setOrder', mageId: 'emberwright', order: { kind: 'hold', zone: 'A' } }),
+      ...planReducer(starterMirrorRound1(), { type: 'setOrder', mageId: 'emberwright', order: { kind: 'hold', zone: 'W' } }),
       round: 2,
-      opponentLastKnown: [{ zone: 'A', mages: 2, summons: 5 }],
+      opponentLastKnown: [{ zone: 'W', mages: 2, summons: 5 }],
     };
 
     render(<PlanScreen initialPlan={withSighting} />);

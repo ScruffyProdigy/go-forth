@@ -2,9 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import { starterMirrorRound1 } from '../../plan/fixtures/starterMirror.ts';
 import type { PlanState } from '../../plan/types.ts';
-import { THREE_ZONE_MAP, distance } from '../geometry.ts';
+import { TWO_LANE_MAP, distance, zoneCentre, zoneGeometry } from '../geometry.ts';
 import type { LoadoutSpell } from '../types.ts';
-import { MAX_TICKS, advance, applyCast, deploy, openingState, toSnapshot } from './scriptedBattle.ts';
+import {
+  MAX_TICKS,
+  advance,
+  applyCast,
+  deploy,
+  openingState,
+  toSnapshot,
+  zoneStates,
+} from './scriptedBattle.ts';
 
 const LOADOUT: LoadoutSpell[] = [
   { spellId: 'fireball', name: 'Fireball', cost: 3, effect: 'A burst.' },
@@ -28,12 +36,12 @@ function runToEnd(state: ReturnType<typeof openingState>) {
 describe('deployment', () => {
   it('puts both armies in their own strip, summons ahead of their mage', () => {
     const units = deploy({ side: 'south', plan: starterMirrorRound1() });
-    const strip = THREE_ZONE_MAP.deployment.south;
+    const strip = TWO_LANE_MAP.deployment.south;
 
     expect(units.length).toBeGreaterThan(0);
     for (const unit of units) {
-      expect(unit.position.y).toBeGreaterThanOrEqual(strip.start - 30);
-      expect(unit.position.y).toBeLessThanOrEqual(strip.end);
+      expect(unit.position.y).toBeGreaterThanOrEqual(strip.lane.start - 30);
+      expect(unit.position.y).toBeLessThanOrEqual(strip.lane.end);
     }
 
     const mage = units.find((unit) => unit.id === 'south-emberwright');
@@ -68,8 +76,8 @@ describe('a battle', () => {
 
     expect(result.ending).not.toBeNull();
     expect(result.ending!.kind).toBe('roundComplete');
-    expect(result.baseHp.north.hp).toBe(THREE_ZONE_MAP.baseMaxHp);
-    expect(result.baseHp.south.hp).toBe(THREE_ZONE_MAP.baseMaxHp);
+    expect(result.baseHp.north.hp).toBe(TWO_LANE_MAP.baseMaxHp);
+    expect(result.baseHp.south.hp).toBe(TWO_LANE_MAP.baseMaxHp);
   });
 
   it('ends the moment a base falls, and names the side that destroyed it', () => {
@@ -85,7 +93,7 @@ describe('a battle', () => {
 
     expect(result.ending).toEqual({ kind: 'baseDestroyed', winner: 'north' });
     expect(result.baseHp.south.hp).toBe(0);
-    expect(result.baseHp.north.hp).toBe(THREE_ZONE_MAP.baseMaxHp);
+    expect(result.baseHp.north.hp).toBe(TWO_LANE_MAP.baseMaxHp);
     expect(result.tick).toBeLessThan(MAX_TICKS);
     expect(result.units.some((unit) => unit.side === 'south')).toBe(true);
   });
@@ -191,8 +199,109 @@ describe('the snapshot a client is given', () => {
   });
 
   it('can be filtered to your own units, for the wait after lock-in', () => {
-    const snapshot = toSnapshot(state, 'south', LOADOUT, THREE_ZONE_MAP, { onlyYourUnits: true });
+    const snapshot = toSnapshot(state, 'south', LOADOUT, TWO_LANE_MAP, { onlyYourUnits: true });
     expect(snapshot.units.length).toBeGreaterThan(0);
     expect(snapshot.units.every((unit) => unit.side === 'south')).toBe(true);
+  });
+});
+
+/**
+ * The fixture stands in for the sim, so it has to obey the sim's rules — a
+ * fixture that scored lanes the old way would build the screens against a battle
+ * that cannot happen (JQ-376, corrected here by JQ-312).
+ */
+describe('holding a lane', () => {
+  function stateWith(units: ReturnType<typeof deploy>) {
+    return { ...openingState([]), units };
+  }
+
+  const WEST = zoneGeometry(TWO_LANE_MAP, 'W');
+  const SPOT = zoneCentre(WEST);
+
+  function unitAt(id: string, side: 'north' | 'south', kind: 'mage' | 'summon', at: { x: number; y: number }) {
+    return {
+      id,
+      kind,
+      side,
+      typeName: kind === 'mage' ? 'Emberwright' : 'Flame Wisp',
+      position: at,
+      hp: 100,
+      maxHp: 100,
+      dps: 10,
+      range: 20,
+      speed: 20,
+      destination: at,
+      pushing: false,
+      protection: 0,
+      abilityName: null,
+      abilityEnergy: 0,
+      mageId: id,
+    };
+  }
+
+  it('is a mage standing in the hotspot, not units standing in the lane', () => {
+    const inLaneNotOnSpot = { x: WEST.extent.start + 10, y: WEST.lane.start + 10 };
+    const state = stateWith([
+      unitAt('a', 'south', 'summon', SPOT),
+      unitAt('b', 'south', 'summon', inLaneNotOnSpot),
+      unitAt('c', 'south', 'mage', inLaneNotOnSpot),
+    ]);
+
+    // Three units of one side in the lane, one of them a mage, one of them on
+    // the spot — and still nobody holds it.
+    expect(zoneStates(state, TWO_LANE_MAP).find((zone) => zone.id === 'W')?.heldBy).toBeNull();
+  });
+
+  it('is held when exactly one side has a mage on the spot', () => {
+    const state = stateWith([unitAt('m', 'south', 'mage', SPOT)]);
+
+    expect(zoneStates(state, TWO_LANE_MAP).find((zone) => zone.id === 'W')?.heldBy).toBe('south');
+  });
+
+  it('scores for nobody when both sides have a mage on it', () => {
+    const state = stateWith([
+      unitAt('mine', 'south', 'mage', SPOT),
+      unitAt('theirs', 'north', 'mage', { x: SPOT.x + 4, y: SPOT.y + 4 }),
+    ]);
+
+    expect(zoneStates(state, TWO_LANE_MAP).find((zone) => zone.id === 'W')?.heldBy).toBeNull();
+  });
+});
+
+function mirrorOpening() {
+  return openingState([
+    { side: 'south', plan: starterMirrorRound1() },
+    { side: 'north', plan: starterMirrorRound1() },
+  ]);
+}
+
+describe('what the board is told happened', () => {
+  it('reports a mage’s ability firing once its gauge fills', () => {
+    let state = mirrorOpening();
+    for (let step = 0; step < MAX_TICKS && !state.events.some((e) => e.type === 'abilityCast'); step += 1) {
+      state = advance(state);
+    }
+
+    const fired = state.events.find((event) => event.type === 'abilityCast');
+    expect(fired).toBeDefined();
+    expect(fired?.side).toBe('south');
+  });
+
+  it('charges a mage’s gauge and hands it over as a fraction', () => {
+    let state = mirrorOpening();
+    for (let step = 0; step < 40; step += 1) state = advance(state);
+
+    const mage = toSnapshot(state, 'south', LOADOUT).units.find((unit) => unit.kind === 'mage');
+    expect(mage?.ability?.charge).toBeGreaterThan(0);
+    expect(mage?.ability?.charge).toBeLessThanOrEqual(1);
+  });
+
+  it('drops events once they are too old to still be on screen', () => {
+    let state = mirrorOpening();
+    for (let step = 0; step < 200 && state.ending === null; step += 1) state = advance(state);
+
+    for (const event of state.events) {
+      expect(state.tick - event.tick).toBeLessThanOrEqual(60);
+    }
   });
 });

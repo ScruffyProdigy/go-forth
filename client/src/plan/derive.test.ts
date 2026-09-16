@@ -157,18 +157,18 @@ describe('placement', () => {
   it('places each troop by its order rather than by hand', () => {
     const laid = placements(starterMirrorRound1());
 
-    expect(laid.map((entry) => entry.towards)).toEqual(['A', 'B', 'ownBase']);
+    expect(laid.map((entry) => entry.towards)).toEqual(['W', 'E', 'ownBase']);
   });
 
   it('spreads troops sent to the same place so they stay distinguishable', () => {
     const doubledUp = planReducer(starterMirrorRound1(), {
       type: 'setOrder',
       mageId: 'pyreMagus',
-      order: { kind: 'hold', zone: 'A' },
+      order: { kind: 'hold', zone: 'W' },
     });
 
     const lanes = placements(doubledUp)
-      .filter((entry) => entry.towards === 'A')
+      .filter((entry) => entry.towards === 'W')
       .map((entry) => entry.lane);
 
     expect(lanes).toHaveLength(2);

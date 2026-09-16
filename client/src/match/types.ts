@@ -148,6 +148,20 @@ export interface MatchView {
 
 export type UnitKind = 'mage' | 'summon';
 
+/**
+ * The ability a unit's gauge fires when it fills (§4.4, JQ-288).
+ *
+ * `charge` is the gauge as a fraction rather than raw energy against a cost,
+ * because the board shows how close it is, never the number — and a client given
+ * the two numbers would be deciding for itself what "close" means.
+ */
+export interface UnitAbility {
+  readonly id: string;
+  readonly name: string;
+  /** 0 to 1. At 1 the ability fires. */
+  readonly charge: number;
+}
+
 export interface BattleUnit {
   readonly id: string;
   readonly kind: UnitKind;
@@ -156,6 +170,47 @@ export interface BattleUnit {
   readonly position: MapPoint;
   readonly hp: number;
   readonly maxHp: number;
+  /**
+   * Damage this unit shrugs off per hit. Optional: absent means the server did
+   * not say, which the outcome preview treats as "unknown", never as zero
+   * (JQ-312 AC 4 — a preview must not invent a clear).
+   */
+  readonly protection?: number;
+  /** Absent on a unit that never charges. */
+  readonly ability?: UnitAbility;
+}
+
+/* ---------------------------------------------------------------- events -- */
+
+/**
+ * What just happened, as the sim's own event vocabulary (`api/app/sim/events.py`).
+ *
+ * The names are the sim's on purpose. JQ-312 has to show abilities, resummons
+ * and troop dissolves readably, and all three are already events the sim emits —
+ * a client that invented parallel names for them would have to be reconciled
+ * with the stream later.
+ */
+export type BattleEventType =
+  | 'unitDefeated'
+  | 'zoneFlip'
+  | 'baseHit'
+  | 'abilityCast'
+  | 'spell'
+  | 'resummon'
+  | 'troopDissolve';
+
+export interface BattleEvent {
+  readonly id: string;
+  readonly type: BattleEventType;
+  readonly tick: number;
+  readonly at: MapPoint;
+  /** The side the event is *about*. Null when it belongs to nobody. */
+  readonly side: Side | null;
+  /** The unit, ability or spell it names, for the events that name one. */
+  readonly subject?: string;
+  /** How many units it moved — a dissolve's summons, a defeat's one. */
+  readonly count?: number;
+  readonly zone?: ZoneId;
 }
 
 /**
@@ -200,6 +255,12 @@ export interface BattleSnapshot {
   readonly loadout: readonly LoadoutSpell[];
   /** Accepted casts, both sides, as the server has them. */
   readonly casts: readonly ResolvedCast[];
+  /**
+   * What happened recently, newest last. The board shows abilities firing,
+   * resummons and dissolves from this rather than by diffing two snapshots —
+   * a diff cannot tell a summon that died from one that walked out of view.
+   */
+  readonly events: readonly BattleEvent[];
 }
 
 export interface LoadoutSpell {
@@ -208,6 +269,17 @@ export interface LoadoutSpell {
   /** The resolved cost, not the catalogue cost — contributors can change it. */
   readonly cost: number;
   readonly effect: string;
+  /**
+   * The resolved numbers, when the server has resolved them.
+   *
+   * **Optional on purpose.** Resolving a spell is JQ-297's, and until it lands
+   * nothing here knows what a spell actually does. An outcome preview given
+   * `undefined` says so and offers no estimate, rather than guessing from the
+   * card text — "never infer a clear from enemy count alone" (JQ-312 AC 4) is
+   * only enforceable if the absence of numbers is representable.
+   */
+  readonly magnitude?: number;
+  readonly radius?: number;
 }
 
 /* ----------------------------------------------------------------- casts -- */

@@ -8,7 +8,7 @@
  */
 
 import { isSpellEligible, remainingSummons, troopCapacity } from './derive.ts';
-import type { Order, PlanState, PlannedTroop, SpellSlots } from './types.ts';
+import { type Order, type PlanState, type PlannedTroop, type SpellSlots, ZONE_IDS } from './types.ts';
 
 export type PlanAction =
   | { readonly type: 'fieldMage'; readonly mageId: string }
@@ -82,7 +82,10 @@ function firstFreeOrder(plan: PlanState): Order {
       .map((troop) => (troop.order.kind === 'hold' ? troop.order.zone : '')),
   );
 
-  for (const zone of ['A', 'B', 'C'] as const) {
+  // Walked from the map's own lanes, so a map with a different number of them
+  // needs no change here — the lane count already went from three to two once
+  // (JQ-376) and a hardcoded list is what would have broken.
+  for (const zone of ZONE_IDS) {
     if (!taken.has(zone)) return { kind: 'hold', zone };
   }
   return { kind: 'defendBase' };

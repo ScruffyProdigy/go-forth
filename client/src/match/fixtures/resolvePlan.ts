@@ -35,8 +35,15 @@ function contributors(plan: PlanState, spell: SpellOption): SpellContributor[] {
   );
 }
 
+/** A spell's blast. Provisional demo tuning, like everything else here. */
+const SPELL_RADIUS = 60;
+
+function magnitudeOf(found: readonly SpellContributor[]): number {
+  return BASE_MAGNITUDE + PER_CONTRIBUTOR * found.length;
+}
+
 function effectText(spell: SpellOption, found: readonly SpellContributor[]): string {
-  const magnitude = BASE_MAGNITUDE + PER_CONTRIBUTOR * found.length;
+  const magnitude = magnitudeOf(found);
   if (found.length === 0) return `${spell.text} At ${magnitude}, with nothing fielded to raise it.`;
   const tags = [...new Set(found.map((entry) => entry.tag))].join(', ');
   return `${spell.text} At ${magnitude} — ${tags} from ${found.length} fielded mage${
@@ -52,6 +59,8 @@ export function resolvePlanLocally(plan: PlanState): ResolvedPlan {
       name: entry.spell.name,
       cost: entry.spell.cost,
       effect: effectText(entry.spell, found),
+      magnitude: magnitudeOf(found),
+      radius: SPELL_RADIUS,
       eligible: entry.eligible,
       reason: entry.reason,
       affordable: entry.affordable,
@@ -83,6 +92,8 @@ export function resolvePlanLocally(plan: PlanState): ResolvedPlan {
       name: slot.name,
       cost: slot.cost,
       effect: slot.effect,
+      magnitude: slot.magnitude,
+      radius: slot.radius,
     }));
 
   return { round: plan.round, spells, slots, blockers, loadout };

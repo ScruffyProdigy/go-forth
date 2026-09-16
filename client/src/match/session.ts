@@ -19,7 +19,7 @@
 
 import type { PlanState } from '../plan/types.ts';
 import { type Clock, realClock } from './clock.ts';
-import { THREE_ZONE_MAP, type MapGeometry } from './geometry.ts';
+import { TWO_LANE_MAP, type MapGeometry } from './geometry.ts';
 import {
   type CastAttempt,
   type ScriptedState,
@@ -75,7 +75,7 @@ export interface FixtureSessionOptions {
 export function createFixtureSession(options: FixtureSessionOptions): MatchSession {
   const { scenario, runId } = options;
   const clock = options.clock ?? realClock;
-  const map = options.map ?? THREE_ZONE_MAP;
+  const map = options.map ?? TWO_LANE_MAP;
   const you = scenario.you;
   const them = opposing(you);
 

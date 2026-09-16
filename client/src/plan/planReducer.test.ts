@@ -44,8 +44,8 @@ describe('fielding a mage', () => {
     );
 
     expect(plan.troops.map((troop) => troop.order)).toEqual([
-      { kind: 'hold', zone: 'A' },
-      { kind: 'hold', zone: 'B' },
+      { kind: 'hold', zone: 'W' },
+      { kind: 'hold', zone: 'E' },
     ]);
   });
 

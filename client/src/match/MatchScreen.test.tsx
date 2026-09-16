@@ -77,8 +77,8 @@ describe('the opening demo', () => {
     expect(within(board).getByText('YOUR BASE')).toBeInTheDocument();
     expect(within(board).getByText('THEIR BASE')).toBeInTheDocument();
     expect(within(board).getAllByText(/1000 \/ 1000|\d+ \/ 1000/)).toHaveLength(2);
-    for (const zone of ['A', 'B', 'C']) {
-      expect(within(board).getByText(new RegExp(`^${zone} · `))).toBeInTheDocument();
+    for (const lane of ['West', 'East']) {
+      expect(within(board).getByText(new RegExp(`^${lane} · `))).toBeInTheDocument();
     }
   });
 });
@@ -99,11 +99,11 @@ describe('casting a spell', () => {
     tap(/Fireball/);
     expect(screen.getByTestId('cast-prompt')).toHaveTextContent('Where should Fireball land?');
 
-    tap('Zone B');
-    expect(screen.getByTestId('cast-feedback')).toHaveTextContent('Fireball on Zone B — sent…');
+    tap(/East lane/);
+    expect(screen.getByTestId('cast-feedback')).toHaveTextContent('Fireball on East lane — sent…');
 
     tick(200);
-    expect(screen.getByTestId('cast-feedback')).toHaveTextContent('Fireball on Zone B — landed.');
+    expect(screen.getByTestId('cast-feedback')).toHaveTextContent('Fireball on East lane — landed.');
   });
 
   it('can be called off before it is aimed', () => {
@@ -113,7 +113,7 @@ describe('casting a spell', () => {
     tap('Cancel');
 
     expect(screen.queryByTestId('cast-prompt')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Zone B' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /East lane/ })).not.toBeInTheDocument();
   });
 
   it('says what the energy is short by rather than just greying out', () => {
@@ -121,7 +121,7 @@ describe('casting a spell', () => {
 
     // Energy starts at 3 and Fireball costs 3, so one cast empties the pool.
     tap(/Fireball/);
-    tap('Zone B');
+    tap(/East lane/);
     tick(200);
 
     expect(screen.getByRole('button', { name: /Fireball/ })).toBeDisabled();

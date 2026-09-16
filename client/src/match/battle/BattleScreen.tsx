@@ -14,9 +14,6 @@ import type { BaseHp, BattleSnapshot, LoadoutSpell, MapPoint, Side } from '../ty
 import { BattleMap } from './BattleMap.tsx';
 import { CastBar } from './CastBar.tsx';
 
-/** Matches `CAST_RADIUS` in the fixture; a real preview comes from the server. */
-const PREVIEW_RADIUS = 60;
-
 export interface BattleScreenProps {
   readonly snapshot: BattleSnapshot;
   readonly you: Side;
@@ -53,11 +50,15 @@ export function BattleScreen({
         </span>
       </header>
 
+      {/* The armed spell is handed over whole rather than reduced to a name and
+          a radius: the map's outcome previews are computed from its resolved
+          cost and magnitude, and a summary struck here would be a second place
+          that decides what a spell does (JQ-312 AC 4). */}
       <BattleMap
         snapshot={snapshot}
         you={you}
         baseHp={baseHp}
-        targeting={armed ? { spellName: armed.name, radius: PREVIEW_RADIUS } : null}
+        targeting={armed}
         onTarget={target}
         onCancelTarget={() => setArmed(null)}
         stale={stale}

@@ -155,12 +155,12 @@ export function starterMirrorRound1(): PlanState {
       {
         mageId: 'emberwright',
         summonIds: ['emberHound', 'emberHound'],
-        order: { kind: 'hold', zone: 'A' },
+        order: { kind: 'hold', zone: 'W' },
       },
       {
         mageId: 'pyreMagus',
         summonIds: ['flameWisp', 'flameWisp', 'scoriaLancer'],
-        order: { kind: 'hold', zone: 'B' },
+        order: { kind: 'hold', zone: 'E' },
       },
       {
         mageId: 'ashenWarden',

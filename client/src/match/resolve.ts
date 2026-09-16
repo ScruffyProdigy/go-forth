@@ -41,6 +41,17 @@ export interface ResolvedSpell {
   readonly cost: number;
   /** The resolved effect, with the numbers this plan actually produces. */
   readonly effect: string;
+  /**
+   * The resolved effect as *numbers*, for the battle screen's outcome previews.
+   *
+   * Prose is enough to choose a spell in the plan phase; it is not enough to
+   * answer "would this clear the lane" mid-battle, and JQ-312 AC 4 forbids
+   * answering that from anything softer. Optional because resolving a spell is
+   * JQ-297's: until it lands these are absent, and a preview given nothing says
+   * so rather than guessing (`battle/preview.ts`).
+   */
+  readonly magnitude?: number;
+  readonly radius?: number;
   readonly eligible: boolean;
   /** Why it is not eligible. Shown, never hidden — the link teaches itself. */
   readonly reason?: string;
