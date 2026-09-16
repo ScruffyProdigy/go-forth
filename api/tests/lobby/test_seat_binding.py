@@ -110,14 +110,48 @@ def test_resume_with_no_cookie_is_a_404(client: TestClient) -> None:
     assert client.get("/api/v1/resume").status_code == 404
 
 
-def test_a_binding_naming_a_finished_match_resumes_nothing_and_is_cleared(
+def test_a_binding_naming_a_finished_match_resumes_its_terminal_state(
     client: TestClient, service: GameService
 ) -> None:
+    """JQ-310's correction: a finished match resumes, it just cannot be played.
+
+    The rule this replaces refused a binding whose match was over, which left a
+    player whose phone slept through the last seconds of a round with a 404 —
+    no result, no winner, and no way back to the Lobby. What they get instead is
+    the terminal state, marked as terminal, with the return URL beside it.
+    """
     client.post("/api/v1/matches", json=provision_body())
     _claim(client, "user-north", "1")
 
     session = service.require_session(MATCH)
     session.abandon()
+
+    response = client.get("/api/v1/resume")
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["over"] is True
+    assert body["state"]["phase"]["kind"] == "matchOver"
+    assert body["state"]["phase"]["result"]["ending"]["kind"] == "abandoned"
+    # The way out. A result screen with no exit is where the demo ends for them.
+    assert body["returnUrl"] is not None
+    # The binding still works, so nothing clears it.
+    assert "set-cookie" not in response.headers
+
+
+def test_a_binding_naming_a_match_this_process_lost_is_cleared(
+    client: TestClient, service: GameService
+) -> None:
+    """A session this process no longer holds still resumes nothing.
+
+    Live match state is not persisted, so a restart really does lose the match.
+    That is the case the cookie must stop being presented for — as distinct from
+    a match that finished, which is still here and still worth showing.
+    """
+    client.post("/api/v1/matches", json=provision_body())
+    _claim(client, "user-north", "1")
+
+    service._sessions.pop(MATCH)
 
     response = client.get("/api/v1/resume")
     assert response.status_code == 404

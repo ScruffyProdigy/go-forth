@@ -26,6 +26,7 @@ from app.lobby.seat_binding import SeatBinding
 from app.lobby.tokens import AssignmentClaims
 from app.match import fixtures
 from app.match.clock import SessionClock
+from app.match.diagnostics import DiagnosticsLog
 from app.match.hub import MatchHub
 from app.match.session import MatchSession
 from app.repository import (
@@ -77,10 +78,17 @@ class GameService:
         self._lobby_client_factory = lobby_client_factory or LobbyClient
         self._sessions: dict[str, MatchSession] = {}
         self._clocks: dict[str, SessionClock] = {}
+        # One log for every match this process runs, so a reconnect storm across
+        # two matches is one thing to read rather than two.
+        self._diagnostics = DiagnosticsLog()
 
     @property
     def hub(self) -> MatchHub:
         return self._hub
+
+    @property
+    def diagnostics(self) -> DiagnosticsLog:
+        return self._diagnostics
 
     # ------------------------------------------------------------ provision --
 
@@ -165,6 +173,7 @@ class GameService:
             map_config=fixtures.map_config(),
             sim_config=self._sim_config,
             lobby_client=lobby_client,
+            diagnostics=self._diagnostics,
         )
         for stored in match.seats:
             seat = session.seats.get(stored.seat_key)
@@ -237,6 +246,15 @@ class GameService:
         # the seat departed=False is the whole of what returning does here.
         live.departed = False
 
+        # Recovery path 2, the Lobby's Rejoin button, named as such: the two
+        # paths fail independently and a diagnostic that could not tell them
+        # apart would not say which one was broken.
+        session.note_connection(
+            "connection.reclaimed" if result.reclaimed else "connection.seated",
+            path="lobbyToken",
+            seat_key=result.seat.seat_key,
+            side=side,
+        )
         self._hub.publish(session.external_match_id, session)
         return result, session, side
 
@@ -250,9 +268,19 @@ class GameService:
         """Recovery path 1: this browser's own binding, with no Lobby round trip.
 
         The binding **names** a seat; the match **decides**. A binding naming a
-        finished match, or a seat someone else now holds, resumes nothing — and
-        the caller clears the cookie so a browser stops presenting one that can
-        never work again.
+        match this process no longer has, or a seat someone else now holds,
+        resumes nothing — and the caller clears the cookie so a browser stops
+        presenting one that can never work again.
+
+        A **finished** match does resume, and that is JQ-310's correction to the
+        original rule. A player whose phone slept through the last ten seconds
+        of a round came back to a 404 otherwise: no result, no idea who won, and
+        no way back to the Lobby, which is the worst moment in the demo to
+        strand somebody. What they get is the terminal state and the return URL.
+        There is nothing to play — `phase` is `matchOver` and every command is
+        refused — and resuming a destroyed-base match shows the destroyed base,
+        because reconnecting has never restored HP and does not start now
+        (Ryan, 2026-09-13).
         """
         match = await self._repo.get_match(binding.external_match_id)
         if match is None:
@@ -264,10 +292,18 @@ class GameService:
             return None
 
         session = self._sessions.get(binding.external_match_id)
-        if session is None or session.over:
+        if session is None:
             return None
 
-        return session, self._seat_side(session, binding.seat_key)
+        side = self._seat_side(session, binding.seat_key)
+        session.note_connection(
+            "connection.resumed",
+            path="seatBinding",
+            seat_key=binding.seat_key,
+            side=side,
+            over=session.over,
+        )
+        return session, side
 
     # ------------------------------------------------------------ lifecycle --
 
@@ -311,8 +347,30 @@ class GameService:
         sweep can find, which is what `idx_matches_unreported` is indexed for.
         """
         await self.persist_result(session)
+        await self.persist_run_record(session)
         ok = await session.report_to_lobby()
         await self._repo.mark_finished(session.external_match_id, reported=ok)
+
+    async def persist_run_record(self, session: MatchSession) -> None:
+        """Store the run record, once the run has actually finished.
+
+        **Only when the match is over**, and that is a rule about disclosure
+        rather than tidiness: a record carries both seats' plans, and the plan
+        phase is hidden simultaneous choice. Anything that could read a stored
+        record mid-match would be a way to read the opponent's army before the
+        reveal, so there is nothing to read until there is nothing to hide.
+        """
+        if not session.over:
+            return
+        await self._repo.record_run(
+            run_id=session.run_id,
+            external_match_id=session.external_match_id,
+            record=session.run_record.to_json(),
+        )
+
+    async def run_record(self, run_id: str) -> dict[str, Any] | None:
+        """A finished run's stored record, for a replay or a diagnostic."""
+        return await self._repo.get_run(run_id)
 
     async def persist_result(self, session: MatchSession) -> None:
         """One `match_results` row per seated player, keyed by Lobby user id."""

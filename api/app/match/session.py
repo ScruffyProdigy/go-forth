@@ -37,9 +37,20 @@ from typing import Any, Literal, cast
 from app.lobby.client import LobbyClient, MatchResultStatus
 from app.lobby.manifest import GameMode, RoundPolicy
 from app.match import fixtures, wire
-from app.match.plan import PlanError, SubmittedPlan, default_plan, parse_plan, resolve_loadout, validate_plan
+from app.match.commands import CommandLedger, LedgerEntry
+from app.match.diagnostics import DiagnosticsLog
+from app.match.plan import (
+    PlanError,
+    SubmittedPlan,
+    default_plan,
+    parse_plan,
+    plan_to_json,
+    resolve_loadout,
+    validate_plan,
+)
 from app.match.round import AuthoritativeRound, RoundEnding
-from app.match.wire import CastCommand, LoadoutSpell
+from app.match.run_record import RunRecord, RunRecorder
+from app.match.wire import CastCommand, CastRejection, LoadoutSpell
 from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig
 from app.sim.map import MapConfig
 from app.sim.types import SIDES, Side
@@ -59,6 +70,27 @@ ROUND_OVER_TICKS = 60
 PLANNING_BACKSTOP_TICKS = 20 * 60
 
 
+def _terminal_reason(match_ending: Mapping[str, Any], round_ending: Mapping[str, Any]) -> str:
+    """The one word for how a run stopped (Ryan, 2026-09-13).
+
+    A match ending and a round ending both carry a `kind`, and a result that
+    reported only one of them is unreadable in a different way each time. A run
+    that ended `testComplete` says nothing about *why* the last round stopped;
+    one that ended `baseDestroyed` must not be reported as though a lane was
+    scored out. So: the match's kind when it is terminal in its own right, and
+    otherwise the round's reason.
+
+    It travels in the run record and in the Lobby metadata, which is what makes
+    "the base fell" survive into a history row rather than living only in a
+    result screen nobody kept.
+    """
+    kind = str(match_ending.get("kind") or "")
+    if kind in ("baseDestroyed", "abandoned"):
+        return kind
+    reason = round_ending.get("reason")
+    return str(reason) if reason else kind
+
+
 @dataclass
 class Seat:
     """One seat of the match, and the player who holds it."""
@@ -76,6 +108,11 @@ class Seat:
     #: Set when the player genuinely left, which is the only thing that closes
     #: their way back in.
     departed: bool = False
+    #: How many sockets have ever held this seat. The first is an arrival; every
+    #: one after it is a return, and a diagnostic that could not tell the two
+    #: apart could not show a reconnect loop — which is what a player on a bad
+    #: connection actually experiences (JQ-310).
+    sockets_seen: int = 0
 
 
 @dataclass
@@ -99,6 +136,8 @@ class MatchSession:
         sim_config: SimConfig = DEFAULT_SIM_CONFIG,
         seed: int = 1,
         lobby_client: LobbyClient | None = None,
+        diagnostics: DiagnosticsLog | None = None,
+        starting_energy: float = fixtures.STARTING_ENERGY,
     ) -> None:
         self.run_id = run_id
         self.external_match_id = external_match_id
@@ -108,6 +147,11 @@ class MatchSession:
         self.sim_config = sim_config
         self.seed = seed
         self.lobby_client = lobby_client
+        #: What each seat opens a round's spell pool with. Held here rather than
+        #: read from `fixtures` at each use: the round takes it as an argument
+        #: and the run record stores it, and three readers of one provisional
+        #: constant is three places for them to stop agreeing.
+        self.starting_energy = starting_energy
 
         self.seats: dict[str, Seat] = {
             seat_key: Seat(seat_key=seat_key, side=side) for seat_key, side in seats.items()
@@ -128,6 +172,20 @@ class MatchSession:
         #: Set once the Lobby has been told, so a retry is idempotent on our side
         #: as well as on theirs.
         self._reported = False
+
+        #: One answer per command id, for the whole match (JQ-310). On the
+        #: session rather than the round, so a retry that arrives after its
+        #: round ended is still answered with what actually happened.
+        self._ledger = CommandLedger()
+        self.diagnostics = diagnostics if diagnostics is not None else DiagnosticsLog()
+        self._recorder = RunRecorder(
+            run_id=run_id,
+            match_id=external_match_id,
+            game_mode=mode.key,
+            test_profile=self.policy.test_profile,
+            map_config=self.map_config,
+            sim_config=self.sim_config,
+        )
 
     # ---------------------------------------------------------------- seats --
 
@@ -225,16 +283,29 @@ class MatchSession:
                 self._round_state.plans[side] = plan
                 self._round_state.loadouts[side] = resolve_loadout(plan)
 
+        # Derived from the run and the round rather than taken from a clock, so
+        # a match replayed from its run id reproduces every battle in it.
+        seed = self.seed + self.round_number
         self._round = AuthoritativeRound(
             round_number=self.round_number,
             map_config=self.map_config,
             plans=self._round_state.plans,
             loadouts=self._round_state.loadouts,
             base_hp=self._base_hp,
-            # Derived from the run and the round rather than taken from a clock,
-            # so a match replayed from its run id reproduces every battle in it.
-            seed=self.seed + self.round_number,
+            seed=seed,
             sim_config=self.sim_config,
+            starting_energy=self.starting_energy,
+        )
+        # Recorded here and not on the first tick: this is the moment both plans
+        # are fixed and the base HP the round opens on is settled, which is
+        # exactly the state a replay has to start from.
+        self._recorder.round_started(
+            number=self.round_number,
+            seed=seed,
+            starting_energy=self.starting_energy,
+            base_hp=self._base_hp,
+            plans=self._round_state.plans,
+            loadouts=self._round_state.loadouts,
         )
         self.phase = "battle"
         self._phase_ticks = 0
@@ -242,13 +313,112 @@ class MatchSession:
     # ---------------------------------------------------------------- casts --
 
     def cast(self, side: Side, command: CastCommand) -> dict[str, Any]:
-        """Answer one cast, as a `castOutcome` message ready to send."""
+        """Answer one cast, as a `castOutcome` message ready to send.
+
+        **Exactly one answer per command id, forever.** A retry — the client
+        heard nothing and sent the same cast again — is answered from the ledger
+        without the round being touched, so a lost acknowledgment costs a player
+        nothing and a resend costs them no energy. Everything a cast could be
+        refused for is decided once, at the moment the id is first seen.
+        """
+        seen = self._ledger.find(side, command.command_id)
+        if seen is not None:
+            self._note_command(
+                "command.retried",
+                side=side,
+                command_id=command.command_id,
+                outcome="accepted" if seen.accepted else "rejected",
+                reason=seen.reason,
+            )
+            return seen.to_message()
+
         if self.phase != "battle" or self._round is None:
-            return wire.cast_outcome_message("rejected", command.command_id, "roundOver")
+            # `wrongPhase` while planning, `roundOver` once a round has been
+            # decided: a client that casts during the plan screen has a bug, and
+            # one that casts a beat after the round ended has a connection.
+            reason: CastRejection = "wrongPhase" if self.phase == "planning" else "roundOver"
+            return self._answer(side, LedgerEntry(command.command_id, accepted=False, reason=reason))
+
         outcome = self._round.cast(side, command)
-        if outcome.accepted:
-            return wire.cast_outcome_message("accepted", command.command_id)
-        return wire.cast_outcome_message("rejected", command.command_id, outcome.rejection)
+        if not outcome.accepted:
+            return self._answer(
+                side,
+                LedgerEntry(
+                    command.command_id,
+                    accepted=False,
+                    reason=outcome.rejection,
+                    round_number=self.round_number,
+                ),
+            )
+
+        assert outcome.tick is not None and outcome.order is not None
+        self._recorder.cast_accepted(
+            side=side,
+            command_id=command.command_id,
+            spell_id=command.spell_id,
+            at=command.at,
+            tick=outcome.tick,
+            order=outcome.order,
+        )
+        return self._answer(
+            side,
+            LedgerEntry(
+                command.command_id,
+                accepted=True,
+                round_number=self.round_number,
+                tick=outcome.tick,
+                order=outcome.order,
+            ),
+        )
+
+    def _answer(self, side: Side, entry: LedgerEntry) -> dict[str, Any]:
+        """Record the answer and return it, so the two can never disagree."""
+        stored = self._ledger.record(side, entry)
+        if not stored.accepted:
+            self._note_command(
+                "command.rejected",
+                side=side,
+                command_id=stored.command_id,
+                reason=stored.reason,
+                phase=self.phase,
+            )
+        return stored.to_message()
+
+    def _note_command(self, kind: str, **fields: Any) -> None:
+        self.diagnostics.record(
+            channel="command",
+            kind=kind,
+            match_id=self.external_match_id,
+            run_id=self.run_id,
+            round=self.round_number,
+            **fields,
+        )
+
+    def note_connection(self, kind: str, **fields: Any) -> None:
+        """A connection event on this match, for the transport to call.
+
+        Here rather than in `ws.py` so a socket does not have to carry the run
+        id and match id around to say something happened, and so every
+        connection diagnostic in the codebase is emitted through one door.
+        """
+        self.diagnostics.record(
+            channel="connection",
+            kind=kind,
+            match_id=self.external_match_id,
+            run_id=self.run_id,
+            phase=self.phase,
+            round=self.round_number,
+            **fields,
+        )
+
+    @property
+    def ledger(self) -> CommandLedger:
+        return self._ledger
+
+    @property
+    def run_record(self) -> RunRecord:
+        """The record of this run so far. Complete once the match is over."""
+        return self._recorder.record
 
     # ----------------------------------------------------------------- tick --
 
@@ -323,6 +493,7 @@ class MatchSession:
             zones=zones,
             zone_score=zone_score,
         )
+        self._recorder.round_finished(ending=wire_ending, base_hp=self._base_hp)
 
         terminal = self._match_ending(ending)
         if terminal is not None:
@@ -331,6 +502,12 @@ class MatchSession:
                 rounds_won=dict(self.rounds_won),
                 bases=bases,
                 last_round=self._last_round_result,
+            )
+            self._recorder.match_finished(
+                ending=terminal,
+                terminal_reason=_terminal_reason(terminal, wire_ending),
+                rounds_won=self.rounds_won,
+                base_hp=self._base_hp,
             )
             self.phase = "matchOver"
         else:
@@ -386,8 +563,9 @@ class MatchSession:
                 for side in SIDES
             }
         )
+        ending = wire.match_ending_abandoned(winner)
         self._match_result = wire.match_result(
-            ending=wire.match_ending_abandoned(winner),
+            ending=ending,
             rounds_won=dict(self.rounds_won),
             bases=bases,
             last_round=self._last_round_result
@@ -398,6 +576,15 @@ class MatchSession:
                 zones=[],
                 zone_score={side: 0.0 for side in SIDES},
             ),
+        )
+        self._recorder.match_finished(
+            ending=ending,
+            terminal_reason="abandoned",
+            rounds_won=self.rounds_won,
+            # Read off the live world when there is one: a match abandoned
+            # mid-battle stopped where the battle had got to, and the carried
+            # `_base_hp` is where the *previous* round left it.
+            base_hp={side: float(bases[side]["hp"]) for side in SIDES},
         )
         self.phase = "matchOver"
         self._phase_ticks = 0
@@ -427,9 +614,11 @@ class MatchSession:
     def _phase_json(self, side: Side) -> dict[str, Any]:
         if self.phase == "planning":
             return wire.planning_phase(
-                plan=fixtures.opening_plan_json(self.round_number, self.map_config),
+                plan=self._plan_json(side),
                 locked=self._round_state.locked[side],
                 deployment=self._deployment_preview(side),
+                loadout=self._round_state.loadouts.get(side, []),
+                energy=self.starting_energy,
             )
 
         if self.phase == "battle":
@@ -442,6 +631,25 @@ class MatchSession:
 
         assert self._match_result is not None
         return wire.match_over_phase(self._match_result)
+
+    def _plan_json(self, side: Side) -> dict[str, Any]:
+        """This seat's plan screen: the suggestion, or what it actually locked in.
+
+        The roster, the mage cap and the opening energy come from the fixture
+        either way — they are what the screen is *built* from, and they do not
+        change when a player commits. What changes is `troops` and `spellSlots`,
+        which after a lock-in are the player's own.
+
+        This is the half of reclaim that is easy to miss, because nothing looks
+        broken without it: a player who refreshes after locking in is shown the
+        suggested default, concludes their lock-in vanished, and re-plans a
+        round the server has already accepted their army for.
+        """
+        screen = fixtures.opening_plan_json(self.round_number, self.map_config)
+        submitted = self._round_state.plans.get(side)
+        if submitted is None:
+            return screen
+        return {**screen, **plan_to_json(submitted)}
 
     def _deployment_preview(self, side: Side) -> dict[str, Any] | None:
         """Your own troops, on the field, once you have locked in.
@@ -472,7 +680,7 @@ class MatchSession:
             world=preview.world,
             map_config=self.map_config,
             you=side,
-            energy=fixtures.STARTING_ENERGY,
+            energy=self.starting_energy,
             loadout=self._round_state.loadouts.get(side, []),
             casts=[],
             only_your_units=True,
@@ -518,6 +726,9 @@ class MatchSession:
             "runId": self.run_id,
             "rounds": self.round_number,
             "ending": kind,
+            # Carried into match history so "the base fell" outlives the result
+            # screen (Ryan, 2026-09-13).
+            "terminalReason": self.run_record.terminal_reason,
             "roundsWon": dict(self.rounds_won),
             "baseHp": self._match_result["baseHp"],
         }
@@ -536,9 +747,15 @@ class MatchSession:
 
         Retried rather than tracked: `reportMatchResult` is keyed by match id on
         the Lobby's side, so a second call after a timeout reports the same
-        terminal state rather than a second one. `_reported` only keeps this
-        server from making pointless calls on a match already acknowledged.
+        terminal state rather than a second one. `_reported` keeps this server
+        from making pointless calls on a match already acknowledged — checked
+        here rather than only described, which is what it was until JQ-310's
+        retry test ran the finish path twice and watched two reports go out.
+        Harmless on the Lobby's side, and still a call this server knew it did
+        not need to make.
         """
+        if self._reported:
+            return True
         report = self.result_report()
         if report is None or self.lobby_client is None:
             return False

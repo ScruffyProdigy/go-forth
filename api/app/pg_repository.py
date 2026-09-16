@@ -324,6 +324,51 @@ class PgRepository:
             for row in rows
         ]
 
+    async def record_run(self, *, run_id: str, external_match_id: str, record: dict[str, Any]) -> None:
+        async with await self._connect() as conn, conn.cursor() as cur:
+            # `DO UPDATE` and not `DO NOTHING`: the finish path is retried, and
+            # the later write is the more complete record — the earlier one may
+            # have been written before the Lobby report settled the ending.
+            await cur.execute(
+                """
+                INSERT INTO match_runs
+                  (run_id, external_match_id, record_version, rules_version,
+                   content_version, terminal_reason, record)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (run_id) DO UPDATE SET
+                  record_version  = EXCLUDED.record_version,
+                  rules_version   = EXCLUDED.rules_version,
+                  content_version = EXCLUDED.content_version,
+                  terminal_reason = EXCLUDED.terminal_reason,
+                  record          = EXCLUDED.record
+                """,
+                (
+                    run_id,
+                    external_match_id,
+                    int(record.get("recordVersion", 0)),
+                    int(record.get("rulesVersion", 0)),
+                    int(record.get("contentVersion", 0)),
+                    record.get("terminalReason"),
+                    json.dumps(record),
+                ),
+            )
+            await conn.commit()
+
+    async def get_run(self, run_id: str) -> dict[str, Any] | None:
+        async with await self._connect() as conn, conn.cursor() as cur:
+            await cur.execute(
+                "SELECT run_id, external_match_id, record FROM match_runs WHERE run_id = %s",
+                (run_id,),
+            )
+            row = await cur.fetchone()
+        if row is None:
+            return None
+        return {
+            "runId": row["run_id"],
+            "matchId": row["external_match_id"],
+            "record": row["record"],
+        }
+
     async def mark_finished(self, external_match_id: str, *, reported: bool) -> None:
         async with await self._connect() as conn, conn.cursor() as cur:
             await cur.execute(

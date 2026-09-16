@@ -306,16 +306,92 @@ def test_a_reconnecting_socket_gets_the_current_state_not_a_reset(
     assert session is not None
     for _ in range(20):
         session.tick()
-    tick_before = session.snapshot_for("north")["phase"]["battle"]["tick"]
+    round_before = session.round_number
 
     with client.websocket_connect("/api/v1/ws") as again:
         again.send_json({"type": "subscribe", "matchId": MATCH, "playerId": north["playerId"]})
         state = again.receive_json()["state"]
 
     # Recovery is authoritative and wholesale: the player is shown where the
-    # battle actually is, not where they left it, and nothing was reset.
-    assert state["phase"]["kind"] == "battle"
-    assert state["phase"]["battle"]["tick"] >= tick_before
+    # match actually is, not where they left it, and nothing was reset.
+    #
+    # Asserted as "the match has not gone backwards" rather than as "the phase
+    # is still `battle`". A real clock is ticking this match in the app's own
+    # event loop while the test thread opens sockets, so *how far* it has got by
+    # now is wall-clock luck — and a test that demanded `battle` failed whenever
+    # the round happened to finish first, which is a flake about the machine
+    # rather than a finding about reconnecting. What must never happen is a
+    # reset, and that is time-independent.
+    assert state["phase"]["kind"] in ("battle", "roundOver", "matchOver")
+    assert state["round"] >= round_before
+    assert state["runId"] == session.run_id
+
+
+def test_a_client_that_lost_an_acknowledgment_may_resend_the_same_cast(
+    client: TestClient, service: GameService
+) -> None:
+    """The lost-acknowledgment case over the real transport (JQ-310).
+
+    Simulated the way it actually happens: the socket dies before the
+    `castOutcome` is read, and the client reconnects and sends the identical
+    command again because from where it is sitting nothing happened. It must be
+    answered with what the server already decided — not charged for a second
+    meteor the player never asked for.
+    """
+    north, south = _both_seats(client)
+    command = {"commandId": "c1", "spellId": "meteor", "at": {"x": 180, "y": 280}, "tick": 1}
+
+    with (
+        client.websocket_connect("/api/v1/ws") as north_ws,
+        client.websocket_connect("/api/v1/ws") as south_ws,
+    ):
+        for ws, seat in ((north_ws, north), (south_ws, south)):
+            ws.send_json({"type": "subscribe", "matchId": MATCH, "playerId": seat["playerId"]})
+            ws.receive_json()
+        north_ws.send_json({"type": "lockIn", "plan": _plan()})
+        south_ws.send_json({"type": "lockIn", "plan": _plan()})
+        _await_phase(north_ws, "battle")
+
+        north_ws.send_json({"type": "cast", "cast": command})
+        first = _await_message(north_ws, "castOutcome")
+        # ...and here the connection dies, with the answer already sent.
+
+    session = service.session(MATCH)
+    assert session is not None
+    casts_after_first = len(session.snapshot_for("north")["phase"]["battle"]["casts"])
+
+    with client.websocket_connect("/api/v1/ws") as again:
+        again.send_json({"type": "subscribe", "matchId": MATCH, "playerId": north["playerId"]})
+        again.receive_json()
+        again.send_json({"type": "cast", "cast": command})
+        retried = _await_message(again, "castOutcome")
+
+    assert retried == first
+    assert len(session.snapshot_for("north")["phase"]["battle"]["casts"]) == casts_after_first
+
+
+def test_reconnecting_during_planning_returns_the_plan_that_was_locked_in(
+    client: TestClient,
+) -> None:
+    """Otherwise a player who refreshes concludes their lock-in was lost."""
+    north, _ = _both_seats(client)
+    lone = {
+        "troops": [{"mageId": "ember-adept", "summonIds": ["cinder-hound"], "order": {"kind": "defendBase"}}],
+        "spellSlots": [None, None],
+    }
+
+    with client.websocket_connect("/api/v1/ws") as ws:
+        ws.send_json({"type": "subscribe", "matchId": MATCH, "playerId": north["playerId"]})
+        ws.receive_json()
+        ws.send_json({"type": "lockIn", "plan": lone})
+        assert _await_phase(ws, "planning")["phase"]["locked"] is True
+
+    with client.websocket_connect("/api/v1/ws") as again:
+        again.send_json({"type": "subscribe", "matchId": MATCH, "playerId": north["playerId"]})
+        phase = again.receive_json()["state"]["phase"]
+
+    assert phase["locked"] is True
+    assert [troop["mageId"] for troop in phase["plan"]["troops"]] == ["ember-adept"]
 
 
 def test_invalid_json_is_answered_rather_than_fatal(client: TestClient) -> None:

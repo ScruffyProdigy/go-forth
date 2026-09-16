@@ -7,6 +7,7 @@
     GET  /api/v1/matches/{ref}                     state, for a link preview
     POST /api/v1/matches/{ref}/claim               jwt.*, reclaim.*
     GET  /api/v1/resume                            recovery path 1
+    GET  /api/v1/runs/{runId}                      a finished run's record
     GET  /api/v1/players/{lobbyUserId}/history     player history
 
 Routes are thin on purpose. Everything with a rule in it lives in
@@ -223,6 +224,7 @@ def create_router(
             return response
 
         session, side = resumed
+        match = await service.get_match(session.external_match_id)
         return JSONResponse(
             {
                 "matchId": session.external_match_id,
@@ -233,8 +235,45 @@ def create_router(
                     "side": side,
                 },
                 "state": session.snapshot_for(side),
+                # A match that is already over still resumes (JQ-310), so the
+                # answer has to say so rather than leaving a client to infer it
+                # from the phase. `returnUrl` rides along because the one thing
+                # a player wants on a terminal reconnect is the way back to the
+                # Lobby, and a result screen with no exit is where the demo ends
+                # for them.
+                "over": session.over,
+                "returnUrl": (
+                    build_return_url(match.return_url, match.external_match_id)
+                    if match is not None and match.return_url
+                    else None
+                ),
             }
         )
+
+    @router.get("/runs/{run_id}")
+    async def run_record(run_id: str) -> Response:
+        """A finished run's record: what it was played under, and what happened.
+
+        Read-only, and only for runs that are over — `persist_run_record` writes
+        nothing until then, so a match in progress is a 404 here rather than a
+        way to read the opponent's plan before the reveal.
+
+        Carries no credentials: no `playerId`, no Lobby token, no return URL.
+        `app/match/run_record.py` says what is in one and why.
+
+        Unauthenticated, and the run id is what stands in for a secret: it is 64
+        bits from `secrets.token_hex`, minted per provision, and never shown to
+        anyone outside the match. That is a deliberately modest claim — what a
+        guessed id would reveal is two plans and a list of spells from a match
+        that is already over, which is what both players watched happen. The
+        things worth protecting are the hidden plan *before* the reveal, which
+        is why nothing is written until the match is finished, and the seat
+        credential, which is not in the document at all.
+        """
+        stored = await service.run_record(run_id)
+        if stored is None:
+            return JSONResponse({"error": "run not found"}, status_code=404)
+        return JSONResponse(stored)
 
     @router.get("/players/{lobby_user_id}/history")
     async def history(lobby_user_id: str, limit: int = 20) -> dict[str, Any]:

@@ -7,10 +7,16 @@ no Postgres service, so a contract suite that needed a database would be a
 contract suite that never ran.
 
 The rule that keeps the two honest: **nothing here knows what a battle is.** A
-repository stores identity, seating and outcomes. Live match state lives in
-`MatchSession` and is deliberately not persisted — restoring a half-finished
-battle from a row is JQ-310's problem, and a schema that pretended to hold one
-would be a promise this ticket does not keep.
+repository stores identity, seating, outcomes — and, since JQ-310, the *record*
+of a finished run as an opaque document.
+
+A run record is not an exception to that rule, and the distinction is worth
+being exact about because it looks like one. Live match state still lives in
+`MatchSession` and is still not persisted: a server restart loses the match in
+progress, exactly as before. What is stored is what a finished run *was* — the
+inputs it was a function of — written once when the match ends, read only by a
+replay. Nothing resumes from it, and a schema that let something try would be
+the promise this layer has always declined to make.
 """
 
 from __future__ import annotations
@@ -134,6 +140,17 @@ class Repository(Protocol):
 
     async def mark_finished(self, external_match_id: str, *, reported: bool) -> None: ...
 
+    async def record_run(self, *, run_id: str, external_match_id: str, record: dict[str, Any]) -> None:
+        """Store a finished run's record, keyed by run id.
+
+        Idempotent on `run_id`: `_on_match_finished` can run more than once for
+        one match — a retry sweep, a clock that finished twice — and a record
+        that stacked would leave two documents claiming to be the same run.
+        """
+        ...
+
+    async def get_run(self, run_id: str) -> dict[str, Any] | None: ...
+
 
 class MemoryRepository:
     """Everything the contract tests need, and nothing that outlives the process."""
@@ -142,6 +159,7 @@ class MemoryRepository:
         self._matches: dict[str, StoredMatch] = {}
         self._players: dict[str, dict[str, Any]] = {}
         self._results: dict[tuple[str, str], StoredResult] = {}
+        self._runs: dict[str, dict[str, Any]] = {}
 
     async def upsert_match(
         self,
@@ -258,6 +276,22 @@ class MemoryRepository:
         match.finished_at = match.finished_at or now
         if reported:
             match.reported_at = match.reported_at or now
+
+    async def record_run(self, *, run_id: str, external_match_id: str, record: dict[str, Any]) -> None:
+        # What arrives is an already-serialised document, not the live
+        # `RunRecord` — `service.persist_run_record` calls `to_json()` on the
+        # way in. That is what keeps this store from aliasing an object the
+        # session could still append to, and it is also what `PgRepository`
+        # receives, so the two are handed the same thing.
+        self._runs[run_id] = {
+            "runId": run_id,
+            "matchId": external_match_id,
+            "record": dict(record),
+        }
+
+    async def get_run(self, run_id: str) -> dict[str, Any] | None:
+        row = self._runs.get(run_id)
+        return dict(row) if row is not None else None
 
     # -------------------------------------------------------------- testing --
 

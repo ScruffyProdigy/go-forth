@@ -195,14 +195,16 @@ cd client && npm run lint && npm run typecheck && npm test
 │   │   ├── service.py        # what routes and sockets both go through
 │   │   ├── repository.py     # + pg_repository.py — identity, seating, results
 │   │   ├── lobby/            # the JoinQuest contract — fixed, shared with rpslr
-│   │   ├── match/            # this game: wire, plan, round, session, clock
+│   │   ├── match/            # this game: wire, plan, round, session, clock,
+│   │   │                      #   commands (dedup), run_record, diagnostics
 │   │   ├── sim/              # the battle sim — pure, deterministic, headless
 │   │   └── scripts/
 │   │       ├── battle_demo.py  # runs a battle, prints the event stream
 │   │       └── match_demo.py   # runs a whole match: plans, casts, outcome
 │   └── tests/                # outside the package, per Python convention
 │       ├── lobby/            # one module per integration-guide §8 row
-│       ├── match/            # wire, plan, round, session, clock, realtime
+│       ├── match/            # wire, plan, round, session, clock, realtime,
+│       │                      #   commands, reclaim, run_record, diagnostics
 │       └── sim/              # the sim's own suite, mirroring app/sim/
 ├── client/                   # Vite + React 18 game UI
 │   ├── Dockerfile            # static build served by nginx

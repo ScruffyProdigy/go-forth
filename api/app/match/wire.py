@@ -156,7 +156,12 @@ class ResolvedCast:
     spell_name: str
     cast_by: Side
     at: Vec2
+    #: The tick the server scheduled it on, and its place among the round's
+    #: accepted casts. Both the server's, never the client's (JQ-310): a client
+    #: that could name either could schedule a cast the opponent cannot see
+    #: coming, or push itself ahead of a cast that arrived first.
     tick: int
+    order: int
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -166,6 +171,7 @@ class ResolvedCast:
             "castBy": self.cast_by,
             "at": point(self.at),
             "tick": self.tick,
+            "order": self.order,
         }
 
 
@@ -213,8 +219,35 @@ def planning_phase(
     plan: Mapping[str, Any],
     locked: bool,
     deployment: Mapping[str, Any] | None,
+    loadout: Sequence[LoadoutSpell] = (),
+    energy: float = 0.0,
 ) -> dict[str, Any]:
-    return {"kind": "planning", "plan": dict(plan), "locked": locked, "deployment": deployment}
+    """The plan screen, as one seat sees it.
+
+    `plan` is **this seat's own**: the suggested default until they lock in, and
+    what they actually locked in afterwards. That swap is what makes a refresh
+    mid-planning survivable — a player who reloads after locking has to be shown
+    the army they committed to, not the suggestion they replaced, or they will
+    conclude their lock-in was lost and try to make it again (JQ-310).
+
+    `loadout` is the resolved equipped spells, with the costs the *server* read
+    off the fielded mages, and is empty until the seat locks. It rides here as
+    well as in `battle_snapshot` so a reclaim during planning already knows what
+    a cast will cost, rather than learning it when the battle starts.
+
+    Nothing about the opponent is in this payload at any point — not their plan,
+    not their loadout, not whether they have locked. Hidden simultaneous choice
+    is the phase's whole mechanic, and a field a UI merely declines to draw is
+    still a field in the network tab.
+    """
+    return {
+        "kind": "planning",
+        "plan": dict(plan),
+        "locked": locked,
+        "deployment": deployment,
+        "loadout": [spell.to_json() for spell in loadout],
+        "energy": energy,
+    }
 
 
 def battle_phase(snapshot: Mapping[str, Any]) -> dict[str, Any]:
@@ -358,7 +391,22 @@ CastRejection = Literal[
     "roundOver",
     "notYourSeat",
     "notConnected",
+    #: The cast named a tick too far from the server's to honour — a tap that
+    #: sat in a dead socket, or a client clock that has run away (JQ-310).
+    "stale",
+    #: A cast that arrived outside the battle phase altogether. Distinct from
+    #: `roundOver`, which means the round you were casting into has just ended:
+    #: one is a client that is behind, the other is a client that is confused,
+    #: and a player deserves to be told which.
+    "wrongPhase",
 ]
+
+
+#: How long a client-minted `commandId` may be. It is a correlation id, and a
+#: UUID is 36 characters; anything longer is not a client labelling its own
+#: casts. Bounded because the id becomes a key in the per-match command ledger,
+#: which is to say a dictionary a client fills in (JQ-310).
+MAX_COMMAND_ID_LENGTH = 64
 
 
 class CommandError(Exception):
@@ -412,8 +460,11 @@ def parse_cast_command(raw: Any) -> CastCommand:
     at = raw.get("at")
     if not isinstance(at, dict):
         raise CommandError("cast.at is required")
+    command_id = _require_text(raw.get("commandId"), "cast.commandId")
+    if len(command_id) > MAX_COMMAND_ID_LENGTH:
+        raise CommandError(f"cast.commandId must be at most {MAX_COMMAND_ID_LENGTH} characters")
     return CastCommand(
-        command_id=_require_text(raw.get("commandId"), "cast.commandId"),
+        command_id=command_id,
         spell_id=_require_text(raw.get("spellId"), "cast.spellId"),
         at=Vec2(_require_number(at.get("x"), "cast.at.x"), _require_number(at.get("y"), "cast.at.y")),
         tick=int(_require_number(raw.get("tick", 0), "cast.tick")),

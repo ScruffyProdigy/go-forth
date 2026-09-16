@@ -55,6 +55,17 @@ ENERGY_CAP = 120.0
 #: one thing the two-lane map exists to make interesting.
 SCORE_THRESHOLD = 240.0
 
+#: How far out of date a cast's `tick` may be before the server refuses it.
+#: Provisional: two seconds at the default rate — long enough that an ordinary
+#: phone's round trip never trips it, short enough that a tap aimed at where a
+#: troop *was* does not land where nothing is any more.
+#:
+#: It bounds the window in both directions. A cast from the future is the same
+#: refusal: a client cannot know a tick the server has not run, so a `tick`
+#: ahead of the world is either a clock that has run away or a client trying to
+#: book a cast in advance, and neither should reach the sim.
+STALE_COMMAND_TICKS = 40
+
 
 @dataclass(slots=True)
 class SeatEnergy:
@@ -117,6 +128,12 @@ class CastOutcome:
     accepted: bool
     command_id: str
     rejection: CastRejection | None = None
+    #: The tick the server scheduled the cast on and its position among this
+    #: round's accepted casts. **Server-assigned, both of them** — the client
+    #: names neither, and what it does send as `tick` is only used to decide
+    #: whether the tap was recent enough to honour. Both None on a refusal.
+    tick: int | None = None
+    order: int | None = None
 
 
 class AuthoritativeRound:
@@ -143,6 +160,12 @@ class AuthoritativeRound:
             side: SeatEnergy(start=min(starting_energy, ENERGY_CAP), cap=ENERGY_CAP) for side in SIDES
         }
         self._casts: list[ResolvedCast] = []
+        #: Position of the next accepted cast within this round, from 1. Per
+        #: round rather than per match: a run record stores casts under the
+        #: round they were cast in, and `(round, tick, order)` is then a total
+        #: order over everything a replay has to re-apply. Assigned only on
+        #: acceptance, so the sequence has no gaps to explain.
+        self._next_order = 1
         self._ending: RoundEnding | None = None
 
         setup = BattleSetup(
@@ -314,6 +337,13 @@ class AuthoritativeRound:
         if self._ending is not None:
             return CastOutcome(False, command.command_id, "roundOver")
 
+        if self._is_stale(command.tick):
+            # Checked before anything about the command's *content*: how old a
+            # tap is has nothing to do with what it asked for, and a two-minute
+            # old cast answered `notEnoughEnergy` would send a player looking at
+            # their energy bar for a problem that is their connection.
+            return CastOutcome(False, command.command_id, "stale")
+
         spell = next((entry for entry in self._loadouts[side] if entry.spell_id == command.spell_id), None)
         if spell is None:
             # Covers both "not in this round's loadout" and "not a spell at all".
@@ -347,6 +377,8 @@ class AuthoritativeRound:
         self._runner.inject(injection)
 
         self._energy[side].spend(spell.cost)
+        order = self._next_order
+        self._next_order += 1
         self._casts.append(
             ResolvedCast(
                 command_id=command.command_id,
@@ -355,9 +387,23 @@ class AuthoritativeRound:
                 cast_by=side,
                 at=command.at,
                 tick=target_tick,
+                order=order,
             )
         )
-        return CastOutcome(True, command.command_id)
+        return CastOutcome(True, command.command_id, tick=target_tick, order=order)
+
+    def _is_stale(self, client_tick: int) -> bool:
+        """Whether a cast's `tick` is too far from the world's to honour.
+
+        A `tick` of zero is what `parse_cast_command` fills in when the client
+        sent none, and is read as "unstated" rather than as tick zero. The
+        window is a courtesy to a client that reports where it was looking; a
+        client that reports nothing gets no courtesy and no refusal, and the
+        deduplication ledger — not this — is what keeps it from double-casting.
+        """
+        if client_tick <= 0:
+            return False
+        return abs(self.world.tick - client_tick) > STALE_COMMAND_TICKS
 
     def _on_map(self, at: Vec2) -> bool:
         config = self.map_config
