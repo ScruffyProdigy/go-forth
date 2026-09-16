@@ -27,6 +27,7 @@ from typing import Literal
 
 from app.sim.abilities import build_ability_catalog
 from app.sim.ai.casting import FollowsIntent
+from app.sim.ai.inspect.record import DecisionTrace
 from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig, max_ticks, validate_sim_config
 from app.sim.context import TickContext, create_tick_context
 from app.sim.energy import SchoolEnergyRuleTable, resolve_school_energy_rules
@@ -230,8 +231,16 @@ def create_runner(
     battle_state: BattleSetup,
     seed: int,
     config: SimConfig = DEFAULT_SIM_CONFIG,
+    trace: DecisionTrace | None = None,
 ) -> BattleRunner:
-    """Builds a battle and stops at tick 0, before any phase has run."""
+    """Builds a battle and stops at tick 0, before any phase has run.
+
+    `trace` is a developer's window onto the decision phase (JQ-331) and nothing
+    more: it is written to, never read, and a battle built with one produces the
+    same result as the same battle built without. `tests/sim/ai/
+    test_inspect_determinism.py` holds that to byte-identical output in fresh
+    processes.
+    """
     validate_sim_config(config)
 
     rng = create_rng(seed)
@@ -262,6 +271,7 @@ def create_runner(
         # the default for units with no behaviour data (JQ-328).
         cast_policy=FollowsIntent(),
         spells=spells,
+        trace=trace,
     )
 
     return BattleRunner(
@@ -284,11 +294,13 @@ def run_battle(
     battle_state: BattleSetup,
     seed: int,
     config: SimConfig = DEFAULT_SIM_CONFIG,
+    trace: DecisionTrace | None = None,
 ) -> BattleResult:
     """Runs a battle to its end.
 
     `seed` is the whole of the battle's randomness: same seed, same battle.
+    See `create_runner` on `trace`, which changes nothing about the battle.
     """
-    runner = create_runner(map_config, school_configs, battle_state, seed, config)
+    runner = create_runner(map_config, school_configs, battle_state, seed, config, trace)
     runner.run_to_end()
     return runner.result()
