@@ -58,18 +58,15 @@ class DecisionPhase:
             if not is_alive(unit) or unit.ai is None:
                 continue
 
-            decision = decide(
-                observe(
-                    world,
-                    unit,
-                    ctx.map_config,
-                    ctx.seconds_per_tick,
-                    ctx.abilities,
-                    assignment=_assignment(troops.get(unit.troop_id), unit.id),
-                ),
-                unit.ai.behavior,
-                ctx.rng,
+            observation = observe(
+                world,
+                unit,
+                ctx.map_config,
+                ctx.seconds_per_tick,
+                ctx.abilities,
+                assignment=_assignment(troops.get(unit.troop_id), unit.id),
             )
+            decision = decide(observation, unit.ai.behavior, ctx.rng)
             intent = intent_of(decision)
             unit.ai.intent = intent
 
@@ -85,6 +82,13 @@ class DecisionPhase:
             # station" needs no code at all.
             if intent.destination is not None:
                 unit.destination = intent.destination
+
+            # Last, so a trace sees everything this tick committed (JQ-331).
+            # A battle nobody is inspecting pays one `is None` per unit per tick,
+            # and the decision above has already happened either way: there is no
+            # branch here that a recorder could talk the sim into taking.
+            if ctx.trace is not None:
+                ctx.trace.record(world.tick, observation, decision)
 
 
 def _assignment(troop: Troop | None, unit_id: UnitId) -> Assignment | None:

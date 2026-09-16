@@ -65,7 +65,14 @@ def test_no_module_outside_the_sim_imports_serialize_battle() -> None:
     to stdout and nothing else.
     """
     api_root = WIRE_SOURCE.parents[1]
-    allowed = {Path("scripts/battle_demo.py"), Path("scripts/match_demo.py")}
+    allowed = {
+        Path("scripts/battle_demo.py"),
+        Path("scripts/match_demo.py"),
+        # JQ-331's decision inspector. `--emit battle` prints the canonical text
+        # and nothing else, which is what its determinism checks compare across
+        # fresh interpreters — the same reason the two demos are here.
+        Path("scripts/decision_report.py"),
+    }
 
     offenders = []
     for path in sorted(api_root.rglob("*.py")):

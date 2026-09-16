@@ -19,6 +19,10 @@ Shared unit behavior — creature profiles, mage personalities, and the
 deterministic decision loop that reads them — is JQ-328, in `ai/`. A battle that
 ships no behavior library runs without it and behaves exactly as slice A did.
 
+The decision inspector is JQ-331, in `ai/inspect/`. Pass `run_battle` a
+`DecisionTrace` and it records why each unit chose what it chose; pass it
+nothing, as every real match does, and the sim runs exactly as it does here.
+
 Two Python rules hold the determinism guarantee, neither of which had an
 equivalent in the TypeScript this was ported from:
 
@@ -64,6 +68,13 @@ from app.sim.ai.fixtures import (
     sample_library,
     strength_library,
 )
+from app.sim.ai.inspect.record import (
+    DecisionTrace,
+    PersonalityRecord,
+    TraceConfig,
+    TraceRecord,
+)
+from app.sim.ai.inspect.report import as_dicts, render_json, render_text
 from app.sim.ai.intent import ActionKind, Assignment, Intent, TroopCoordination, UnitAi
 from app.sim.ai.observe import Observation, observe
 from app.sim.ai.profiles import (
@@ -342,6 +353,7 @@ __all__ = [
     "DamageProfile",
     "DashToTarget",
     "Decision",
+    "DecisionTrace",
     "DeploymentStrip",
     "DispelledSlot",
     "Effect",
@@ -368,6 +380,7 @@ __all__ = [
     "OrderKind",
     "PersonalityDefinition",
     "PersonalityInfluence",
+    "PersonalityRecord",
     "PersonalityRef",
     "PersonalityRule",
     "PersonalitySource",
@@ -394,6 +407,8 @@ __all__ = [
     "SpellInjection",
     "TickContext",
     "TickPhase",
+    "TraceConfig",
+    "TraceRecord",
     "TraitDefinition",
     "TraitTag",
     "Troop",
@@ -417,6 +432,7 @@ __all__ = [
     "ability_ready",
     "anchors_on_mage",
     "apply_effects",
+    "as_dicts",
     "assignment_for",
     "attach_behavior",
     "baseline_profile",
@@ -478,6 +494,8 @@ __all__ = [
     "placeholder_battle",
     "placeholder_behavior",
     "profile_for",
+    "render_json",
+    "render_text",
     "resolve_school_energy_rules",
     "resolve_school_multipliers",
     "resolve_side_multipliers",
