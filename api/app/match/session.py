@@ -468,17 +468,19 @@ class MatchSession:
             return None
 
         plan = self._round_state.plans[side]
-        snapshot = self._round_state.snapshots[side]
         preview = AuthoritativeRound(
             round_number=self.round_number,
             map_config=self.map_config,
             plans={s: plan for s in SIDES},
-            # The locked seat's own plan and its own snapshot, mirrored onto
-            # both sides. Only this seat's units are drawn, so the opposing army
-            # is a throwaway needed to build a world — mirroring what is already
-            # in hand rather than resolving the opponent's plan is what keeps
-            # this preview from touching hidden information at all.
-            snapshots={s: snapshot for s in SIDES},
+            # This seat's own plan on both sides. Only its units are drawn, so
+            # the opposing army is a throwaway needed to build a world, and
+            # resolving *this* plan twice rather than reading the opponent's is
+            # what keeps the preview from touching hidden information at all.
+            #
+            # Resolved once per side rather than mirrored: a snapshot is
+            # namespaced by the seat it belongs to, so one snapshot used twice
+            # puts two `north:` spells in a catalog that refuses duplicate ids.
+            snapshots={s: resolve_snapshot(plan, s, self.round_number) for s in SIDES},
             base_hp=self._base_hp,
             seed=self.seed + self.round_number,
             sim_config=self.sim_config,

@@ -528,3 +528,26 @@ def test_a_cast_after_every_contributor_has_died_fires_the_snapshot_numbers() ->
     # 28 + 3 x 8, capped at 24. The support that bought it is dead; the number
     # is the one the plan screen showed.
     assert read_field(blast, "damage.amount") == 52
+
+
+def test_a_snapshot_in_the_wrong_seat_is_refused_at_construction() -> None:
+    """A snapshot is namespaced by the seat it belongs to, and the round says so.
+
+    Found by the deployment preview, which mirrors one seat's plan onto both
+    sides to build a throwaway world: mirroring its *snapshot* too put two
+    `north:` spells into one catalog. `build_spell_catalog` caught it, four
+    frames deep inside world creation, naming the duplicated id rather than the
+    mistake. This refuses it at the door instead.
+    """
+    plan = default_plan(MAP)
+    north = resolve_snapshot(plan, "north")
+
+    with pytest.raises(ValueError, match="a snapshot belongs to one seat"):
+        AuthoritativeRound(
+            round_number=1,
+            map_config=MAP,
+            plans={side: plan for side in SIDES},
+            snapshots={side: north for side in SIDES},
+            base_hp={side: 1000.0 for side in SIDES},
+            seed=5,
+        )

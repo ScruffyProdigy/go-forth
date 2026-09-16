@@ -142,6 +142,16 @@ class AuthoritativeRound:
         self.map_config = map_config
         self.sim_config = sim_config
         self.seed = seed
+        for seat, snapshot in snapshots.items():
+            if snapshot.namespace != seat:
+                # The seat's own snapshot, or the sim catalog ends up with two
+                # spells under one id — which `build_spell_catalog` refuses, deep
+                # inside world creation, naming the id rather than the mistake.
+                raise ValueError(
+                    f"the {seat} seat was given a loadout snapshot namespaced "
+                    f"{snapshot.namespace!r}; a snapshot belongs to one seat"
+                )
+
         self._snapshots = dict(snapshots)
         self._loadouts = {side: loadout_spells(snapshots[side]) for side in SIDES}
         self._energy = {
