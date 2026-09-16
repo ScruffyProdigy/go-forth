@@ -184,7 +184,11 @@ def test_a_cast_before_the_battle_is_refused() -> None:
     session = make_session()
     outcome = session.cast("north", CastCommand("c1", "meteor", Vec2(180, 280), 0))
     assert outcome["outcome"] == "rejected"
-    assert outcome["reason"] == "roundOver"
+    # `wrongPhase` and not `roundOver` (JQ-310): a cast during the plan screen
+    # is a client with a bug, and one a beat after the round ended is a client
+    # with a slow connection. Telling a player the round is over when it has not
+    # started sends them looking for a match that finished without them.
+    assert outcome["reason"] == "wrongPhase"
 
 
 def test_a_cast_during_the_battle_is_answered_exactly_once() -> None:

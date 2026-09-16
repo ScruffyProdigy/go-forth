@@ -110,6 +110,7 @@ class SeatConnection:
         if seat is None:
             # Not retryable: this credential does not hold a seat in this match,
             # and no amount of retrying will change that.
+            session.note_connection("connection.refused", reason="notYourSeat", retryable=False)
             await self.send(wire.claim_failed_message("that seat is not yours", retryable=False))
             return
 
@@ -117,6 +118,18 @@ class SeatConnection:
         self._session = session
         self._side = seat.side
         seat.connected = True
+        seat.sockets_seen += 1
+
+        # A reconnect is not a join, and the diagnostics say which this was.
+        # Nothing about the *match* changes either way — the state pushed below
+        # is wholesale and authoritative, so a returning player is shown where
+        # the battle actually is rather than where they left it.
+        session.note_connection(
+            "connection.subscribed" if seat.sockets_seen == 1 else "connection.reconnected",
+            seat_key=seat.seat_key,
+            side=seat.side,
+            sockets_seen=seat.sockets_seen,
+        )
 
         self._unsubscribe = self._service.hub.subscribe(match_id.strip(), self._on_publish)
         await self.push_state()
@@ -185,10 +198,23 @@ class SeatConnection:
             self._unsubscribe = None
 
     def close(self) -> None:
-        """Clear presence. **Does not** end the match or free the seat."""
+        """Clear presence. **Does not** end the match or free the seat.
+
+        In particular it does not call `reportPlayerFinished`. A dropped socket
+        is a player whose train went into a tunnel, and telling the Lobby they
+        finished would take them out of a match they are still in — one they
+        are, at that moment, unable to say anything about.
+        """
         self._release()
         if self._session is not None and self._side is not None:
-            self._session.seat_for_side(self._side).connected = False
+            seat = self._session.seat_for_side(self._side)
+            seat.connected = False
+            self._session.note_connection(
+                "connection.dropped",
+                seat_key=seat.seat_key,
+                side=seat.side,
+                sockets_seen=seat.sockets_seen,
+            )
         self._session = None
         self._side = None
 

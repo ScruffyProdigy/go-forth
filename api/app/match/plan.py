@@ -115,6 +115,36 @@ def parse_plan(raw: Any) -> SubmittedPlan:
     return SubmittedPlan(troops=tuple(troops), spell_slots=tuple(slots))
 
 
+def plan_to_json(plan: SubmittedPlan) -> dict[str, Any]:
+    """A submitted plan, in the shape `parse_plan` reads back.
+
+    The round trip is the requirement, not the field names: this is what a run
+    record stores (JQ-310), and a record whose plan the parser would refuse is a
+    record that cannot be replayed. `tests/match/test_run_record.py` asserts the
+    trip rather than the spelling, so the two cannot drift apart silently.
+
+    Only what the player chose. The roster, the mage cap and the opening energy
+    ride along in `fixtures.opening_plan_json` because the *screen* needs them;
+    they are content, they are pinned by `CONTENT_VERSION`, and storing a copy
+    per round would mean a record that disagreed with the fixtures it names.
+    """
+    return {
+        "troops": [
+            {
+                "mageId": troop.mage_id,
+                "summonIds": list(troop.summon_ids),
+                "order": (
+                    {"kind": troop.order.kind, "zoneId": troop.order.zone_id}
+                    if troop.order.zone_id is not None
+                    else {"kind": troop.order.kind}
+                ),
+            }
+            for troop in plan.troops
+        ],
+        "spellSlots": list(plan.spell_slots),
+    }
+
+
 # ---------------------------------------------------------------- validation --
 
 
