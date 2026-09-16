@@ -210,7 +210,7 @@ cd client && npm run lint && npm run typecheck && npm test
 │   ├── docker-entrypoint.d/  # writes /env.js from container env at startup
 │   ├── public/env.js         # the same config, with local dev defaults
 │   └── src/
-│       ├── plan/             # the plan phase (JQ-293)
+│       ├── plan/             # the plan phase (JQ-293) + the spell resolver (JQ-297)
 │       └── match/            # the match flow: session seam, battle, result
 │           └── fixtures/     # still the client's transport; JQ-311 swaps it
 ├── k8s/
@@ -219,6 +219,7 @@ cd client && npm run lint && npm run typecheck && npm test
 │   └── secrets/              # *.example.yaml only; real ones are gitignored
 ├── docs/
 │   └── python-vs-typescript.md  # reading this next to rpslr, module by module
+├── conformance/              # shared fixtures the Python and TS suites both pin
 ├── scripts/                  # setup, dev, db, test, stub-lobby, build, deploy
 └── .github/workflows/        # api-tests, client-tests, environment-config-test
 ```
@@ -434,6 +435,59 @@ cd api && python -m app.scripts.battle_demo --seed 7   # both sides are led diff
 **Scope.** Slice A (JQ-286) ships the world model, the tick loop, map config, the
 event envelope, and move-and-fight. Orders, formations, and zone scoring are
 JQ-287; energy and abilities JQ-288; resummoning and resonance JQ-289.
+
+---
+
+## Player spells
+
+JQ-297. A spell a *player* casts is not a unit ability: it has no gauge, no
+caster on the field, and its strength comes from the mages you deployed rather
+than from school resonance.
+
+**Mage tags are not schools.** A mage carries discipline, role and personality
+tags — `evocation`, `warding`, `reckless` — and they are separate from faction
+membership. A mage tagged `artifice` is a mage who works in artifice; it is not
+an Artifice mage, gets no Artifice summons, and feeds nothing in
+[`resonance.py`](api/app/sim/resonance.py). That holds because
+[`loadout.py`](api/app/sim/loadout.py) is never given a school to consult.
+
+**Every number has its own curve.** A spell does not have one strength. Each
+field of each effect takes a bounded curve keyed on one tag:
+
+```
+bonus = min(cap, per_mage × max(0, support − threshold))
+```
+
+So Fireball takes its damage from `evocation` and its radius from `reckless`,
+independently, each capped on its own. A mage carrying both raises both numbers
+once each. Two things make that structural rather than intentional: a field may
+take **at most one** curve (a second one is a `ValueError` when the catalog is
+built), and nothing anywhere multiplies.
+
+**Access is explicit.** Three rules, no inference — a signature arrives with its
+mage, an independent spell needs the side to own it *and*, where stated, a
+fielded mage carrying a tag, and a fallback is always there. Two copies of one
+mage grant one menu entry and are both named as grantors.
+
+**The battle runs the snapshot.** `plan.resolve_snapshot` freezes access, tag
+support and every resolved cost and effect at lock-in, and the round reads
+nothing else — so a battle that kills every contributing mage leaves the loadout
+exactly as the plan screen priced it. That is the provisional playtest policy in
+[`LoadoutRules`](api/app/sim/loadout.py), recorded as an experiment rather than a
+settled rule. The sim's catalog is built from the two snapshots under ids
+namespaced per side, because both seats can equip one spell and resolve it to
+different numbers.
+
+**Both languages, one calculation.** The plan screen re-prices a spell on every
+tap, so the client runs its own copy in
+[`spellResolver.ts`](client/src/plan/spellResolver.ts). What stops it drifting is
+[`conformance/spell-resolver.json`](conformance/README.md): generated from the
+Python resolver, checked in, and asserted from both sides. Neither suite can be
+made green by editing the fixture.
+
+```bash
+cd api && python -m app.scripts.export_conformance   # after a deliberate rules change
+```
 
 ---
 

@@ -19,12 +19,20 @@ could not be added here even if a plan carried one.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from app.match import fixtures
-from app.match.wire import LoadoutSpell
+from app.match.wire import LoadoutSpell, SpellContributor
+from app.sim.loadout import (
+    DeployedMage,
+    LoadoutMenu,
+    LoadoutSnapshot,
+    effect_summary,
+    resolve_menu,
+    resolve_slots,
+    snapshot_loadout,
+)
 from app.sim.map import MapConfig
 from app.sim.orders import Order, validate_order
 from app.sim.types import Side
@@ -122,9 +130,9 @@ def fielded_mages(plan: SubmittedPlan) -> list[fixtures.MageOption]:
     """The mages this plan actually puts on the field, in troop order.
 
     In troop order rather than sorted, and a list rather than a set, because
-    what reads this is spell resolution — and a resolved sentence that changed
-    wording between two interpreters would be the hash-ordering bug the
-    conventions file is about.
+    what reads this is spell resolution — and a resolved menu that changed order
+    between two interpreters would be the hash-ordering bug the conventions file
+    is about.
     """
     found: list[fixtures.MageOption] = []
     for troop in plan.troops:
@@ -134,26 +142,50 @@ def fielded_mages(plan: SubmittedPlan) -> list[fixtures.MageOption]:
     return found
 
 
-def _spell_is_eligible(spell: fixtures.SpellOption, plan: SubmittedPlan) -> str | None:
-    """The reason this spell cannot be equipped, or None if it can."""
-    requires = spell.requires
-    kind = requires.get("kind")
-    if kind == "always":
-        return None
-    mages = fielded_mages(plan)
-    if kind == "signature":
-        mage_id = requires.get("mageId")
-        if any(mage.id == mage_id for mage in mages):
-            return None
-        option = fixtures.mage_by_id(str(mage_id))
-        name = option.name if option else str(mage_id)
-        return f"needs {name} on the field"
-    if kind == "tag":
-        tag = str(requires.get("tag"))
-        if any(tag in mage.tags for mage in mages):
-            return None
-        return f"needs a fielded mage tagged {tag}"
-    return f"has an unreadable requirement ({kind!r})"
+def deployed_mages(plan: SubmittedPlan) -> list[DeployedMage]:
+    """This plan's mages as the resolver wants them: instances, with tags.
+
+    The instance id is the troop's own position in the plan, which is also how
+    `to_army_setup` names its troops. That matters for the one case the two
+    representations differ on: fielding the same mage card twice is two
+    deployed instances, counted twice for every tag they carry, and granting one
+    menu entry between them (JQ-297). A resolver keyed on the card id could not
+    tell those two mages apart.
+
+    Summons are not here, and this is the only place they could have been:
+    nothing downstream sees the roster, so "never count summons" is a property
+    of the shape rather than of a filter somebody has to remember.
+    """
+    mages: list[DeployedMage] = []
+    for index, troop in enumerate(plan.troops):
+        option = fixtures.mage_by_id(troop.mage_id)
+        if option is None:
+            continue
+        mages.append(
+            DeployedMage(
+                instance_id=f"troop-{index + 1}",
+                type_id=option.id,
+                name=option.name,
+                tags=option.tags,
+            )
+        )
+    return mages
+
+
+def spell_menu(plan: SubmittedPlan) -> LoadoutMenu:
+    """The eligible menu for this plan, resolved against its fielded mages.
+
+    The same call the client's preview makes and the same one lock-in makes.
+    Editing troops changes the plan, so the next call returns a different menu —
+    there is no cached eligibility to invalidate, which is what makes JQ-297's
+    "editing troops updates eligibility and previews immediately" true by
+    construction rather than by a subscription somebody has to wire up.
+    """
+    return resolve_menu(
+        mages=deployed_mages(plan),
+        roster_access=fixtures.INDEPENDENT_SPELL_ACCESS,
+        definitions=fixtures.spell_definitions(),
+    )
 
 
 def validate_plan(plan: SubmittedPlan, map_config: MapConfig) -> None:
@@ -203,72 +235,71 @@ def validate_plan(plan: SubmittedPlan, map_config: MapConfig) -> None:
                 f"and this troop asks for {capacity_used}"
             )
 
-    for index, spell_id in enumerate(plan.spell_slots):
-        if spell_id is None:
-            continue
-        spell = fixtures.spell_by_id(spell_id)
-        if spell is None:
-            raise PlanError(f"{spell_id!r} is not a spell on this roster")
-        reason = _spell_is_eligible(spell, plan)
-        if reason is not None:
-            raise PlanError(f"spell {index + 1} — {spell.name} {reason}")
+    # Spells last, and against the *resolved* menu rather than a second copy of
+    # the access rules. A slot stranded by a troop edit is named with the reason
+    # the menu gave, so the refusal reads the same as the greyed card the player
+    # was looking at (JQ-297: "invalid slots require a legal replacement").
+    for outcome in resolve_slots(spell_menu(plan), plan.spell_slots, fixtures.LOADOUT_RULES):
+        if outcome.stranded:
+            spell = fixtures.spell_by_id(str(outcome.definition_id))
+            name = spell.name if spell is not None else str(outcome.definition_id)
+            raise PlanError(f"spell {outcome.index + 1} — {name} {outcome.reason}")
 
 
 # ---------------------------------------------------------------- resolution --
 
 
-def _contributors(plan: SubmittedPlan, spell: fixtures.SpellOption) -> list[tuple[str, str]]:
-    """(mage name, tag) for each fielded mage carrying a tag the spell reads.
+def resolve_snapshot(plan: SubmittedPlan, side: Side, round_number: int = 1) -> LoadoutSnapshot:
+    """Freeze this plan's spells for the round. **The authoritative answer.**
 
-    Mage order, then tag order as the spell lists them. No set iteration, so the
-    same plan resolves to the same sentence in every process.
+    Everything downstream reads the snapshot: the wire loadout the seat is sent,
+    the cost a cast is charged, and the effects the sim fires. Nothing re-derives
+    them from the world, so a battle that kills every contributing mage leaves
+    the loadout exactly as the plan screen priced it — JQ-297's provisional
+    playtest policy, and the reason it is a snapshot rather than a live query.
+
+    Namespaced by side because both seats can equip the same spell and resolve
+    it to different numbers, and `BattleSetup.spells` is one catalog.
     """
-    found: list[tuple[str, str]] = []
-    for mage in fielded_mages(plan):
-        for tag in spell.reads:
-            if tag in mage.tags:
-                found.append((mage.name, tag))
-    return found
+    return snapshot_loadout(
+        namespace=side,
+        mages=deployed_mages(plan),
+        selection=plan.spell_slots,
+        roster_access=fixtures.INDEPENDENT_SPELL_ACCESS,
+        definitions=fixtures.spell_definitions(),
+        rules=fixtures.LOADOUT_RULES,
+        round_number=round_number,
+    )
 
 
-def _effect_text(spell: fixtures.SpellOption, contributors: Sequence[tuple[str, str]]) -> str:
-    magnitude = fixtures.BASE_MAGNITUDE + fixtures.PER_CONTRIBUTOR * len(contributors)
-    if not contributors:
-        return f"{spell.text} At {magnitude:g}, with nothing fielded to raise it."
-    tags: list[str] = []
-    for _, tag in contributors:
-        if tag not in tags:
-            tags.append(tag)
-    count = len(contributors)
-    plural = "" if count == 1 else "s"
-    return f"{spell.text} At {magnitude:g} — {', '.join(tags)} from {count} fielded mage{plural}."
+def loadout_spells(snapshot: LoadoutSnapshot) -> list[LoadoutSpell]:
+    """The snapshot as the wire carries it.
 
-
-def resolve_loadout(plan: SubmittedPlan) -> list[LoadoutSpell]:
-    """The spells this plan takes into the round, with **resolved** costs.
-
-    Resolved rather than printed: what a fielded mage's tags do to a spell is
-    the server's answer, and the client pricing off the card would let a player
-    spend energy they do not have. `LoadoutSpell` is a wire type, so this is
-    where the plan layer stops and the contract begins.
+    Resolved rather than printed, which is the property worth restating: what a
+    fielded mage's tags do to a spell is the server's answer, and a client
+    pricing off the card would let a player spend energy they do not have.
+    `LoadoutSpell` is a wire type, so this is where the plan layer stops and the
+    contract begins.
     """
-    loadout: list[LoadoutSpell] = []
-    for spell_id in plan.spell_slots:
-        if spell_id is None:
-            continue
-        spell = fixtures.spell_by_id(spell_id)
-        if spell is None:
-            continue
-        contributors = _contributors(plan, spell)
-        loadout.append(
-            LoadoutSpell(
-                spell_id=spell.id,
-                name=spell.name,
-                cost=spell.cost,
-                effect=_effect_text(spell, contributors),
-            )
+    return [
+        LoadoutSpell(
+            spell_id=spell.definition_id,
+            name=spell.name,
+            cost=spell.cost,
+            effect=effect_summary(spell),
+            contributors=tuple(
+                SpellContributor(mage_id=who.instance_id, mage_name=who.mage_name, tag=who.tag)
+                for who in spell.contributors
+            ),
+            tag_support=snapshot.tag_support,
         )
-    return loadout
+        for spell in snapshot.spells
+    ]
+
+
+def resolve_loadout(plan: SubmittedPlan, side: Side = "north") -> list[LoadoutSpell]:
+    """A plan's wire loadout in one step. Convenience over `resolve_snapshot`."""
+    return loadout_spells(resolve_snapshot(plan, side))
 
 
 # ----------------------------------------------------------------- sim input --

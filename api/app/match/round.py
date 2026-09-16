@@ -29,11 +29,12 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from app.match import fixtures
-from app.match.plan import SubmittedPlan, to_army_setup
+from app.match.plan import SubmittedPlan, loadout_spells, to_army_setup
 from app.match.wire import CastCommand, CastRejection, LoadoutSpell, ResolvedCast
 from app.sim.ai.fixtures import sample_library
 from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig
 from app.sim.events import BattleEvent
+from app.sim.loadout import LoadoutSnapshot
 from app.sim.map import MapConfig
 from app.sim.run_battle import BattleResult, create_runner
 from app.sim.spells import SpellInjection
@@ -42,7 +43,8 @@ from app.sim.world import BattleSetup, World, is_alive
 
 #: Seat energy regained per second of battle. Provisional (JQ-309's scheduling
 #: note): fast enough that a 90-second round affords two or three casts, slow
-#: enough that opening with everything is a real choice. JQ-297 replaces it.
+#: enough that opening with everything is a real choice. The cadence is
+#: JQ-292/187's to settle; JQ-297 settled only what a *spell* costs.
 ENERGY_PER_SECOND = 4.0
 
 #: Seat energy ceiling. Provisional, and the reason one exists at all: without a
@@ -128,7 +130,9 @@ class AuthoritativeRound:
         round_number: int,
         map_config: MapConfig,
         plans: Mapping[Side, SubmittedPlan],
-        loadouts: Mapping[Side, list[LoadoutSpell]],
+        #: One per seat, frozen at lock-in. The round reads spells from here and
+        #: from nowhere else — see `plan.resolve_snapshot`.
+        snapshots: Mapping[Side, LoadoutSnapshot],
         base_hp: Mapping[Side, float],
         seed: int,
         sim_config: SimConfig = DEFAULT_SIM_CONFIG,
@@ -138,7 +142,8 @@ class AuthoritativeRound:
         self.map_config = map_config
         self.sim_config = sim_config
         self.seed = seed
-        self._loadouts = {side: list(loadouts.get(side, [])) for side in SIDES}
+        self._snapshots = dict(snapshots)
+        self._loadouts = {side: loadout_spells(snapshots[side]) for side in SIDES}
         self._energy = {
             side: SeatEnergy(start=min(starting_energy, ENERGY_CAP), cap=ENERGY_CAP) for side in SIDES
         }
@@ -153,7 +158,13 @@ class AuthoritativeRound:
             # (JQ-187), so what the previous round left is what this one opens on.
             base_hp={side: base_hp[side] for side in SIDES},
             abilities=fixtures.abilities(),
-            spells=fixtures.sim_spells(),
+            # Built from the two snapshots rather than from a catalogue. This is
+            # the "battle execution consumes the authoritative snapshot" rule in
+            # JQ-297 made structural: the effects the sim will fire are the ones
+            # the plan screen showed, and there is no other copy of them to
+            # drift from. Ids are namespaced per side, since both seats can
+            # equip one spell and resolve it to different numbers.
+            spells=[spell for side in SIDES for spell in snapshots[side].sim_spells()],
         )
 
         # Built by the sim rather than assembled here. The rng, the resonance
@@ -334,7 +345,11 @@ class AuthoritativeRound:
 
         injection = SpellInjection(
             tick=target_tick,
-            spell_id=spell.spell_id,
+            # The seat's own resolved copy, never the definition id the client
+            # named. Both seats' Fireballs are in one catalog under different
+            # ids, and casting the definition id would either miss the catalog
+            # or — worse, if one day it did not — fire the opponent's numbers.
+            spell_id=self._snapshots[side].sim_spell_id(spell.spell_id),
             location=command.at,
             # Filled in from the seat, never read off the wire: a client that
             # could name its own side could cast as its opponent.

@@ -124,21 +124,55 @@ def zone_states(world: World, map_config: MapConfig) -> list[dict[str, Any]]:
 
 
 @dataclass(frozen=True, slots=True)
+class SpellContributor:
+    """One deployed mage raising one of a spell's numbers, by one tag.
+
+    The seat's own mages only — it appears inside a loadout, and a loadout is
+    sent to one seat. `mage_id` is the deployed *instance*, not the card: two
+    Ember Adepts on the field are two contributors, and a screen that showed one
+    would be under-reporting the support the player paid for.
+    """
+
+    mage_id: str
+    mage_name: str
+    tag: str
+
+    def to_json(self) -> dict[str, Any]:
+        return {"mageId": self.mage_id, "mageName": self.mage_name, "tag": self.tag}
+
+
+@dataclass(frozen=True, slots=True)
 class LoadoutSpell:
     """A spell in a seat's round loadout, with the cost the server resolved.
 
     The resolved cost, never the catalogue's printed one: what a fielded mage's
     tags do to a spell's price is the server's answer, and a client pricing off
     the card would let a player spend energy they do not have.
+
+    `contributors` and `tag_support` are the *why* behind the number (JQ-297).
+    They travel because the plan screen has to be able to say which mage bought
+    what — and because a resolved cost with no explanation is the one thing a
+    player cannot check, which makes an honest server indistinguishable from a
+    broken one.
     """
 
     spell_id: str
     name: str
     cost: float
     effect: str
+    contributors: tuple[SpellContributor, ...] = ()
+    #: `(tag, count)` across the seat's fielded mages, sorted by tag.
+    tag_support: tuple[tuple[str, int], ...] = ()
 
     def to_json(self) -> dict[str, Any]:
-        return {"spellId": self.spell_id, "name": self.name, "cost": self.cost, "effect": self.effect}
+        return {
+            "spellId": self.spell_id,
+            "name": self.name,
+            "cost": self.cost,
+            "effect": self.effect,
+            "contributors": [who.to_json() for who in self.contributors],
+            "tagSupport": [{"tag": tag, "count": count} for tag, count in self.tag_support],
+        }
 
 
 @dataclass(frozen=True, slots=True)

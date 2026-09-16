@@ -23,7 +23,7 @@ import subprocess
 import sys
 
 from app.match import fixtures
-from app.match.plan import default_plan, resolve_loadout
+from app.match.plan import default_plan, resolve_snapshot
 from app.scripts.match_demo import play
 from app.sim.serialize import serialize_battle
 
@@ -85,13 +85,13 @@ def test_the_default_plan_is_stable_across_processes() -> None:
 
 
 def test_the_resolved_loadout_is_stable_across_processes() -> None:
-    """`resolve_loadout` walks fielded mages and spell tags to build sentences.
-    Mage order and tag order are both load-bearing, and both are the kind of
-    thing a set would scramble."""
+    """`resolve_snapshot` walks fielded mages and spell tags to price a loadout.
+    Mage order, tag order and the tag-support counts are all load-bearing, and
+    all three are the kind of thing a set would scramble."""
     assert _stable_across_processes(
         "from app.match import fixtures;"
-        "from app.match.plan import default_plan, resolve_loadout;"
-        "print(resolve_loadout(default_plan(fixtures.map_config())))"
+        "from app.match.plan import default_plan, resolve_snapshot;"
+        "print(resolve_snapshot(default_plan(fixtures.map_config()), 'north'))"
     )
 
 
@@ -108,7 +108,7 @@ def test_a_live_cast_lands_where_a_prescheduled_one_would() -> None:
 
     map_config = fixtures.map_config()
     plan = default_plan(map_config)
-    resolve_loadout(plan)
+    snapshots = {side: resolve_snapshot(plan, side) for side in SIDES}
 
     from app.match.plan import to_army_setup
 
@@ -116,7 +116,7 @@ def test_a_live_cast_lands_where_a_prescheduled_one_would() -> None:
         unit_types=fixtures.unit_types(),
         armies=[to_army_setup(plan, side) for side in SIDES],
         abilities=fixtures.abilities(),
-        spells=fixtures.sim_spells(),
+        spells=[spell for side in SIDES for spell in snapshots[side].sim_spells()],
     )
     runner = create_runner(map_config, [], setup, SEED)
     catalog = list(runner.spells)

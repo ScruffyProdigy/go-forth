@@ -85,8 +85,14 @@ const mages: MageOption[] = [
 
 /**
  * Illustrative only — §4.8 is explicit that these are not final spell designs,
- * and the real set is JQ-292. What matters here is the *shape*: signature spells
- * arrive with their mage, independents read a tag, and a fallback is always legal.
+ * and the real set is JQ-292/307. What matters here is the *shape*, which JQ-297
+ * settled: a spell is a stable definition carrying its access rule, its base
+ * effects, and one bounded curve per number it scales.
+ *
+ * Magnitudes are invented demo tuning recorded here, not balance. What they
+ * demonstrate is the rule: Fireball takes damage from Evocation and radius from
+ * Reckless, independently and each with its own cap, so a mage carrying both
+ * tags raises both numbers once each rather than multiplying anything.
  */
 const spells: SpellOption[] = [
   {
@@ -94,40 +100,57 @@ const spells: SpellOption[] = [
     name: 'Fireball',
     cost: 3,
     text: 'Evocation sets the damage, Reckless the radius.',
-    requires: { kind: 'signature', mageId: 'emberwright' },
-    reads: ['Evocation', 'Reckless'],
+    access: { kind: 'signature', mageTypeId: 'emberwright' },
+    effects: [
+      { kind: 'areaDamage', radius: 40, damage: { amount: 20, bonusVsMage: 1, bonusVsBase: 1.5 }, hitsBase: true },
+    ],
+    scaling: [
+      { effectIndex: 0, field: 'damage.amount', tag: 'Evocation', perMage: 10, cap: 30, threshold: 0 },
+      { effectIndex: 0, field: 'radius', tag: 'Reckless', perMage: 5, cap: 10, threshold: 0 },
+    ],
   },
   {
     id: 'flameWard',
     name: 'Flame Ward',
     cost: 2,
     text: 'Guardian sets the protection, Disciplined the duration.',
-    requires: { kind: 'signature', mageId: 'ashenWarden' },
-    reads: ['Guardian', 'Disciplined'],
+    access: { kind: 'signature', mageTypeId: 'ashenWarden' },
+    effects: [{ kind: 'burningGround', radius: 30, damagePerSecond: 3, durationSeconds: 3, bonusVsMage: 1 }],
+    scaling: [
+      { effectIndex: 0, field: 'damagePerSecond', tag: 'Guardian', perMage: 1, cap: 3, threshold: 0 },
+      { effectIndex: 0, field: 'durationSeconds', tag: 'Disciplined', perMage: 1, cap: 2, threshold: 0 },
+    ],
   },
   {
     id: 'rekindle',
     name: 'Rekindle',
     cost: 2,
     text: 'Returns defeated summons; Summoner sets how many.',
-    requires: { kind: 'signature', mageId: 'pyreMagus' },
-    reads: ['Summoner'],
+    access: { kind: 'signature', mageTypeId: 'pyreMagus' },
+    effects: [{ kind: 'energyRefill', radius: 60, amount: 20, includeSelf: false }],
+    scaling: [{ effectIndex: 0, field: 'amount', tag: 'Summoner', perMage: 8, cap: 16, threshold: 0 }],
   },
   {
     id: 'cinderVeil',
     name: 'Cinder Veil',
     cost: 2,
     text: 'Screens a troop as it crosses open ground.',
-    requires: { kind: 'tag', tag: 'Guardian' },
-    reads: ['Guardian'],
+    // Independent: owned by the roster *and* gated on a fielded Guardian. Both,
+    // not either — a tag never grants access on its own (JQ-292).
+    access: { kind: 'independent', requiresTag: 'Guardian', minimum: 1 },
+    effects: [{ kind: 'knockback', radius: 30, distance: 20 }],
+    scaling: [{ effectIndex: 0, field: 'distance', tag: 'Guardian', perMage: 5, cap: 10, threshold: 1 }],
   },
   {
     id: 'scorch',
     name: 'Scorch',
     cost: 1,
     text: 'A small burst. The basic fallback — always available.',
-    requires: { kind: 'always' },
-    reads: ['Evocation'],
+    access: { kind: 'fallback' },
+    effects: [
+      { kind: 'areaDamage', radius: 20, damage: { amount: 8, bonusVsMage: 1, bonusVsBase: 1 }, hitsBase: true },
+    ],
+    scaling: [{ effectIndex: 0, field: 'damage.amount', tag: 'Evocation', perMage: 3, cap: 9, threshold: 0 }],
   },
 ];
 
@@ -137,6 +160,8 @@ const roster: Roster = {
   // A multiset: the roster holds four Ember Hounds, not a flag saying it has one.
   summonCounts: { emberHound: 4, scoriaLancer: 2, flameWisp: 3, cinderBulwark: 1 },
   spells,
+  // Preconstructed: the Starter owns its one independent spell outright.
+  independentSpellAccess: ['cinderVeil'],
 };
 
 /**

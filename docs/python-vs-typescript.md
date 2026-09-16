@@ -82,10 +82,17 @@ like formatting details:
 
 - **`GameService.banned_in`** returns the banned ids in the *caller's* order, not
   the set's. That list goes on the wire in the 403 body.
-- **Spell resolution** (`app/match/plan.py`) walks fielded mages in troop order
-  and tags in the order the spell lists them. The resolved sentence is sent to
-  the client, so a set-ordered version would differ between two servers running
-  identical code.
+- **Spell resolution** (`app/sim/loadout.py`) walks deployed mages in troop order
+  and tags in the order the spell reads them, and sorts tag support by tag on the
+  way out. The resolved costs, effects and contributors are sent to the client
+  and fired by the sim, so a set-ordered version would differ between two servers
+  running identical code.
+
+  It is also the one calculation that exists in **both** languages —
+  `client/src/plan/spellResolver.ts` is the copy — because the plan screen
+  re-prices a spell on every tap and a round trip per tap is not a screen. They
+  are held together by `conformance/spell-resolver.json`, generated from the
+  Python and asserted from both sides.
 
 The full rules, and why a determinism test must spawn a subprocess, are in
 `api/CONVENTIONS.md`.

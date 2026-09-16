@@ -37,10 +37,18 @@ from typing import Any, Literal, cast
 from app.lobby.client import LobbyClient, MatchResultStatus
 from app.lobby.manifest import GameMode, RoundPolicy
 from app.match import fixtures, wire
-from app.match.plan import PlanError, SubmittedPlan, default_plan, parse_plan, resolve_loadout, validate_plan
+from app.match.plan import (
+    PlanError,
+    SubmittedPlan,
+    default_plan,
+    parse_plan,
+    resolve_snapshot,
+    validate_plan,
+)
 from app.match.round import AuthoritativeRound, RoundEnding
-from app.match.wire import CastCommand, LoadoutSpell
+from app.match.wire import CastCommand
 from app.sim.config import DEFAULT_SIM_CONFIG, SimConfig
+from app.sim.loadout import LoadoutSnapshot
 from app.sim.map import MapConfig
 from app.sim.types import SIDES, Side
 
@@ -82,7 +90,8 @@ class Seat:
 class _RoundState:
     plans: dict[Side, SubmittedPlan] = field(default_factory=dict)
     locked: dict[Side, bool] = field(default_factory=lambda: {side: False for side in SIDES})
-    loadouts: dict[Side, list[LoadoutSpell]] = field(default_factory=dict)
+    #: Frozen at lock-in, one per seat. Nothing re-resolves them afterwards.
+    snapshots: dict[Side, LoadoutSnapshot] = field(default_factory=dict)
 
 
 class MatchSession:
@@ -212,7 +221,7 @@ class MatchSession:
         validate_plan(plan, self.map_config)
 
         self._round_state.plans[side] = plan
-        self._round_state.loadouts[side] = resolve_loadout(plan)
+        self._round_state.snapshots[side] = resolve_snapshot(plan, side, self.round_number)
         self._round_state.locked[side] = True
 
         if all(self._round_state.locked[s] for s in SIDES):
@@ -223,13 +232,13 @@ class MatchSession:
             if side not in self._round_state.plans:
                 plan = default_plan(self.map_config)
                 self._round_state.plans[side] = plan
-                self._round_state.loadouts[side] = resolve_loadout(plan)
+                self._round_state.snapshots[side] = resolve_snapshot(plan, side, self.round_number)
 
         self._round = AuthoritativeRound(
             round_number=self.round_number,
             map_config=self.map_config,
             plans=self._round_state.plans,
-            loadouts=self._round_state.loadouts,
+            snapshots=self._round_state.snapshots,
             base_hp=self._base_hp,
             # Derived from the run and the round rather than taken from a clock,
             # so a match replayed from its run id reproduces every battle in it.
@@ -459,11 +468,17 @@ class MatchSession:
             return None
 
         plan = self._round_state.plans[side]
+        snapshot = self._round_state.snapshots[side]
         preview = AuthoritativeRound(
             round_number=self.round_number,
             map_config=self.map_config,
             plans={s: plan for s in SIDES},
-            loadouts={side: self._round_state.loadouts.get(side, [])},
+            # The locked seat's own plan and its own snapshot, mirrored onto
+            # both sides. Only this seat's units are drawn, so the opposing army
+            # is a throwaway needed to build a world — mirroring what is already
+            # in hand rather than resolving the opponent's plan is what keeps
+            # this preview from touching hidden information at all.
+            snapshots={s: snapshot for s in SIDES},
             base_hp=self._base_hp,
             seed=self.seed + self.round_number,
             sim_config=self.sim_config,
@@ -473,7 +488,7 @@ class MatchSession:
             map_config=self.map_config,
             you=side,
             energy=fixtures.STARTING_ENERGY,
-            loadout=self._round_state.loadouts.get(side, []),
+            loadout=preview.loadout_for(side),
             casts=[],
             only_your_units=True,
         )

@@ -10,10 +10,11 @@ from __future__ import annotations
 import pytest
 
 from app.match import fixtures
-from app.match.plan import default_plan, resolve_loadout
+from app.match.plan import default_plan, resolve_snapshot
 from app.match.round import ENERGY_CAP, SCORE_THRESHOLD, AuthoritativeRound
 from app.match.wire import CastCommand
 from app.sim.config import SimConfig
+from app.sim.spellbook import read_field
 from app.sim.types import SIDES, Vec2
 
 MAP = fixtures.map_config()
@@ -21,12 +22,12 @@ MAP = fixtures.map_config()
 
 def make_round(*, seconds: float = 6, seed: int = 5, energy: float = 100.0) -> AuthoritativeRound:
     plan = default_plan(MAP)
-    loadout = resolve_loadout(plan)
+    snapshots = {side: resolve_snapshot(plan, side) for side in SIDES}
     return AuthoritativeRound(
         round_number=1,
         map_config=MAP,
         plans={side: plan for side in SIDES},
-        loadouts={side: loadout for side in SIDES},
+        snapshots=snapshots,
         base_hp={side: 1000.0 for side in SIDES},
         seed=seed,
         sim_config=SimConfig(max_battle_seconds=seconds),
@@ -105,7 +106,7 @@ def test_seat_energy_is_capped() -> None:
 # ---------------------------------------------------------------- casts --
 
 
-def _cast(spell_id: str = "meteor", x: float = 180.0, y: float = 280.0, cid: str = "c1") -> CastCommand:
+def _cast(spell_id: str = "fireball", x: float = 180.0, y: float = 280.0, cid: str = "c1") -> CastCommand:
     return CastCommand(command_id=cid, spell_id=spell_id, at=Vec2(x, y), tick=0)
 
 
@@ -117,7 +118,7 @@ def test_an_affordable_cast_is_accepted_and_charged() -> None:
     outcome = rnd.cast("north", _cast())
     assert outcome.accepted
     assert rnd.energy_for("north") == pytest.approx(before - 35.0)
-    assert [c.spell_id for c in rnd.casts()] == ["meteor"]
+    assert [c.spell_id for c in rnd.casts()] == ["fireball"]
 
 
 def test_a_cast_is_scheduled_on_the_next_tick_not_the_one_the_client_named() -> None:
@@ -126,7 +127,7 @@ def test_a_cast_is_scheduled_on_the_next_tick_not_the_one_the_client_named() -> 
         rnd.step()
 
     # The client says tick 0 — a tick that has long since run.
-    rnd.cast("north", CastCommand(command_id="c1", spell_id="meteor", at=Vec2(180, 280), tick=0))
+    rnd.cast("north", CastCommand(command_id="c1", spell_id="fireball", at=Vec2(180, 280), tick=0))
     resolved = rnd.casts()[0]
     # Honouring a client-chosen tick means either a cast in the past, which
     # cannot happen, or a free delayed cast nobody else can see coming.
@@ -150,7 +151,7 @@ def test_a_cast_reaches_the_sims_pending_queue() -> None:
     assert len(rnd.world.pending_spells) == 1
     # Nothing about damage crosses: the sim looks effects up in its own
     # catalogue, so a client that lies about a payload changes nothing.
-    assert rnd.world.pending_spells[0].spell_id == "meteor"
+    assert rnd.world.pending_spells[0].spell_id == "north:fireball"
 
 
 def test_a_cast_actually_fires(  # the queue is not enough — it has to land
@@ -448,3 +449,82 @@ def test_a_refused_cast_spends_nothing() -> None:
     )
     assert not outcome.accepted and outcome.rejection == "notEnoughEnergy"
     assert rnd.energy_for("north") == before
+
+
+# ------------------------------------------------- the loadout after lock-in --
+
+
+def _kill_every_mage(rnd: AuthoritativeRound, side: str) -> int:
+    """Kills this seat's mages where the sim can see it. Returns how many fell.
+
+    Reaching into the world rather than playing a battle out until they die: the
+    claim under test is that the *loadout* does not read the world, and the
+    cheapest way to prove that is to make the world as wrong as possible and
+    look again.
+    """
+    fallen = 0
+    for unit in rnd.world.units:
+        if unit.side == side and unit.kind == "mage":
+            unit.hp = 0
+            fallen += 1
+    return fallen
+
+
+def test_a_contributor_dying_does_not_remove_a_button() -> None:
+    """JQ-297's provisional playtest policy, at the layer that has to honour it.
+
+    Every Ember Adept on the field grants the Fireball *and* raises its numbers.
+    Killing all three would, on a live re-resolution, take the spell off the
+    menu mid-battle — a button vanishing from under the player's thumb.
+    """
+    rnd = make_round(seconds=8)
+    before = rnd.loadout_for("north")
+    rnd.step()
+
+    assert _kill_every_mage(rnd, "north") == fixtures.MAGE_CAP
+    rnd.step()
+
+    assert rnd.loadout_for("north") == before
+
+
+def test_a_contributor_dying_does_not_change_a_cost_or_an_effect() -> None:
+    rnd = make_round(seconds=8)
+    spell = rnd.loadout_for("north")[0]
+    rnd.step()
+    _kill_every_mage(rnd, "north")
+    rnd.step()
+
+    after = rnd.loadout_for("north")[0]
+    assert after.cost == spell.cost
+    assert after.effect == spell.effect
+    assert after.tag_support == spell.tag_support
+
+
+def test_a_cast_after_every_contributor_has_died_fires_the_snapshot_numbers() -> None:
+    """The half that matters most: not the label, the damage.
+
+    A loadout that kept its printed cost while the sim fired a re-derived,
+    unsupported Fireball would look correct on every screen and be wrong in the
+    only place it counts.
+    """
+    rnd = make_round(seconds=8, energy=200.0)
+    rnd.step()
+    _kill_every_mage(rnd, "north")
+
+    # Cast before the next step rather than after it. Losing every mage wipes
+    # the side out — the troop bond dissolves its summons with it — and a wiped
+    # side ends the round, which would refuse the cast for a reason that has
+    # nothing to do with what is being tested.
+    spell = rnd.loadout_for("north")[0]
+    outcome = rnd.cast(
+        "north",
+        CastCommand(command_id="c1", spell_id=spell.spell_id, at=Vec2(187.5, 290.0), tick=rnd.world.tick),
+    )
+    assert outcome.accepted
+
+    queued = rnd.world.pending_spells[0]
+    assert queued.spell_id == "north:fireball"
+    blast = rnd._runner.ctx.spells[queued.spell_id].effects[0]
+    # 28 + 3 x 8, capped at 24. The support that bought it is dead; the number
+    # is the one the plan screen showed.
+    assert read_field(blast, "damage.amount") == 52
